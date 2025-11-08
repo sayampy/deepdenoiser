@@ -1,3 +1,4 @@
+import * as theme from "@/src/constants/theme";
 import { MaterialIcons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import React, { useEffect, useState } from "react";
@@ -28,7 +29,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState<number | null>(null);
   const [position, setPosition] = useState<number | null>(null);
-  const progressBarWidth = Dimensions.get("window").width * 0.8;
+  const progressBarWidth = Dimensions.get("window").width * 0.6;
   const progress = useSharedValue(0);
   const isSeeking = useSharedValue(false);
   // const translationX = useSharedValue(0);
@@ -89,6 +90,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
       }
       if (status.didJustFinish) {
         setIsPlaying(false);
+        sound?.stopAsync();
         sound?.setPositionAsync(0);
         progress.value = 0;
       }
@@ -132,13 +134,14 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
   };
 
   return (
-    <GestureHandlerRootView>
+    <GestureHandlerRootView style={{ height: 200 }}>
       <View style={styles.container}>
         <TouchableOpacity style={styles.playButton} onPress={handlePlayPause}>
           <MaterialIcons
             name={isPlaying ? "pause" : "play-arrow"}
-            size={48}
-            color="#fff"
+            size={40}
+            color={theme.COLORS.primary}
+            /*  style={theme.Styles.icon} */
           />
         </TouchableOpacity>
         <View style={styles.progressContainer}>
@@ -148,7 +151,16 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
               <Animated.View style={[styles.progress, animatedProgressStyle]} />
             </View>
           </GestureDetector>
-          <Text style={styles.timeText}>{formatTime(duration)}</Text>
+          <Text
+            style={[
+              styles.timeText,
+              {
+                /* marginRight: 20 */
+              },
+            ]}
+          >
+            {formatTime(duration)}
+          </Text>
         </View>
       </View>
     </GestureHandlerRootView>
@@ -157,15 +169,18 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
 
 const styles = StyleSheet.create({
   container: {
-    alignItems: "center",
+    /* flex: 1, */
+    flexDirection: "row",
+    // alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#bab3b3ff",
-    padding: 20,
-    borderRadius: 15,
-    // border: 2,
+    backgroundColor: "#112224ff",
+    paddingVertical: theme.SPACING.small,
+    paddingHorizontal: theme.SPACING.large,
+    borderRadius: 30,
   },
   playButton: {
-    marginBottom: 20,
+    marginLeft: 0,
+    marginRight: -12,
   },
   progressContainer: {
     flexDirection: "row",
@@ -173,20 +188,20 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   timeText: {
-    color: "#fff",
-    fontSize: 12,
-    marginHorizontal: 10,
+    color: theme.COLORS.subtext,
+    fontSize: theme.FONT_SIZE.xsmall,
+    marginHorizontal: 12,
   },
   progressBar: {
     flex: 1,
     height: 8,
-    backgroundColor: "#444",
+    backgroundColor: theme.COLORS.secondary,
     borderRadius: 4,
     overflow: "hidden",
   },
   progress: {
     height: "100%",
-    backgroundColor: "#1DB954",
+    backgroundColor: theme.COLORS.primary,
     borderRadius: 4,
   },
 });

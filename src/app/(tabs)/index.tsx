@@ -1,6 +1,6 @@
+import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons"; // Expo's built-in icon library
 import * as DocumentPicker from "expo-document-picker";
-import { File } from "expo-file-system";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -96,17 +96,34 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Audio Denoiser</Text>
-        <Text style={styles.subtitle}>
+    <View style={theme.Styles.container}>
+      <View style={theme.Styles.header}>
+        <Text style={theme.Styles.title}>Audio Denoiser</Text>
+        <Text style={theme.Styles.subtitle}>
           Select an audio or video file to get started
         </Text>
       </View>
 
-      <TouchableOpacity style={styles.importButton} onPress={handleImportFile}>
-        <Feather name="upload-cloud" size={24} color="#FFFFFF" />
-        <Text style={styles.importButtonText}>Import Audio / Video</Text>
+      <TouchableOpacity
+        style={[
+          theme.Styles.button,
+          {
+            width: "65%",
+            paddingVertical: theme.SPACING.medium,
+            paddingHorizontal: theme.SPACING.small,
+          },
+        ]}
+        onPress={handleImportFile}
+      >
+        <Feather
+          name="upload-cloud"
+          size={24}
+          color={theme.COLORS.text}
+          style={[theme.Styles.icon, { marginLeft: 15 }]}
+        />
+        <Text style={[theme.Styles.buttonText, { marginRight: 12 }]}>
+          Import Audio / Video
+        </Text>
       </TouchableOpacity>
 
       {isLoading && (
@@ -118,7 +135,7 @@ export default function HomeScreen() {
           <Feather
             name={tempFile.type === "Audio" ? "music" : "video"}
             size={40}
-            color="#34495E"
+            color={theme.COLORS.primary}
           />
           <View style={styles.fileTextContainer}>
             <Text style={styles.fileName} numberOfLines={1}>
@@ -126,23 +143,41 @@ export default function HomeScreen() {
             </Text>
             <Text style={styles.fileType}>{tempFile.type} File</Text>
           </View>
+          <TouchableOpacity
+            onPress={() => {
+              setTempFile(null);
+            }}
+            style={{ padding: 5 }}
+          >
+            <Feather name="x" size={32} color={theme.COLORS.error} />
+          </TouchableOpacity>
         </View>
       )}
-
-      <TouchableOpacity
-        style={[styles.proceedButton, !tempFile && styles.disabledButton]}
-        onPress={() => handleProceed()}
-        disabled={!tempFile}
-      >
-        <Text style={styles.proceedButtonText}>Proceed</Text>
-        <Feather name="arrow-right" size={20} color="#FFFFFF" />
-      </TouchableOpacity>
+      {tempFile ? (
+        <TouchableOpacity
+          style={[
+            theme.Styles.button,
+            {
+              width: "80%",
+              paddingVertical: theme.SPACING.medium,
+              paddingHorizontal: theme.SPACING.small,
+            },
+          ]}
+          onPress={() => handleProceed()}
+          disabled={!tempFile}
+        >
+          <Text style={theme.Styles.buttonText}>Proceed</Text>
+          <Feather name="arrow-right" size={24} color={theme.COLORS.text} />
+        </TouchableOpacity>
+      ) : (
+        <View />
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  /* container: {
     flex: 1,
     backgroundColor: "#F4F7F9",
     alignItems: "center",
@@ -186,36 +221,36 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "600",
     marginLeft: 12,
-  },
+  }, */
   loader: {
     marginVertical: 20,
   },
   fileInfoContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    backgroundColor: theme.COLORS.secondary,
     borderRadius: 12,
-    padding: 20,
+    padding: theme.SPACING.medium,
     width: "100%",
     marginTop: 30,
     borderWidth: 1,
-    borderColor: "#EAEAEA",
+    borderColor: theme.COLORS.primary,
   },
   fileTextContainer: {
     marginLeft: 15,
     flex: 1,
   },
   fileName: {
-    fontSize: 16,
+    fontSize: theme.FONT_SIZE.body,
     fontWeight: "500",
     color: "#2C3E50",
   },
   fileType: {
-    fontSize: 14,
+    fontSize: theme.FONT_SIZE.small,
     color: "#7F8C8D",
     marginTop: 4,
   },
-  proceedButton: {
+  /* proceedButton: {
     flexDirection: "row",
     backgroundColor: "#27AE60",
     paddingVertical: 15,
@@ -231,8 +266,8 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     // Elevation for Android
     elevation: 5,
-  },
-  disabledButton: {
+  }, */
+  /* disabledButton: {
     backgroundColor: "#BDC3C7",
     elevation: 0,
     shadowOpacity: 0,
@@ -242,5 +277,5 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "bold",
     marginRight: 10,
-  },
+  }, */
 });

@@ -1,8 +1,9 @@
 import AudioPlayer from "@/src/components/audioPlayer";
+import { SPACING, Styles } from "@/src/constants/theme";
 import { File } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 export default function ProcessScreen() {
   const router = useRouter();
   const { fileuri } = useLocalSearchParams<{ fileuri: string }>();
@@ -15,19 +16,32 @@ export default function ProcessScreen() {
     }
   }, [fileuri, router]);
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Ready to Process</Text>
-      <Text style={styles.subtitle}>
+    <View style={[Styles.container]}>
+      <Text style={[Styles.header, Styles.title, { marginVertical: 15 }]}>
+        Ready to Process
+      </Text>
+      <Text style={Styles.subtitle}>
         This is the next page. You can now proceed with further actions using
         the imported file.
       </Text>
-      {tempFile && <AudioPlayer uri={tempFile.uri} />}
-      <Pressable
-        style={({ pressed }) => [styles.btn, pressed && styles.pressed]}
+      <View style={{ marginTop: 15, marginBottom: 60 }}>
+        {tempFile && <AudioPlayer uri={tempFile.uri} />}
+      </View>
+      <Text style={Styles.subtitle}>hello</Text>
+      <TouchableOpacity
+        style={[
+          Styles.button,
+          {
+            width: "60%",
+            paddingVertical: SPACING.small,
+            paddingHorizontal: SPACING.medium,
+            marginBottom: 20,
+          },
+        ]}
         onPress={() => router.back()}
       >
-        <Text style={styles.btnText}>Go Back</Text>
-      </Pressable>
+        <Text style={Styles.buttonText}>Go Back</Text>
+      </TouchableOpacity>
     </View>
   );
 }
