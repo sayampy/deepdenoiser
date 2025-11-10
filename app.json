@@ -40,7 +40,17 @@
           }
         }
       ],
-      "expo-ffmpeg-kit"
+      [
+        "react-native-audio-api",
+        {
+          "android.permission": [
+            "android.permission.FOREGROUND_SERVICE",
+            "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+          ],
+          "androidForegroundService": true
+        }
+      ],
+      "onnxruntime-react-native"
     ],
     "experiments": {
       "typedRoutes": true,
