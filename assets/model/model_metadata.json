@@ -1,0 +1,247 @@
+{
+    "inputs": [
+        {
+            "name": "input_frame",
+            "shape": [
+                512
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "erb_norm_state",
+            "shape": [
+                32
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "band_unit_norm_state",
+            "shape": [
+                1,
+                96,
+                1
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "analysis_mem",
+            "shape": [
+                512
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "synthesis_mem",
+            "shape": [
+                512
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "rolling_erb_buf",
+            "shape": [
+                1,
+                1,
+                3,
+                32
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "rolling_feat_spec_buf",
+            "shape": [
+                1,
+                2,
+                3,
+                96
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "rolling_c0_buf",
+            "shape": [
+                1,
+                64,
+                5,
+                96
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "rolling_spec_buf_x",
+            "shape": [
+                5,
+                513,
+                2
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "rolling_spec_buf_y",
+            "shape": [
+                7,
+                513,
+                2
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "enc_hidden",
+            "shape": [
+                1,
+                1,
+                256
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "erb_dec_hidden",
+            "shape": [
+                2,
+                1,
+                256
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "df_dec_hidden",
+            "shape": [
+                2,
+                1,
+                256
+            ],
+            "type": "tensor(float)"
+        }
+    ],
+    "outputs": [
+        {
+            "name": "enhanced_audio_frame",
+            "shape": [
+                512
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_erb_norm_state",
+            "shape": [
+                32
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_band_unit_norm_state",
+            "shape": [
+                1,
+                96,
+                1
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_analysis_mem",
+            "shape": [
+                512
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_synthesis_mem",
+            "shape": [
+                512
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_rolling_erb_buf",
+            "shape": [
+                1,
+                1,
+                3,
+                32
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_rolling_feat_spec_buf",
+            "shape": [
+                1,
+                2,
+                3,
+                96
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_rolling_c0_buf",
+            "shape": [
+                1,
+                64,
+                5,
+                96
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_rolling_spec_buf_x",
+            "shape": [
+                5,
+                513,
+                2
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_rolling_spec_buf_y",
+            "shape": [
+                7,
+                513,
+                2
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_enc_hidden",
+            "shape": [
+                1,
+                1,
+                256
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_erb_dec_hidden",
+            "shape": [
+                2,
+                1,
+                256
+            ],
+            "type": "tensor(float)"
+        },
+        {
+            "name": "new_df_dec_hidden",
+            "shape": [
+                2,
+                1,
+                256
+            ],
+            "type": "tensor(float)"
+        }
+    ],
+    "hop_size": 512,
+    "fft_size": 960,
+    "frame_size": 512,
+    "state_input_names": [
+        "erb_norm_state",
+        "band_unit_norm_state",
+        "analysis_mem",
+        "synthesis_mem",
+        "rolling_erb_buf",
+        "rolling_feat_spec_buf",
+        "rolling_c0_buf",
+        "rolling_spec_buf_x",
+        "rolling_spec_buf_y",
+        "enc_hidden",
+        "erb_dec_hidden",
+        "df_dec_hidden"
+    ]
+}
