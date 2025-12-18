@@ -1,5 +1,5 @@
-import * as ort from 'onnxruntime-node';
-import metadata from './model_metadata.json';
+import * as ort from 'onnxruntime-react-native';
+import metadata from '@/assets/model/model_metadata.json';
 
 export class DeepFilterNet {
     private session: ort.InferenceSession | null = null;
@@ -182,4 +182,4 @@ async function main() {
     // Here you would save the 'enhancedAudio' Float32Array to a WAV file.
 }
 
-main().catch(console.error);
+// main().catch(console.error);

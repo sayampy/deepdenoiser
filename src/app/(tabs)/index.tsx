@@ -21,7 +21,7 @@ export default function HomeScreen() {
   const handleImportFile = async () => {
     try {
       const result: any = await DocumentPicker.getDocumentAsync({
-        type: ["audio/*", "video/*"],
+        type: ["audio/*"], // "video/*"],
         copyToCacheDirectory: true, // Let Expo handle copying to a temporary cache
       });
 

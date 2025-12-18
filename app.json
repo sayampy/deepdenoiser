@@ -9,7 +9,8 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.sayampy.deepdenoiser"
     },
     "android": {
       "adaptiveIcon": {
@@ -33,6 +34,14 @@
     "plugins": [
       "expo-router",
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "dependencies": ["com.linkedin.litr:litr:1.5.5"]
+          }
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/images/splash-icon.png",
@@ -53,8 +62,7 @@
           ],
           "androidForegroundService": true
         }
-      ],
-      "onnxruntime-react-native"
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

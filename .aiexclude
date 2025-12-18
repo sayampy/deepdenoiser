@@ -5,6 +5,7 @@ bun.lock
 node_modules/
 .expo/
 .qodo/
-android/
+
 app-example/
 eslint.config.js
+ios/
