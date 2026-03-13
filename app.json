@@ -37,7 +37,9 @@
         "expo-build-properties",
         {
           "android": {
-            "dependencies": ["com.linkedin.litr:litr:1.5.5"]
+            "dependencies": [
+              "com.linkedin.litr:litr:1.5.5"
+            ]
           }
         }
       ],
@@ -62,7 +64,8 @@
           ],
           "androidForegroundService": true
         }
-      ]
+      ],
+      "expo-font"
     ],
     "experiments": {
       "typedRoutes": true,
