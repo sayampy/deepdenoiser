@@ -26,7 +26,6 @@
     "expo-haptics": "~15.0.7",
     "expo-image": "~3.0.10",
     "expo-linking": "~8.0.8",
-    "expo-modules-core": "~3.0.29",
     "expo-router": "~6.0.23",
     "expo-splash-screen": "~31.0.10",
     "expo-status-bar": "~3.0.8",
@@ -52,5 +51,7 @@
     "typescript": "~5.9.3"
   },
   "private": true,
-  "trustedDependencies": ["unrs-resolver"]
+  "trustedDependencies": [
+    "unrs-resolver"
+  ]
 }
