@@ -82,7 +82,7 @@ class MediaProcessor(private val context: Context) {
     // Bypasses Litr. Drops down to MediaCodec to get raw byte buffers.
     suspend fun decodeToPCM(inputPath: String, outputPath: String) = withContext(Dispatchers.IO) {
         val extractor = MediaExtractor()
-        extractor.setDataSource(inputPath)
+        extractor.setDataSource(context, Uri.parse(inputPath), null)
 
         var audioTrackIndex = -1
         var format: MediaFormat? = null
@@ -134,9 +134,15 @@ class MediaProcessor(private val context: Context) {
                     outIndex >= 0 -> {
                         val outBuffer = codec.getOutputBuffer(outIndex)!!
                         val chunk = ByteArray(info.size)
-                        outBuffer.get(chunk)
-                        outBuffer.clear()
-                        fos.write(chunk)
+
+                        // Respect buffer offset and size
+                        if (info.size > 0) {
+                            outBuffer.position(info.offset)
+                            outBuffer.limit(info.offset + info.size)
+                            outBuffer.get(chunk)
+                            fos.write(chunk)
+                        }
+
                         codec.releaseOutputBuffer(outIndex, false)
                         if ((info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) break
                     }
