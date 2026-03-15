@@ -74,7 +74,7 @@ export default function HomeScreen() {
       setIsLoading(false);
       Alert.alert(
         "Error",
-        "An unexpected error occurred while importing the file."
+        "An unexpected error occurred while importing the file.",
       );
       console.error("Error importing file:", error);
     }
@@ -90,7 +90,7 @@ export default function HomeScreen() {
     console.log("Proceeding with file:", tempFile.uri);
     setIsLoading(false);
     router.push({
-      pathname: "processing/process",
+      pathname: "/processing/process",
       params: { fileuri: tempFile.uri },
     });
   };

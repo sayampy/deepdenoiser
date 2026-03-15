@@ -10,26 +10,16 @@ public class AudioProcessorModule: Module {
     // The module will be accessible from `requireNativeModule('AudioProcessorModule')` in JavaScript.
     Name("AudioProcessorModule")
 
-    // Defines constant property on the module.
-    Constant("PI") {
-      Double.pi
+    AsyncFunction("extractAndTranscodeAudio") { (input: String, output: String, bitrate: Int?) in
+      throw NSError(domain: "AudioProcessorModule", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not implemented on iOS yet"])
     }
 
-    // Defines event names that the module can send to JavaScript.
-    Events("onChange")
-
-    // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
-    Function("hello") {
-      return "Hello world! 👋"
+    AsyncFunction("decodeToPCM") { (input: String, output: String) in
+      throw NSError(domain: "AudioProcessorModule", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not implemented on iOS yet"])
     }
 
-    // Defines a JavaScript function that always returns a Promise and whose native code
-    // is by default dispatched on the different thread than the JavaScript runtime runs on.
-    AsyncFunction("setValueAsync") { (value: String) in
-      // Send an event to JavaScript.
-      self.sendEvent("onChange", [
-        "value": value
-      ])
+    AsyncFunction("pcmToWav") { (pcmInput: String, wavOutput: String, sampleRate: Int, channels: Int, bitDepth: Int) in
+      throw NSError(domain: "AudioProcessorModule", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not implemented on iOS yet"])
     }
 
     // Enables the module to be used as a native view. Definition components that are accepted as part of the

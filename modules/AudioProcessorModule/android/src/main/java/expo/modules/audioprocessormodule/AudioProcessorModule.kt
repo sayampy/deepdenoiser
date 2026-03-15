@@ -6,12 +6,12 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-class MediaEngineModule : Module() {
+class AudioProcessorModule : Module() {
     // Dedicate a scope to prevent stalling the main thread during heavy I/O
     private val moduleScope = CoroutineScope(Dispatchers.Default)
 
     override fun definition() = ModuleDefinition {
-        Name("MediaProcessor")
+        Name("AudioProcessorModule")
 
         AsyncFunction("extractAndTranscodeAudio") { input: String, output: String, bitrate: Int?, promise: expo.modules.kotlin.Promise ->
             moduleScope.launch {
