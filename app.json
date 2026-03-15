@@ -37,9 +37,7 @@
         "expo-build-properties",
         {
           "android": {
-            "dependencies": [
-              "com.linkedin.litr:litr:1.5.5"
-            ]
+            "dependencies": ["com.linkedin.litr:litr:1.5.5"]
           }
         }
       ],
@@ -53,16 +51,6 @@
           "dark": {
             "backgroundColor": "#000000"
           }
-        }
-      ],
-      [
-        "react-native-audio-api",
-        {
-          "android.permission": [
-            "android.permission.FOREGROUND_SERVICE",
-            "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
-          ],
-          "androidForegroundService": true
         }
       ],
       "expo-font"

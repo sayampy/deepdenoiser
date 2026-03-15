@@ -8,8 +8,7 @@ import android.net.Uri
 import com.linkedin.android.litr.MediaTransformer
 import com.linkedin.android.litr.TransformationOptions
 import com.linkedin.android.litr.analytics.TrackTransformationInfo
-import com.linkedin.android.litr.listener.TransformationListener
-import com.linkedin.android.litr.utils.TransformationUtil
+import com.linkedin.android.litr.TransformationListener
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
