@@ -1,5 +1,5 @@
-import * as ort from "onnxruntime-react-native";
 import metadata from "@/assets/model/model_metadata.json";
+import * as ort from "onnxruntime-react-native";
 
 export class DeepFilterNet {
   private session: ort.InferenceSession | null = null;
