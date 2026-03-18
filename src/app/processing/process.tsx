@@ -1,17 +1,17 @@
 import AudioPlayer from "@/src/components/audioPlayer";
 import { SPACING, Styles } from "@/src/constants/theme";
-import { WavtoPCM, toWav, PCMtoWav } from "@/src/scripts/formatHandler";
+import { PCMtoWav, WavtoPCM, toWav } from "@/src/scripts/formatHandler";
+import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  ActivityIndicator,
 } from "react-native";
-import { Asset } from "expo-asset";
 
 
 import { DeepFilterNet } from "@/src/scripts/Denoiser";

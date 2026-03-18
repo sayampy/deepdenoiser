@@ -63,7 +63,9 @@
           "isAccessMediaLocationEnabled": true,
           "granularPermissions": ["audio", "video"]
         }
-      ]
+      ],
+      "onnxruntime-react-native",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true,

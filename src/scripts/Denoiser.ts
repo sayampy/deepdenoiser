@@ -1,8 +1,8 @@
 import metadata from "@/assets/model/model_metadata.json";
-import * as ort from "onnxruntime-react-native";
+import { InferenceSession, Tensor } from "onnxruntime-react-native";
 
 export class DeepFilterNet {
-  private session: ort.InferenceSession | null = null;
+  private session: InferenceSession | null = null;
   private readonly hopSize: number;
   private readonly fftSize: number;
   private readonly stateInputNames: string[];
@@ -35,13 +35,13 @@ export class DeepFilterNet {
 
   public async loadModel(modelPath: string): Promise<void> {
     try {
-      const options: ort.InferenceSession.SessionOptions = {
+      const options: InferenceSession.SessionOptions = {
         executionProviders: ["cpu"],
         graphOptimizationLevel: "all",
         interOpNumThreads: 1,
         intraOpNumThreads: 1,
       };
-      this.session = await ort.InferenceSession.create(modelPath, options);
+      this.session = await InferenceSession.create(modelPath, options);
       console.log(`Successfully loaded model from ${modelPath}`);
       // console.log(`Using provider: ${this.session.providers[0]}`);
     } catch (e) {
@@ -51,13 +51,13 @@ export class DeepFilterNet {
   }
 
   private initStates(): {
-    states: ort.Tensor | ort.Tensor[];
-    attenLimDb: ort.Tensor;
+    states: Tensor | Tensor[];
+    attenLimDb: Tensor;
   } {
-    let states: ort.Tensor | ort.Tensor[];
+    let states: Tensor | Tensor[];
 
     if (this.hasSingleStateTensor) {
-      states = new ort.Tensor("float32", new Float32Array(this.statesLen), [
+      states = new Tensor("float32", new Float32Array(this.statesLen), [
         this.statesLen,
       ]);
     } else {
@@ -68,12 +68,12 @@ export class DeepFilterNet {
       for (const meta of stateInputsMeta) {
         const size = meta.shape.reduce((a, b) => a * b, 1);
         states.push(
-          new ort.Tensor("float32", new Float32Array(size), meta.shape),
+          new Tensor("float32", new Float32Array(size), meta.shape),
         );
       }
     }
 
-    const attenLimDb = new ort.Tensor("float32", new Float32Array([0.0]), [1]);
+    const attenLimDb = new Tensor("float32", new Float32Array([0.0]), [1]);
     return { states, attenLimDb };
   }
 
@@ -108,7 +108,7 @@ export class DeepFilterNet {
       // The model expects a fixed frame size. If the last frame is smaller, it should be padded.
       const inputFrameData = new Float32Array(this.hopSize);
       inputFrameData.set(frame);
-      const inputFrame = new ort.Tensor("float32", inputFrameData, [
+      const inputFrame = new Tensor("float32", inputFrameData, [
         this.hopSize,
       ]);
 
@@ -118,9 +118,9 @@ export class DeepFilterNet {
       }
 
       if (this.hasSingleStateTensor) {
-        feeds["states"] = states as ort.Tensor;
+        feeds["states"] = states as Tensor;
       } else {
-        (states as ort.Tensor[]).forEach((stateTensor, idx) => {
+        (states as Tensor[]).forEach((stateTensor, idx) => {
           feeds[this.stateInputNames[idx]] = stateTensor;
         });
       }
@@ -134,7 +134,7 @@ export class DeepFilterNet {
       if (this.hasSingleStateTensor) {
         states = results[this.outputNames[1]]; // new_states is the second output
       } else {
-        const newStates: ort.Tensor[] = [];
+        const newStates: Tensor[] = [];
         for (let j = 0; j < this.stateInputNames.length; j++) {
           // new states are after the enhanced frame output
           newStates.push(results[this.outputNames[j + 1]]);
