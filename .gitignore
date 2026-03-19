@@ -43,3 +43,5 @@ app-example
 /android
 
 .aiexclude
+.geminiignore
+GEMINI.md

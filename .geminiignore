@@ -1,0 +1,11 @@
+.vscode/
+expo-env.d.ts
+bun.lock
+.gitignore
+node_modules/
+.expo/
+.qodo/
+
+app-example/
+eslint.config.js
+ios/

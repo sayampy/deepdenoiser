@@ -1,6 +1,7 @@
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons"; // Expo's built-in icon library
 import * as DocumentPicker from "expo-document-picker";
+
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
@@ -12,16 +13,16 @@ import {
   View,
 } from "react-native";
 
+
 export default function HomeScreen() {
   const router = useRouter();
   // const params = useLocalSearchParams();
   const [tempFile, setTempFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-
   const handleImportFile = async () => {
     try {
       const result: any = await DocumentPicker.getDocumentAsync({
-        type: ["audio/*", "video/*"],
+        type: ["audio/*"], // "video/*"],
         copyToCacheDirectory: true, // Let Expo handle copying to a temporary cache
       });
 
@@ -74,7 +75,7 @@ export default function HomeScreen() {
       setIsLoading(false);
       Alert.alert(
         "Error",
-        "An unexpected error occurred while importing the file."
+        "An unexpected error occurred while importing the file.",
       );
       console.error("Error importing file:", error);
     }
@@ -90,7 +91,7 @@ export default function HomeScreen() {
     console.log("Proceeding with file:", tempFile.uri);
     setIsLoading(false);
     router.push({
-      pathname: "processing/process",
+      pathname: "/processing/process",
       params: { fileuri: tempFile.uri },
     });
   };
