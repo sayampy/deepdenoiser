@@ -1,6 +1,8 @@
 import AudioPlayer from "@/src/components/audioPlayer";
 import { SPACING, Styles } from "@/src/constants/theme";
+import { DeepFilterNet } from "@/src/scripts/Denoiser";
 import { ArraytoPCM, PCMtoArray, PCMtoWav, WavtoPCM, toWav } from "@/src/scripts/formatHandler";
+import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -69,7 +71,7 @@ export default function ProcessScreen() {
       const float32Array = await PCMtoArray(pcmFile);
       // 3. Denoise
       setProgressText("Loading model...");
-      /*
+
       const denoiser = new DeepFilterNet();
       const modelAsset = Asset.fromModule(
         require("@/assets/model/denoiser_model.ort"),
@@ -81,8 +83,8 @@ export default function ProcessScreen() {
       const denoisedArray = await denoiser.denoise(float32Array, (p) => {
         setProgress(p);
       });
-      */
-      const denoisedArray = float32Array;
+
+      // const denoisedArray = float32Array;
 
       // 4. Convert Float32Array back to PCM
       setProgressText("Saving denoised audio...");
