@@ -1,7 +1,6 @@
 import AudioPlayer from "@/src/components/audioPlayer";
 import { SPACING, Styles } from "@/src/constants/theme";
-import { PCMtoWav, WavtoPCM, toWav } from "@/src/scripts/formatHandler";
-import { Asset } from "expo-asset";
+import { ArraytoPCM, PCMtoArray, PCMtoWav, WavtoPCM, toWav } from "@/src/scripts/formatHandler";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
@@ -14,7 +13,6 @@ import {
 } from "react-native";
 
 
-import { DeepFilterNet } from "@/src/scripts/Denoiser";
 
 
 export default function ProcessScreen() {
@@ -55,6 +53,8 @@ export default function ProcessScreen() {
   const handleDenoise = async () => {
     if (!tempFile) return;
 
+    const chunkSize = 8192; // Process in chunks of 8KB
+
     setDenoising(true);
     setProgress(0);
     setProgressText("Initializing...");
@@ -66,18 +66,10 @@ export default function ProcessScreen() {
 
       // 2. Read PCM and convert to Float32Array
       setProgressText("Reading audio data...");
-      const pcmDataB64 = await pcmFile.base64();
-      const pcmData = atob(pcmDataB64);
-      const pcmArray = new Int16Array(
-        pcmData.split("").map((c) => c.charCodeAt(0)),
-      );
-      const float32Array = new Float32Array(pcmArray.length);
-      for (let i = 0; i < pcmArray.length; i++) {
-        float32Array[i] = pcmArray[i] / 32768.0;
-      }
-
+      const float32Array = await PCMtoArray(pcmFile);
       // 3. Denoise
       setProgressText("Loading model...");
+      /*
       const denoiser = new DeepFilterNet();
       const modelAsset = Asset.fromModule(
         require("@/assets/model/denoiser_model.ort"),
@@ -89,26 +81,31 @@ export default function ProcessScreen() {
       const denoisedArray = await denoiser.denoise(float32Array, (p) => {
         setProgress(p);
       });
+      */
+      const denoisedArray = float32Array;
 
       // 4. Convert Float32Array back to PCM
       setProgressText("Saving denoised audio...");
-      const denoisedPcmArray = new Int16Array(denoisedArray.length);
-      for (let i = 0; i < denoisedArray.length; i++) {
-        denoisedPcmArray[i] = Math.max(
-          -32768,
-          Math.min(32767, Math.floor(denoisedArray[i] * 32768.0)),
-        );
-      }
-      const denoisedPcmData = String.fromCharCode.apply(
-        null,
-        Array.from(new Uint8Array(denoisedPcmArray.buffer)),
-      );
-      const denoisedPcmB64 = btoa(denoisedPcmData);
-      const denoisedPcmFile = new fs.File(
-        fs.Paths.cache,
-        "denoised_output.pcm",
-      );
-      await denoisedPcmFile.write(denoisedPcmB64);
+      const denoisedPcmFile = await ArraytoPCM(denoisedArray);
+      // const denoisedPcmArray = new Int16Array(denoisedArray.length);
+      // for (let i = 0; i < denoisedArray.length; i++) {
+      //   denoisedPcmArray[i] = Math.max(
+      //     -32768,
+      //     Math.min(32767, Math.floor(denoisedArray[i] * 32768.0)),
+      //   );
+      // }
+      // const uint8Array = new Uint8Array(denoisedPcmArray.buffer);
+      // let denoisedPcmData = "";
+      // for (let i = 0; i < uint8Array.length; i += chunkSize) {
+      //   const chunk = uint8Array.subarray(i, i + chunkSize);
+      //   denoisedPcmData += String.fromCharCode.apply(null, Array.from(chunk));
+      // }
+      // const denoisedPcmB64 = btoa(denoisedPcmData);
+      // const denoisedPcmFile = new fs.File(
+      //   fs.Paths.cache,
+      //   "denoised_output.pcm",
+      // );
+      // await denoisedPcmFile.write(denoisedPcmB64);
 
       // 5. Convert PCM to WAV
       setProgressText("Finalizing...");
@@ -155,7 +152,7 @@ export default function ProcessScreen() {
           <AudioPlayer uri={denoisedFile.uri} />
         </View>
       )}
-      <TouchableOpacity
+      {!denoising && <TouchableOpacity
         style={[
           Styles.button,
           {
@@ -170,7 +167,7 @@ export default function ProcessScreen() {
         disabled={denoising}
       >
         <Text style={Styles.buttonText}>Start Denoising</Text>
-      </TouchableOpacity>
+      </TouchableOpacity>}
       <TouchableOpacity
         style={[
           Styles.button,
