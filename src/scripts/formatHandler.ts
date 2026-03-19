@@ -1,7 +1,6 @@
 import {
   decodeToPCM,
-  extractAndTranscodeAudio,
-  pcmToWav,
+  extractAndTranscodeAudio
 } from "@/modules/AudioProcessorModule";
 import * as fs from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
@@ -52,20 +51,47 @@ export async function WavtoPCM(file: fs.File): Promise<fs.File> {
 export async function PCMtoWav(file: fs.File): Promise<fs.File> {
   console.log("Converting to WAV:", file.uri);
   try {
-    // The native module handles file creation and returns the new URI
+    const pcmBase64 = await file.base64();
+    const binaryString = atob(pcmBase64);
+    const len = binaryString.length;
+
+    // Create WAV Header (44 bytes)
+    const buffer = new ArrayBuffer(44);
+    const view = new DataView(buffer);
+    const writeString = (view: DataView, offset: number, text: string) => {
+      for (let i = 0; i < text.length; i++) {
+        view.setUint8(offset + i, text.charCodeAt(i));
+      }
+    };
+
+    writeString(view, 0, "RIFF");
+    view.setUint32(4, 36 + len, true); // ChunkSize
+    writeString(view, 8, "WAVE");
+    writeString(view, 12, "fmt ");
+    view.setUint32(16, 16, true); // Subchunk1Size
+    view.setUint16(20, 1, true); // AudioFormat
+    view.setUint16(22, 1, true); // NumChannels
+    view.setUint32(24, 48000, true); // SampleRate
+    view.setUint32(28, 96000, true); // ByteRate
+    view.setUint16(32, 2, true); // BlockAlign
+    view.setUint16(34, 16, true); // BitsPerSample
+    writeString(view, 36, "data");
+    view.setUint32(40, len, true); // Subchunk2Size
+
+    // Combine Header and PCM
+    const wavData = new Uint8Array(44 + len);
+    wavData.set(new Uint8Array(buffer), 0);
+    for (let i = 0; i < len; i++) {
+      wavData[44 + i] = binaryString.charCodeAt(i);
+    }
+
     const outputFile = new fs.File(
       fs.Paths.cache,
       `Denoised_${file.modificationTime}.wav`,
     );
     const outputUri = outputFile.uri;
-    // console.log("Successfully converted to WAV at", outputUri)
-    await pcmToWav(
-      file.uri.replace("file://", ""),
-      outputUri.replace("file://", ""),
-      48000,
-      1,
-      16,
-    );
+    await outputFile.write(wavData);
+
     try {
       const asset = await MediaLibrary.createAssetAsync(outputUri);
       const album = await MediaLibrary.getAlbumAsync("AudioDenoiser");

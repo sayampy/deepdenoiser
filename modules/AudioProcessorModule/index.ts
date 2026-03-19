@@ -26,8 +26,8 @@ export async function decodeToPCM(
 export async function pcmToWav(
   pcmUri: string,
   wavUri: string,
-  sampleRate: number = 44100,
-  channels: number = 2,
+  sampleRate: number = 48000,
+  channels: number = 1,
   bitDepth: number = 16,
 ): Promise<string> {
   return await AudioProcessorModule.pcmToWav(

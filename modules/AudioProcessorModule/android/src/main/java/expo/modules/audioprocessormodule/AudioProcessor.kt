@@ -282,7 +282,7 @@ class MediaProcessor(private val context: Context) {
     }
 
     private fun createAudioFormat(bitrate: Int): MediaFormat {
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 44100, 2)
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 48000, 1)
         format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
         return format
     }
