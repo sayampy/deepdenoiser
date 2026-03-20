@@ -1,18 +1,106 @@
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useEffect, useState } from "react";
+import * as SplashScreen from "expo-splash-screen";
+import * as MediaLibrary from "expo-media-library";
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+} from "react-native";
+import { COLORS, Styles, FONT_SIZE } from "@/src/constants/theme";
+import { Feather } from "@expo/vector-icons";
 
-// export const unstable_settings = {
-//   initialRouteName:"(tabs)"
-// };
-export function RootLayout() {
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
+
+export default function RootLayout() {
+  const [appIsReady, setAppIsReady] = useState(false);
+  const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+
+  useEffect(() => {
+    async function prepare() {
+      try {
+        // Pre-load fonts, make any API calls you need here
+        // For now just artificial delay to simulate loading or permission check
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch (e) {
+        console.warn(e);
+      } finally {
+        setAppIsReady(true);
+        await SplashScreen.hideAsync();
+      }
+    }
+
+    prepare();
+  }, []);
+
+  if (!appIsReady) {
+    return null;
+  }
+
+  // Handle Permissions
+  if (!permissionResponse) {
+    // Permission response is still loading
+    return (
+      <View style={[Styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+      </View>
+    );
+  }
+
+  if (!permissionResponse.granted) {
+    return (
+      <View style={[Styles.container, styles.centered]}>
+        <Feather
+          name="shield-off"
+          size={64}
+          color={COLORS.error}
+          style={{ marginBottom: 20 }}
+        />
+        <Text style={styles.permissionTitle}>Permissions Required</Text>
+        <Text style={styles.permissionSubtitle}>
+          DeepDenoiser needs access to your media library to import and save
+          audio files.
+        </Text>
+        <TouchableOpacity style={Styles.button} onPress={requestPermission}>
+          <Text style={Styles.buttonText}>Grant Permission</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
-    <SafeAreaView>
-      <StatusBar style="dark" />
-      <Stack initialRouteName="/index" screenOptions={{ headerShown: false }}>
+    <>
+      <StatusBar style="light" />
+      <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="processing" />
       </Stack>
-    </SafeAreaView>
+    </>
   );
 }
+
+const styles = StyleSheet.create({
+  centered: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 40,
+  },
+  permissionTitle: {
+    fontSize: FONT_SIZE.heading,
+    fontWeight: "bold",
+    color: COLORS.text,
+    marginBottom: 10,
+    textAlign: "center",
+  },
+  permissionSubtitle: {
+    fontSize: FONT_SIZE.body,
+    color: COLORS.subtext,
+    textAlign: "center",
+    marginBottom: 30,
+    lineHeight: 22,
+  },
+});

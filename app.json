@@ -12,9 +12,14 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.sayampy.deepdenoiser"
     },
+    "splash": {
+      "backgroundColor": "#010100",
+      "image": "./assets/images/splash.png",
+      "resizeMode": "contain"
+    },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#010100",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
