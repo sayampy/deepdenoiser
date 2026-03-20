@@ -1,129 +1,126 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
-
 import { Platform, StyleSheet } from "react-native";
 
-// const tintColorLight = '#0a7ea4';
-// const tintColorDark = '#fff';
-
 export const COLORS = {
-  primary: "#00bcd4",
-  secondary: "#89b4b7ff",
-  background: "#121212",
-  text: "#fff",
-  subtext: "#eaeaea",
-  white: "#fff",
-  error: "#d9534f",
+  primary: "#00E5FF", // Vibrant Cyan
+  secondary: "#1E293B", // Deep Slate
+  accent: "#F59E0B", // Amber
+  background: "#0F172A", // Dark Navy
+  surface: "#1E293B", // Lighter Navy for cards
+  text: "#F8FAFC", // Off White
+  subtext: "#94A3B8", // Slate Blue/Gray
+  white: "#FFFFFF",
+  error: "#EF4444", // Bright Red
+  success: "#10B981", // Emerald Green
+  border: "#334155",
 };
 
 export const FONTS = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: "system-ui",
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: "ui-serif",
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: "ui-rounded",
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: "ui-monospace",
+    sans: "System",
+    serif: "Georgia",
+    rounded: "System",
+    mono: "Courier",
   },
   default: {
-    sans: "normal",
+    sans: "sans-serif",
     serif: "serif",
-    rounded: "normal",
+    rounded: "sans-serif",
     mono: "monospace",
-  },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded:
-      "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
   },
 });
 
 export const FONT_SIZE = {
-  largeTitle: 32,
+  largeTitle: 34,
   title: 24,
-  heading: 18,
+  heading: 20,
   body: 16,
   small: 14,
   xsmall: 12,
 };
 
 export const SPACING = {
+  xsmall: 4,
   small: 8,
   medium: 16,
   large: 24,
   xlarge: 32,
+  xxlarge: 48,
 };
+
 export const Styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: COLORS.background,
-    alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: SPACING.medium,
-    paddingTop: SPACING.large,
+    paddingTop: Platform.OS === 'ios' ? 0 : SPACING.large,
+  },
+  contentContainer: {
     paddingBottom: SPACING.xlarge,
   },
-
   header: {
+    marginTop: SPACING.xxlarge,
+    marginBottom: SPACING.xlarge,
     alignItems: "center",
-    marginTop: 60,
   },
   title: {
-    fontFamily: FONTS.rounded,
     fontSize: FONT_SIZE.largeTitle,
-    fontWeight: "bold",
+    fontWeight: "800",
     color: COLORS.primary,
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: FONT_SIZE.body,
-    color: COLORS.secondary,
+    color: COLORS.subtext,
     textAlign: "center",
+    marginTop: SPACING.small,
+    lineHeight: 22,
   },
-  bodyText: { color: COLORS.text },
-  subText: { color: COLORS.subtext },
-
+  card: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 16,
+    padding: SPACING.medium,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
+  },
   button: {
     flexDirection: "row",
     backgroundColor: COLORS.primary,
-    minWidth: 160,
-    /* paddingVertical: SPACING.medium,
-    paddingHorizontal: SPACING.small, */
-    borderRadius: 30,
+    height: 56,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    // Shadow for iOS
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    // Elevation for Android
-    elevation: 5,
+    paddingHorizontal: SPACING.large,
   },
-  disabledButton: {
-    backgroundColor: COLORS.secondary,
-    elevation: 0,
-    shadowOpacity: 0,
+  buttonSecondary: {
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: COLORS.primary,
   },
   buttonText: {
-    color: COLORS.text,
+    color: COLORS.background,
     fontSize: FONT_SIZE.body,
-    fontWeight: "600",
-    /* marginHorizontal: 8, */
+    fontWeight: "700",
   },
-  card: {
-    backgroundColor: COLORS.secondary,
-    /* borderWidth: 1,
-    borderColor: theme.COLORS.primary, */
+  buttonTextSecondary: {
+    color: COLORS.primary,
+  },
+  disabledButton: {
+    opacity: 0.5,
   },
   icon: {
-    width: 24,
-    height: 24,
-    marginHorizontal: 8,
+    marginRight: SPACING.small,
+  },
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  centered: {
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

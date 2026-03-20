@@ -1,5 +1,5 @@
 import * as theme from "@/src/constants/theme";
-import { MaterialIcons } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { Audio } from "expo-av";
 import React, { useEffect, useState } from "react";
 import {
@@ -13,7 +13,6 @@ import {
   Gesture,
   GestureDetector,
   GestureHandlerRootView,
-  State,
 } from "react-native-gesture-handler";
 import Animated, {
   useAnimatedStyle,
@@ -27,21 +26,17 @@ interface AudioPlayerProps {
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
   const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState<number | null>(null);
-  const [position, setPosition] = useState<number | null>(null);
-  const progressBarWidth = Dimensions.get("window").width * 0.6;
+  const [duration, setDuration] = useState<number>(0);
+  const [position, setPosition] = useState<number>(0);
+  const progressBarWidth = Dimensions.get("window").width * 0.5;
   const progress = useSharedValue(0);
   const isSeeking = useSharedValue(false);
-  // const translationX = useSharedValue(0);
+
   const pan = Gesture.Pan()
     .onBegin(() => {
       isSeeking.value = true;
-      // translationX.value = e.absoluteX;
-      // setIsPlaying(false);
     })
     .onChange((event: any) => {
-      // Should be the actual width of the progress bar
-      // translationX.value += event.translationX;
       const newProgress =
         (progress.value * progressBarWidth + event.changeX) / progressBarWidth;
       progress.value = Math.max(0, Math.min(1, newProgress));
@@ -52,17 +47,21 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
         const newPosition = progress.value * duration;
         sound.setPositionAsync(newPosition);
       }
-      // setIsPlaying(true);
     })
     .runOnJS(true);
+
   useEffect(() => {
     const loadSound = async () => {
       if (!uri) return;
-      const { sound } = await Audio.Sound.createAsync({ uri });
-      setSound(sound);
-      const status = await sound.getStatusAsync();
-      if (status.isLoaded) {
-        setDuration(status.durationMillis || 0);
+      try {
+        const { sound } = await Audio.Sound.createAsync({ uri });
+        setSound(sound);
+        const status = await sound.getStatusAsync();
+        if (status.isLoaded) {
+          setDuration(status.durationMillis || 0);
+        }
+      } catch (error) {
+        console.error("Error loading sound:", error);
       }
     };
 
@@ -84,7 +83,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
   const onPlaybackStatusUpdate = (status: any) => {
     if (status.isLoaded) {
       setPosition(status.positionMillis);
-      setDuration(status.durationMillis);
+      setDuration(status.durationMillis || 0);
       if (!isSeeking.value) {
         progress.value = status.positionMillis / (status.durationMillis || 1);
       }
@@ -107,11 +106,11 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
     setIsPlaying(!isPlaying);
   };
 
-  const formatTime = (millis: number | null) => {
-    if (millis === null) return "0:00";
-    const minutes = Math.floor(millis / 60000);
-    const seconds = ((millis % 60000) / 1000).toFixed(0);
-    return `${minutes}:${parseInt(seconds) < 10 ? "0" : ""}${seconds}`;
+  const formatTime = (millis: number) => {
+    const totalSeconds = Math.floor(millis / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
   };
 
   const animatedProgressStyle = useAnimatedStyle(() => {
@@ -120,47 +119,32 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
     };
   });
 
-  const onHandlerStateChange = (event: any) => {
-    if (event.nativeEvent.state === State.BEGAN) {
-      isSeeking.value = true;
-    }
-    if (event.nativeEvent.state === State.END) {
-      isSeeking.value = false;
-      if (sound && duration) {
-        const newPosition = progress.value * duration;
-        sound.setPositionAsync(newPosition);
-      }
-    }
-  };
-
   return (
-    <GestureHandlerRootView style={{ height: 200 }}>
+    <GestureHandlerRootView style={styles.root}>
       <View style={styles.container}>
         <TouchableOpacity style={styles.playButton} onPress={handlePlayPause}>
-          <MaterialIcons
-            name={isPlaying ? "pause" : "play-arrow"}
-            size={40}
-            color={theme.COLORS.primary}
-            /*  style={theme.Styles.icon} */
-          />
+          <View style={styles.iconCircle}>
+            <Feather
+              name={isPlaying ? "pause" : "play"}
+              size={24}
+              color={theme.COLORS.background}
+            />
+          </View>
         </TouchableOpacity>
-        <View style={styles.progressContainer}>
-          <Text style={styles.timeText}>{formatTime(position)}</Text>
+        
+        <View style={styles.controlsContainer}>
+          <View style={styles.timeContainer}>
+            <Text style={styles.timeText}>{formatTime(position)}</Text>
+            <Text style={styles.timeText}>{formatTime(duration)}</Text>
+          </View>
+          
           <GestureDetector gesture={pan}>
-            <View style={styles.progressBar}>
-              <Animated.View style={[styles.progress, animatedProgressStyle]} />
+            <View style={styles.progressBarContainer}>
+              <View style={styles.progressBar}>
+                <Animated.View style={[styles.progress, animatedProgressStyle]} />
+              </View>
             </View>
           </GestureDetector>
-          <Text
-            style={[
-              styles.timeText,
-              {
-                /* marginRight: 20 */
-              },
-            ]}
-          >
-            {formatTime(duration)}
-          </Text>
         </View>
       </View>
     </GestureHandlerRootView>
@@ -168,41 +152,57 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
 };
 
 const styles = StyleSheet.create({
+  root: {
+    height: 80,
+    justifyContent: 'center',
+  },
   container: {
-    /* flex: 1, */
-    flexDirection: "row",
-    // alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#112224ff",
-    paddingVertical: theme.SPACING.small,
-    paddingHorizontal: theme.SPACING.large,
-    borderRadius: 30,
-  },
-  playButton: {
-    marginLeft: 0,
-    marginRight: -12,
-  },
-  progressContainer: {
     flexDirection: "row",
     alignItems: "center",
-    width: "100%",
+    backgroundColor: theme.COLORS.surface,
+    paddingVertical: theme.SPACING.medium,
+    paddingHorizontal: theme.SPACING.medium,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: theme.COLORS.border,
+  },
+  playButton: {
+    marginRight: 16,
+  },
+  iconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: theme.COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  controlsContainer: {
+    flex: 1,
+  },
+  timeContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   timeText: {
     color: theme.COLORS.subtext,
     fontSize: theme.FONT_SIZE.xsmall,
-    marginHorizontal: 12,
+    fontWeight: '600',
+  },
+  progressBarContainer: {
+    height: 20,
+    justifyContent: 'center',
   },
   progressBar: {
-    flex: 1,
-    height: 8,
-    backgroundColor: theme.COLORS.secondary,
-    borderRadius: 4,
+    height: 6,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 3,
     overflow: "hidden",
   },
   progress: {
     height: "100%",
     backgroundColor: theme.COLORS.primary,
-    borderRadius: 4,
   },
 });
 

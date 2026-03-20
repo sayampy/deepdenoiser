@@ -1,10 +1,12 @@
 import AudioPlayer from "@/src/components/audioPlayer";
-import { SPACING, Styles } from "@/src/constants/theme";
+import * as theme from "@/src/constants/theme";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
 import { ArraytoPCM, PCMtoArray, PCMtoWav, WavtoPCM, toWav } from "@/src/scripts/formatHandler";
+import { Feather } from "@expo/vector-icons";
 import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -13,9 +15,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
-
-
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ProcessScreen() {
   const router = useRouter();
@@ -25,9 +25,7 @@ export default function ProcessScreen() {
   const [denoising, setDenoising] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
-  const [denoisedFile, setDenoisedFile] = useState<fs.File | null>(
-    null,
-  );
+  const [denoisedFile, setDenoisedFile] = useState<fs.File | null>(null);
 
   useEffect(() => {
     if (!fileuri) {
@@ -55,23 +53,18 @@ export default function ProcessScreen() {
   const handleDenoise = async () => {
     if (!tempFile) return;
 
-    const chunkSize = 8192; // Process in chunks of 8KB
-
     setDenoising(true);
     setProgress(0);
     setProgressText("Initializing...");
 
     try {
-      // 1. Convert WAV to PCM
       setProgressText("Converting to PCM...");
       const pcmFile = await WavtoPCM(tempFile);
 
-      // 2. Read PCM and convert to Float32Array
       setProgressText("Reading audio data...");
       const float32Array = await PCMtoArray(pcmFile);
-      // 3. Denoise
-      setProgressText("Loading model...");
 
+      setProgressText("Loading AI model...");
       const denoiser = new DeepFilterNet();
       const modelAsset = Asset.fromModule(
         require("@/assets/model/denoiser_model.ort"),
@@ -84,36 +77,11 @@ export default function ProcessScreen() {
         setProgress(p);
       });
 
-      // const denoisedArray = float32Array;
-
-      // 4. Convert Float32Array back to PCM
       setProgressText("Saving denoised audio...");
       const denoisedPcmFile = await ArraytoPCM(denoisedArray);
-      // const denoisedPcmArray = new Int16Array(denoisedArray.length);
-      // for (let i = 0; i < denoisedArray.length; i++) {
-      //   denoisedPcmArray[i] = Math.max(
-      //     -32768,
-      //     Math.min(32767, Math.floor(denoisedArray[i] * 32768.0)),
-      //   );
-      // }
-      // const uint8Array = new Uint8Array(denoisedPcmArray.buffer);
-      // let denoisedPcmData = "";
-      // for (let i = 0; i < uint8Array.length; i += chunkSize) {
-      //   const chunk = uint8Array.subarray(i, i + chunkSize);
-      //   denoisedPcmData += String.fromCharCode.apply(null, Array.from(chunk));
-      // }
-      // const denoisedPcmB64 = btoa(denoisedPcmData);
-      // const denoisedPcmFile = new fs.File(
-      //   fs.Paths.cache,
-      //   "denoised_output.pcm",
-      // );
-      // await denoisedPcmFile.write(denoisedPcmB64);
 
-      // 5. Convert PCM to WAV
       setProgressText("Finalizing...");
-      const finalWavFile = await PCMtoWav(
-        denoisedPcmFile
-      );
+      const finalWavFile = await PCMtoWav(denoisedPcmFile);
       setDenoisedFile(finalWavFile);
     } catch (error) {
       console.error("Error during denoising:", error);
@@ -122,135 +90,173 @@ export default function ProcessScreen() {
       setProgressText("");
     }
   };
+
   if (isLoading) {
     return (
-      <View style={[Styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#2271e0ff" />
-        <Text style={styles.loadingText}>Processing audio...</Text>
-      </View>
+      <SafeAreaView style={[theme.Styles.container, theme.Styles.centered]}>
+        <ActivityIndicator size="large" color={theme.COLORS.primary} />
+        <Text style={styles.loadingText}>Preparing audio...</Text>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={[Styles.container]}>
-      <Text style={[Styles.header, Styles.title, { marginVertical: 15 }]}>
-        Ready to Process
-      </Text>
-      <View style={{ marginTop: 15, marginBottom: 20 }}>
-        {tempFile && <AudioPlayer uri={tempFile.uri} />}
+    <SafeAreaView style={theme.Styles.container}>
+      <StatusBar style="light" />
+      <View style={[theme.Styles.header, styles.headerContainer]}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          disabled={denoising}
+        >
+          <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
+        </TouchableOpacity>
+        <Text style={theme.Styles.title}>Process Audio</Text>
       </View>
 
-      {denoising && (
-        <View style={styles.progressContainer}>
-          <Text style={styles.progressText}>{`${progressText} ${progress}%`}</Text>
-          <View style={styles.progressBarBackground}>
-            <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+      <View style={styles.content}>
+        <View style={theme.Styles.card}>
+          <Text style={styles.sectionTitle}>Original Audio</Text>
+          <View style={styles.playerContainer}>
+            {tempFile && <AudioPlayer uri={tempFile.uri} />}
           </View>
         </View>
-      )}
-      {denoisedFile && (
-        <View style={{ marginTop: 15, marginBottom: 20 }}>
-          <Text style={styles.subtitle}>Denoised Audio</Text>
-          <AudioPlayer uri={denoisedFile.uri} />
-        </View>
-      )}
-      {!denoising && <TouchableOpacity
-        style={[
-          Styles.button,
-          {
-            width: "60%",
-            paddingVertical: SPACING.small,
-            paddingHorizontal: SPACING.medium,
-            marginBottom: 10,
-          },
-          denoising && styles.disabledButton,
-        ]}
-        onPress={handleDenoise}
-        disabled={denoising}
-      >
-        <Text style={Styles.buttonText}>Start Denoising</Text>
-      </TouchableOpacity>}
-      <TouchableOpacity
-        style={[
-          Styles.button,
-          {
-            width: "60%",
-            paddingVertical: SPACING.small,
-            paddingHorizontal: SPACING.medium,
-            marginBottom: 20,
-            backgroundColor: "#777",
-          },
-        ]}
-        onPress={() => router.back()}
-      >
-        <Text style={Styles.buttonText}>Go Back</Text>
-      </TouchableOpacity>
-    </View>
+
+        {denoising && (
+          <View style={[theme.Styles.card, styles.progressCard]}>
+            <Text style={styles.progressLabel}>{progressText}</Text>
+            <View style={styles.progressInfo}>
+              <View style={styles.progressBarBackground}>
+                <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+              </View>
+              <Text style={styles.progressPercent}>{progress}%</Text>
+            </View>
+          </View>
+        )}
+
+        {denoisedFile && (
+          <View style={[styles.resultCard]}>
+            <View style={theme.Styles.row}>
+              <Feather name="check-circle" size={20} color={theme.COLORS.success} />
+              <Text style={[styles.sectionTitle, { marginLeft: 8, marginBottom: 0 }]}>Denoised Result</Text>
+            </View>
+            <View style={styles.playerContainer}>
+              <AudioPlayer uri={denoisedFile.uri} />
+            </View>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.footer}>
+        {!denoisedFile ? (
+          <TouchableOpacity
+            style={[
+              theme.Styles.button,
+              denoising && theme.Styles.disabledButton,
+              { width: '100%' }
+            ]}
+            onPress={handleDenoise}
+            disabled={denoising}
+          >
+            {denoising ? (
+              <ActivityIndicator color={theme.COLORS.background} style={{ marginRight: 10 }} />
+            ) : (
+              <Feather name="zap" size={20} color={theme.COLORS.background} style={{ marginRight: 10 }} />
+            )}
+            <Text style={theme.Styles.buttonText}>
+              {denoising ? "Processing..." : "Start Denoising"}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <TouchableOpacity
+            style={[theme.Styles.button, { width: '100%' }]}
+            onPress={() => router.replace("/")}
+          >
+            <Feather name="refresh-cw" size={20} color={theme.COLORS.background} style={{ marginRight: 10 }} />
+            <Text style={theme.Styles.buttonText}>Process Another File</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#ffffffff",
-    padding: 24,
-    justifyContent: "center",
-    alignItems: "center",
+  backButton: {
+    position: 'absolute',
+    left: 0,
+    top: 10,
+    padding: 8,
   },
-  loadingContainer: {
-    justifyContent: "center",
-    alignItems: "center",
+  content: {
+    flex: 1,
+    gap: 20,
+  },
+  headerContainer: {
+    marginTop: theme.SPACING.xsmall,
+    fontSize: theme.FONT_SIZE.heading,
+  },
+  sectionTitle: {
+    fontSize: theme.FONT_SIZE.body,
+    fontWeight: "700",
+    color: theme.COLORS.primary,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#383b3eff",
+    marginTop: 16,
+    fontSize: theme.FONT_SIZE.body,
+    color: theme.COLORS.subtext,
   },
-  title: {
-    color: "black",
-    fontSize: 24,
-    fontWeight: "800",
-    marginBottom: 8,
-    textAlign: "center",
+  playerContainer: {
+    padding: 4,
   },
-  subtitle: {
-    color: "#383b3eff",
-    fontSize: 14,
-    textAlign: "center",
-    marginBottom: 10,
+  progressCard: {
+    backgroundColor: 'rgba(0, 229, 255, 0.05)',
+    borderColor: 'rgba(0, 229, 255, 0.2)',
   },
-  progressContainer: {
-    width: "80%",
-    marginVertical: 20,
-    alignItems: "center",
+  progressLabel: {
+    color: theme.COLORS.text,
+    fontSize: theme.FONT_SIZE.body,
+    marginBottom: 12,
+    fontWeight: '600',
   },
-  progressText: {
-    color: "#383b3eff",
-    fontSize: 14,
-    marginBottom: 5,
+  progressInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   progressBarBackground: {
-    width: "100%",
-    height: 10,
-    backgroundColor: "#e0e0e0",
-    borderRadius: 5,
+    flex: 1,
+    height: 8,
+    backgroundColor: theme.COLORS.border,
+    borderRadius: 4,
+    overflow: 'hidden',
   },
   progressBarFill: {
     height: "100%",
-    backgroundColor: "#2271e0ff",
-    borderRadius: 5,
+    backgroundColor: theme.COLORS.primary,
   },
-  disabledButton: {
-    backgroundColor: "#aaa",
+  progressPercent: {
+    color: theme.COLORS.primary,
+    fontSize: theme.FONT_SIZE.small,
+    fontWeight: "700",
+    width: 35,
   },
-  btn: {
-    backgroundColor: "#2271e0ff",
-    paddingVertical: 12,
-    borderRadius: 12,
-    alignItems: "center",
-    alignSelf: "center",
-    minWidth: 160,
+  resultCard: {
+    borderColor: theme.COLORS.success,
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    borderRadius: 16,
+    padding: theme.SPACING.medium,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  pressed: { opacity: 0.9 },
-  btnText: { color: "black", fontWeight: "700" },
+  footer: {
+    paddingBottom: theme.SPACING.xlarge,
+  },
 });

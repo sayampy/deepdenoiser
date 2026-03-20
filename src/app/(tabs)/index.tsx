@@ -1,8 +1,8 @@
 import * as theme from "@/src/constants/theme";
-import { Feather } from "@expo/vector-icons"; // Expo's built-in icon library
+import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
-
 import { useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
@@ -12,28 +12,24 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
   const router = useRouter();
-  // const params = useLocalSearchParams();
   const [tempFile, setTempFile] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+
   const handleImportFile = async () => {
     try {
       const result: any = await DocumentPicker.getDocumentAsync({
-        type: ["audio/*"], // "video/*"],
-        copyToCacheDirectory: true, // Let Expo handle copying to a temporary cache
+        type: ["audio/*"],
+        copyToCacheDirectory: true,
       });
 
-      if (result.canceled) {
-        console.log("User cancelled the document picker.");
-        return;
-      }
+      if (result.canceled) return;
 
       if (result.assets && result.assets.length > 0) {
         setIsLoading(true);
-        console.log("file imported:", result.assets[0]);
         const asset = result.assets[0];
         setTempFile({
           uri: asset.uri,
@@ -42,54 +38,21 @@ export default function HomeScreen() {
         });
         setIsLoading(false);
       }
-
-      /*  // The file is already in a temporary cache directory provided by the picker.
-        // We can use this URI directly or copy it to a more permanent temporary location if needed.
-        // For this example, the picker's cache is sufficient.
-        const tempUri = asset.uri;
-        const fileName = asset.name;
-        const fileType = asset.mimeType?.startsWith("audio")
-          ? "Audio"
-          : "Video";
-
-        // To demonstrate saving, we can copy it to our own defined temporary file path.
-        const newTempPath = `${
-          FileSystem.cacheDirectory || FileSystem.documentDirectory
-        }/${fileName}`;
-        await FileSystem.copyAsync({
-          from: tempUri,
-          to: newTempPath,
-        });
-
-        console.log(`File saved to temporary location: ${newTempPath}`);
-
-        setTempFile({
-          uri: newTempPath,
-          name: fileName,
-          type: fileType,
-        });
-        setIsLoading(false);
-      }
-      */
     } catch (error) {
       setIsLoading(false);
       Alert.alert(
         "Error",
-        "An unexpected error occurred while importing the file.",
+        "An unexpected error occurred while importing the file."
       );
       console.error("Error importing file:", error);
     }
   };
+
   const handleProceed = () => {
-    setIsLoading(true);
     if (!tempFile) {
       Alert.alert("No File", "Please import a file before proceeding.");
       return;
     }
-    // Navigate to the next screen or perform an action with the file
-    // Alert.alert("Proceeding", `Processing file: ${tempFile.name}`);
-    console.log("Proceeding with file:", tempFile.uri);
-    setIsLoading(false);
     router.push({
       pathname: "/processing/process",
       params: { fileuri: tempFile.uri },
@@ -97,186 +60,141 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={theme.Styles.container}>
+    <SafeAreaView style={theme.Styles.container}>
+      <StatusBar style="light" />
       <View style={theme.Styles.header}>
-        <Text style={theme.Styles.title}>Audio Denoiser</Text>
+        <Feather name="mic" size={48} color={theme.COLORS.primary} style={{ marginBottom: 16 }} />
+        <Text style={theme.Styles.title}>DeepDenoiser</Text>
         <Text style={theme.Styles.subtitle}>
-          Select an audio or video file to get started
+          Remove background noise from your audio using AI-powered DeepFilterNet
         </Text>
       </View>
 
-      <TouchableOpacity
-        style={[
-          theme.Styles.button,
-          {
-            width: "65%",
-            paddingVertical: theme.SPACING.medium,
-            paddingHorizontal: theme.SPACING.small,
-          },
-        ]}
-        onPress={handleImportFile}
-      >
-        <Feather
-          name="upload-cloud"
-          size={24}
-          color={theme.COLORS.text}
-          style={[theme.Styles.icon, { marginLeft: 15 }]}
-        />
-        <Text style={[theme.Styles.buttonText, { marginRight: 12 }]}>
-          Import Audio / Video
-        </Text>
-      </TouchableOpacity>
-
-      {isLoading && (
-        <ActivityIndicator size="large" color="#4A90E2" style={styles.loader} />
-      )}
-
-      {tempFile && !isLoading && (
-        <View style={styles.fileInfoContainer}>
-          <Feather
-            name={tempFile.type === "Audio" ? "music" : "video"}
-            size={40}
-            color={theme.COLORS.primary}
-          />
-          <View style={styles.fileTextContainer}>
-            <Text style={styles.fileName} numberOfLines={1}>
-              {tempFile.name}
-            </Text>
-            <Text style={styles.fileType}>{tempFile.type} File</Text>
-          </View>
+      <View style={styles.mainContent}>
+        {!tempFile ? (
           <TouchableOpacity
-            onPress={() => {
-              setTempFile(null);
-            }}
-            style={{ padding: 5 }}
+            style={[theme.Styles.card, styles.importCard, { borderStyle: 'dashed' }]}
+            onPress={handleImportFile}
           >
-            <Feather name="x" size={32} color={theme.COLORS.error} />
+            <Feather
+              name="upload-cloud"
+              size={40}
+              color={theme.COLORS.primary}
+              style={{ marginBottom: 12 }}
+            />
+            <Text style={styles.importTitle}>Import Audio File</Text>
+            <Text style={styles.importSubtitle}>Tap to browse your files</Text>
           </TouchableOpacity>
-        </View>
-      )}
-      {tempFile ? (
+        ) : (
+          <View style={[theme.Styles.card, styles.fileCard]}>
+            <View style={styles.fileIconContainer}>
+              <Feather
+                name={tempFile.type === "Audio" ? "music" : "video"}
+                size={32}
+                color={theme.COLORS.primary}
+              />
+            </View>
+            <View style={styles.fileDetails}>
+              <Text style={styles.fileName} numberOfLines={1}>
+                {tempFile.name}
+              </Text>
+              <Text style={styles.fileType}>{tempFile.type} File</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setTempFile(null)}
+              style={styles.removeButton}
+            >
+              <Feather name="trash-2" size={20} color={theme.COLORS.error} />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {isLoading && (
+          <ActivityIndicator
+            size="large"
+            color={theme.COLORS.primary}
+            style={styles.loader}
+          />
+        )}
+      </View>
+
+      <View style={styles.footer}>
         <TouchableOpacity
           style={[
             theme.Styles.button,
-            {
-              width: "80%",
-              paddingVertical: theme.SPACING.medium,
-              paddingHorizontal: theme.SPACING.small,
-            },
+            !tempFile && theme.Styles.disabledButton,
+            { width: '100%' }
           ]}
-          onPress={() => handleProceed()}
-          disabled={!tempFile}
+          onPress={handleProceed}
+          disabled={!tempFile || isLoading}
         >
-          <Text style={theme.Styles.buttonText}>Proceed</Text>
-          <Feather name="arrow-right" size={24} color={theme.COLORS.text} />
+          <Text style={theme.Styles.buttonText}>Proceed to Denoise</Text>
+          <Feather
+            name="arrow-right"
+            size={20}
+            color={theme.COLORS.background}
+            style={{ marginLeft: 8 }}
+          />
         </TouchableOpacity>
-      ) : (
-        <View />
-      )}
-    </View>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  /* container: {
+  mainContent: {
     flex: 1,
-    backgroundColor: "#F4F7F9",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 20,
-    paddingBottom: 40,
+    justifyContent: 'center',
+    width: '100%',
   },
-  header: {
-    alignItems: "center",
-    marginTop: 60,
+  importCard: {
+    alignItems: 'center',
+    paddingVertical: 48,
+    backgroundColor: 'rgba(0, 229, 255, 0.05)',
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#2C3E50",
-    marginBottom: 8,
+  importTitle: {
+    color: theme.COLORS.text,
+    fontSize: theme.FONT_SIZE.heading,
+    fontWeight: '700',
   },
-  subtitle: {
-    fontSize: 16,
-    color: "#7F8C8D",
-    textAlign: "center",
+  importSubtitle: {
+    color: theme.COLORS.subtext,
+    fontSize: theme.FONT_SIZE.body,
+    marginTop: 4,
   },
-  importButton: {
-    flexDirection: "row",
-    backgroundColor: "#4A90E2",
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    // Shadow for iOS
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-    // Elevation for Android
-    elevation: 8,
-  },
-  importButtonText: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "600",
-    marginLeft: 12,
-  }, */
-  loader: {
-    marginVertical: 20,
-  },
-  fileInfoContainer: {
+  fileCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.COLORS.secondary,
+  },
+  fileIconContainer: {
+    width: 56,
+    height: 56,
     borderRadius: 12,
-    padding: theme.SPACING.medium,
-    width: "100%",
-    marginTop: 30,
-    borderWidth: 1,
-    borderColor: theme.COLORS.primary,
+    backgroundColor: 'rgba(0, 229, 255, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  fileTextContainer: {
-    marginLeft: 15,
+  fileDetails: {
+    marginLeft: 16,
     flex: 1,
   },
   fileName: {
     fontSize: theme.FONT_SIZE.body,
-    fontWeight: "500",
-    color: "#2C3E50",
+    fontWeight: "600",
+    color: theme.COLORS.text,
   },
   fileType: {
     fontSize: theme.FONT_SIZE.small,
-    color: "#7F8C8D",
-    marginTop: 4,
+    color: theme.COLORS.subtext,
+    marginTop: 2,
   },
-  /* proceedButton: {
-    flexDirection: "row",
-    backgroundColor: "#27AE60",
-    paddingVertical: 15,
-    paddingHorizontal: 40,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    width: "100%",
-    // Shadow for iOS
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    // Elevation for Android
-    elevation: 5,
-  }, */
-  /* disabledButton: {
-    backgroundColor: "#BDC3C7",
-    elevation: 0,
-    shadowOpacity: 0,
+  removeButton: {
+    padding: 8,
   },
-  proceedButtonText: {
-    color: "#FFFFFF",
-    fontSize: 18,
-    fontWeight: "bold",
-    marginRight: 10,
-  }, */
+  loader: {
+    marginTop: 24,
+  },
+  footer: {
+    marginBottom: theme.SPACING.xlarge,
+  },
 });
