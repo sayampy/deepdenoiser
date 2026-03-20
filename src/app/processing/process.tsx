@@ -1,7 +1,13 @@
 import AudioPlayer from "@/src/components/audioPlayer";
 import * as theme from "@/src/constants/theme";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
-import { ArraytoPCM, PCMtoArray, PCMtoWav, WavtoPCM, toWav } from "@/src/scripts/formatHandler";
+import {
+  ArraytoPCM,
+  PCMtoArray,
+  PCMtoWav,
+  WavtoPCM,
+  toWav,
+} from "@/src/scripts/formatHandler";
 import { Feather } from "@expo/vector-icons";
 import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
@@ -127,7 +133,9 @@ export default function ProcessScreen() {
             <Text style={styles.progressLabel}>{progressText}</Text>
             <View style={styles.progressInfo}>
               <View style={styles.progressBarBackground}>
-                <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+                <View
+                  style={[styles.progressBarFill, { width: `${progress}%` }]}
+                />
               </View>
               <Text style={styles.progressPercent}>{progress}%</Text>
             </View>
@@ -137,8 +145,19 @@ export default function ProcessScreen() {
         {denoisedFile && (
           <View style={[styles.resultCard]}>
             <View style={theme.Styles.row}>
-              <Feather name="check-circle" size={20} color={theme.COLORS.success} />
-              <Text style={[styles.sectionTitle, { marginLeft: 8, marginBottom: 0 }]}>Denoised Result</Text>
+              <Feather
+                name="check-circle"
+                size={20}
+                color={theme.COLORS.success}
+              />
+              <Text
+                style={[
+                  styles.sectionTitle,
+                  { marginLeft: 8, marginBottom: 0 },
+                ]}
+              >
+                Denoised Result
+              </Text>
             </View>
             <View style={styles.playerContainer}>
               <AudioPlayer uri={denoisedFile.uri} />
@@ -153,15 +172,23 @@ export default function ProcessScreen() {
             style={[
               theme.Styles.button,
               denoising && theme.Styles.disabledButton,
-              { width: '100%' }
+              { width: "100%" },
             ]}
             onPress={handleDenoise}
             disabled={denoising}
           >
             {denoising ? (
-              <ActivityIndicator color={theme.COLORS.background} style={{ marginRight: 10 }} />
+              <ActivityIndicator
+                color={theme.COLORS.background}
+                style={{ marginRight: 10 }}
+              />
             ) : (
-              <Feather name="zap" size={20} color={theme.COLORS.background} style={{ marginRight: 10 }} />
+              <Feather
+                name="zap"
+                size={20}
+                color={theme.COLORS.background}
+                style={{ marginRight: 10 }}
+              />
             )}
             <Text style={theme.Styles.buttonText}>
               {denoising ? "Processing..." : "Start Denoising"}
@@ -169,10 +196,15 @@ export default function ProcessScreen() {
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[theme.Styles.button, { width: '100%' }]}
+            style={[theme.Styles.button, { width: "100%" }]}
             onPress={() => router.replace("/")}
           >
-            <Feather name="refresh-cw" size={20} color={theme.COLORS.background} style={{ marginRight: 10 }} />
+            <Feather
+              name="refresh-cw"
+              size={20}
+              color={theme.COLORS.background}
+              style={{ marginRight: 10 }}
+            />
             <Text style={theme.Styles.buttonText}>Process Another File</Text>
           </TouchableOpacity>
         )}
@@ -183,7 +215,7 @@ export default function ProcessScreen() {
 
 const styles = StyleSheet.create({
   backButton: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     top: 10,
     padding: 8,
@@ -201,7 +233,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: theme.COLORS.primary,
     marginBottom: 12,
-    textTransform: 'uppercase',
+    textTransform: "uppercase",
     letterSpacing: 1,
   },
   loadingText: {
@@ -213,18 +245,18 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   progressCard: {
-    backgroundColor: 'rgba(0, 229, 255, 0.05)',
-    borderColor: 'rgba(0, 229, 255, 0.2)',
+    backgroundColor: theme.COLORS.surface,
+    borderColor: "rgba(0, 229, 255, 0.2)",
   },
   progressLabel: {
     color: theme.COLORS.text,
     fontSize: theme.FONT_SIZE.body,
     marginBottom: 12,
-    fontWeight: '600',
+    fontWeight: "600",
   },
   progressInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 12,
   },
   progressBarBackground: {
@@ -232,7 +264,7 @@ const styles = StyleSheet.create({
     height: 8,
     backgroundColor: theme.COLORS.border,
     borderRadius: 4,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
@@ -246,7 +278,7 @@ const styles = StyleSheet.create({
   },
   resultCard: {
     borderColor: theme.COLORS.success,
-    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    backgroundColor: "rgba(16, 185, 129, 0.05)",
     borderRadius: 16,
     padding: theme.SPACING.medium,
     borderWidth: 1,
