@@ -87,7 +87,7 @@ class AudioProcessorModule : Module() {
                                     appContext.reactContext
                                             ?: throw Exception("React Context is null")
                             )
-                    val result = processor.pcmToWav(videoPath, audioPath, outputPath)
+                    val result = processor.muxAudioVideo(videoPath, audioPath, outputPath)
                     promise.resolve(result)
                 } catch (e: Exception) {
                     promise.reject("ERR_MUX_AUDIO_VIDEO", e.message, e)
