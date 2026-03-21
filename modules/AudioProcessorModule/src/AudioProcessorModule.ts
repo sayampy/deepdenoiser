@@ -16,7 +16,13 @@ declare class AudioProcessorModule extends NativeModule<AudioProcessorModuleEven
     channels: number,
     bitDepth: number,
   ): Promise<string>;
+  mixAudioVideo(
+    videoUri: string,
+    audioUri: string,
+    outputUri: string,
+  ): Promise<string>;
 }
+
 
 // This call loads the native module object from the JSI.
 export default requireNativeModule<AudioProcessorModule>(

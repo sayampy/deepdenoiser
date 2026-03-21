@@ -13,10 +13,18 @@ class AudioProcessorModule : Module() {
     override fun definition() = ModuleDefinition {
         Name("AudioProcessorModule")
 
-        AsyncFunction("extractAndTranscodeAudio") { input: String, output: String, bitrate: Int?, promise: expo.modules.kotlin.Promise ->
+        AsyncFunction("extractAndTranscodeAudio") {
+                input: String,
+                output: String,
+                bitrate: Int?,
+                promise: expo.modules.kotlin.Promise ->
             moduleScope.launch {
                 try {
-                    val processor = MediaProcessor(appContext.reactContext ?: throw Exception("React Context is null"))
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
                     val result = processor.transcodeAudio(input, output, bitrate)
                     promise.resolve(result)
                 } catch (e: Exception) {
@@ -25,10 +33,17 @@ class AudioProcessorModule : Module() {
             }
         }
 
-        AsyncFunction("decodeToPCM") { input: String, output: String, promise: expo.modules.kotlin.Promise ->
+        AsyncFunction("decodeToPCM") {
+                input: String,
+                output: String,
+                promise: expo.modules.kotlin.Promise ->
             moduleScope.launch {
                 try {
-                    val processor = MediaProcessor(appContext.reactContext ?: throw Exception("React Context is null"))
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
                     val result = processor.decodeToPCM(input, output)
                     promise.resolve(result)
                 } catch (e: Exception) {
@@ -37,14 +52,45 @@ class AudioProcessorModule : Module() {
             }
         }
 
-        AsyncFunction("pcmToWav") { pcmInput: String, wavOutput: String, sampleRate: Int, channels: Int, bitDepth: Int, promise: expo.modules.kotlin.Promise ->
+        AsyncFunction("pcmToWav") {
+                pcmInput: String,
+                wavOutput: String,
+                sampleRate: Int,
+                channels: Int,
+                bitDepth: Int,
+                promise: expo.modules.kotlin.Promise ->
             moduleScope.launch {
                 try {
-                    val processor = MediaProcessor(appContext.reactContext ?: throw Exception("React Context is null"))
-                    val result = processor.pcmToWav(pcmInput, wavOutput, sampleRate, channels, bitDepth)
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
+                    val result =
+                            processor.pcmToWav(pcmInput, wavOutput, sampleRate, channels, bitDepth)
                     promise.resolve(result)
                 } catch (e: Exception) {
                     promise.reject("ERR_WAV_CONV", e.message, e)
+                }
+            }
+        }
+
+        AsyncFunction("mixAudioVideo") {
+                videoPath: String,
+                audioPath: String,
+                outputPath: String,
+                promise: expo.modules.kotlin.Promise ->
+            moduleScope.launch {
+                try {
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
+                    val result = processor.pcmToWav(videoPath, audioPath, outputPath)
+                    promise.resolve(result)
+                } catch (e: Exception) {
+                    promise.reject("ERR_MUX_AUDIO_VIDEO", e.message, e)
                 }
             }
         }
