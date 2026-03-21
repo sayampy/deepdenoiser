@@ -81,13 +81,14 @@ export default function AboutScreen() {
           <Text style={styles.footerText}>
             Made with{" "}
             <Image
-              source={require("@assets/images/heart-india_emoji.png")}
+              source={require("@/assets/images/heart_india.png")}
               style={{
-                width: 20,
-                height: 20,
+                width: 15,
+                height: 15,
+                // marginTop: 5,
               }}
             />{" "}
-            by Sayam
+            by Sayampy
           </Text>
         </View>
 
@@ -288,23 +289,24 @@ const styles = StyleSheet.create({
     resizeMode: "contain",
   },
   upiButton: {
-    backgroundColor: theme.COLORS.surface,
-    borderRadius: 12, // Match rounded aesthetic of app
+    backgroundColor: "orange",
+    borderRadius: 18, // Match rounded aesthetic of app
     borderWidth: 1,
     borderColor: theme.COLORS.border,
     flexDirection: "row",
+    justifyContent: "space-between",
     height: 56, // Enforce same height as kofi button area
   },
   upiIcon: {
-    width: 32,
-    height: 32,
-    marginRight: 12,
+    height: 20,
+    marginRight: 5,
     resizeMode: "contain",
   },
   upiText: {
     fontSize: theme.FONT_SIZE.body,
     fontWeight: "600",
-    color: theme.COLORS.text,
+    color: theme.COLORS.surface,
+    marginRight: 25,
   },
   closeButton: {
     width: "100%",
