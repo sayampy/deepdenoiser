@@ -13,7 +13,7 @@
     "splash": {
       "backgroundColor": "#010100",
       "image": "./assets/images/splash.png",
-      "resizeMode": "contain"
+      "resizeMode": "cover"
     },
     "android": {
       "adaptiveIcon": {
