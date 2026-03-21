@@ -85,6 +85,7 @@ class MediaProcessor(private val context: Context) {
                 var muxer: MediaMuxer? = null
                 var videoExtractor: MediaExtractor? = null
                 var audioExtractor: MediaExtractor? = null
+                var isMuxerStarted = false
 
                 try {
                     // Setup muxer
@@ -107,6 +108,7 @@ class MediaProcessor(private val context: Context) {
                     val audioMuxerTrack = muxer.addTrack(audioFormat)
 
                     muxer.start()
+                    isMuxerStarted = true
 
                     val buffer = ByteBuffer.allocate(1 * 1024 * 1024)
                     val bufferInfo = MediaCodec.BufferInfo()
@@ -151,7 +153,13 @@ class MediaProcessor(private val context: Context) {
                         }
                     }
                 } finally {
-                    muxer?.stop()
+                    if (isMuxerStarted) {
+                        try {
+                            muxer?.stop()
+                        } catch (e: Exception) {
+                            // Log or ignore
+                        }
+                    }
                     muxer?.release()
                     videoExtractor?.release()
                     audioExtractor?.release()
@@ -163,32 +171,39 @@ class MediaProcessor(private val context: Context) {
     // Bypasses Litr. Drops down to MediaCodec to get raw byte buffers.
     suspend fun decodeToPCM(inputPath: String, outputPath: String) =
             withContext(Dispatchers.IO) {
-                val extractor = MediaExtractor()
-                extractor.setDataSource(context, Uri.parse(inputPath), null)
-
-                var audioTrackIndex = -1
-                var format: MediaFormat? = null
-
-                for (i in 0 until extractor.trackCount) {
-                    val f = extractor.getTrackFormat(i)
-                    if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
-                        audioTrackIndex = i
-                        format = f
-                        break
-                    }
-                }
-
-                if (audioTrackIndex == -1 || format == null) throw Exception("No audio track found")
-
-                extractor.selectTrack(audioTrackIndex)
-                val mime = format.getString(MediaFormat.KEY_MIME)!!
-                val codec = MediaCodec.createDecoderByType(mime)
-
-                val fos = FileOutputStream(outputPath)
+                var extractor: MediaExtractor? = null
+                var codec: MediaCodec? = null
+                var fos: FileOutputStream? = null
+                var isCodecStarted = false
 
                 try {
+                    extractor = MediaExtractor()
+                    extractor.setDataSource(context, Uri.parse(inputPath), null)
+
+                    var audioTrackIndex = -1
+                    var format: MediaFormat? = null
+
+                    for (i in 0 until extractor.trackCount) {
+                        val f = extractor.getTrackFormat(i)
+                        if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                            audioTrackIndex = i
+                            format = f
+                            break
+                        }
+                    }
+
+                    if (audioTrackIndex == -1 || format == null)
+                            throw Exception("No audio track found")
+
+                    extractor.selectTrack(audioTrackIndex)
+                    val mime = format.getString(MediaFormat.KEY_MIME)!!
+                    codec = MediaCodec.createDecoderByType(mime)
+
+                    fos = FileOutputStream(outputPath)
+
                     codec.configure(format, null, null, 0)
                     codec.start()
+                    isCodecStarted = true
 
                     val info = MediaCodec.BufferInfo()
                     var isEOS = false
@@ -244,10 +259,16 @@ class MediaProcessor(private val context: Context) {
                         }
                     }
                 } finally {
-                    codec.stop()
-                    codec.release()
-                    extractor.release()
-                    fos.close()
+                    if (isCodecStarted) {
+                        try {
+                            codec?.stop()
+                        } catch (e: Exception) {
+                            // Log or ignore
+                        }
+                    }
+                    codec?.release()
+                    extractor?.release()
+                    fos?.close()
                 }
                 outputPath
             }

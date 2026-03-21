@@ -1,14 +1,14 @@
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
-import { useVideoPlayer, VideoView } from "expo-video";
 import * as Sharing from "expo-sharing";
-import React, { useState } from "react";
+import { useVideoPlayer, VideoView } from "expo-video";
+import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  ActivityIndicator,
 } from "react-native";
 
 interface VideoPlayerProps {
@@ -17,11 +17,21 @@ interface VideoPlayerProps {
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri }) => {
   const [isLoading, setIsLoading] = useState(true);
-  
+  const [error, setError] = useState<string | null>(null);
+
+  // Get filename from URI
+  const fileName = uri.split("/").pop() || "Video";
+
   const player = useVideoPlayer(uri, (player) => {
     player.loop = true;
     player.muted = false;
+    // player.showNowPlayingNotification = true;r
+    // player.play();
   });
+
+  useEffect(() => {
+    setIsLoading(false);
+  }, []);
 
   const handleShare = async () => {
     if (await Sharing.isAvailableAsync()) {
@@ -32,15 +42,20 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri }) => {
   return (
     <View style={styles.card}>
       <View style={styles.videoContainer}>
-        <VideoView
-          style={styles.video}
-          player={player}
-          allowsFullscreen
-          allowsPictureInPicture
-          contentFit="contain"
-          onReadyForDisplay={() => setIsLoading(false)}
-        />
-        {isLoading && (
+        {error ? (
+          <View style={styles.errorContainer}>
+            <Feather name="alert-circle" size={48} color={theme.COLORS.error} />
+            <Text style={styles.errorText}>Failed to load video</Text>
+          </View>
+        ) : (
+          <VideoView
+            style={styles.video}
+            player={player}
+            fullscreenOptions={{ enable: true }}
+            contentFit="contain"
+          />
+        )}
+        {isLoading && !error && (
           <View style={styles.loaderContainer}>
             <ActivityIndicator color={theme.COLORS.primary} size="large" />
           </View>
@@ -49,12 +64,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri }) => {
 
       <View style={styles.footer}>
         <View style={styles.infoContainer}>
-          <Text style={styles.title}>Result Preview</Text>
-          <Text style={styles.subtitle}>Denoised Video Output</Text>
+          <Text style={styles.title} numberOfLines={1}>{fileName}</Text>
         </View>
-        
-        <TouchableOpacity 
-          style={styles.galleryButton} 
+
+        <TouchableOpacity
+          style={styles.galleryButton}
           onPress={handleShare}
           activeOpacity={0.7}
         >
@@ -96,6 +110,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(15, 23, 42, 0.5)",
+  },
+  errorContainer: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  errorText: {
+    color: theme.COLORS.error,
+    marginTop: 10,
+    fontSize: theme.FONT_SIZE.body,
+    fontWeight: "600",
   },
   footer: {
     flexDirection: "row",

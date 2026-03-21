@@ -156,7 +156,7 @@ export async function saveToDevice(file: fs.File) {
     if (album) {
       await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
     } else {
-      await MediaLibrary.createAlbumAsync("AudioDenoiser", asset, false);
+      await MediaLibrary.createAlbumAsync("DeepDenoiser", asset, false);
     }
   } catch (e) {
     console.log(e);
@@ -166,12 +166,27 @@ export async function mergeAudioVideo(
   video: fs.File,
   audio: fs.File,
 ): Promise<fs.File> {
-  const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.mp4`);
-  await mixAudioVideo(
-    video.uri.replace('file://', ''),
-    audio.uri.replace('file://', ''),
-    outputFile.uri.replace('file://', ''),
-  );
-  return outputFile;
+  console.log("Merging audio and video...");
+  try {
+    // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
+    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_transcoded.m4a`);
+    await extractAndTranscodeAudio(
+      audio.uri.replace('file://', ''),
+      transcodedAudio.uri.replace('file://', ''),
+      128000, // 128kbps AAC
+    );
 
+    const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.mp4`);
+    await mixAudioVideo(
+      video.uri.replace('file://', ''),
+      transcodedAudio.uri.replace('file://', ''),
+      outputFile.uri.replace('file://', ''),
+    );
+    return outputFile;
+  } catch (error) {
+    console.error("Failed to merge audio and video.", error);
+    throw new Error(
+      `Merge failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
