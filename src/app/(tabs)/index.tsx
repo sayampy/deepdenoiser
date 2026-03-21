@@ -22,7 +22,7 @@ export default function HomeScreen() {
   const handleImportFile = async () => {
     try {
       const result: any = await DocumentPicker.getDocumentAsync({
-        type: ["audio/*"],
+        type: ["audio/*", "video/*"],
         copyToCacheDirectory: true,
       });
 
@@ -66,7 +66,7 @@ export default function HomeScreen() {
         <Feather name="mic" size={48} color={theme.COLORS.primary} style={{ marginBottom: 16 }} />
         <Text style={theme.Styles.title}>DeepDenoiser</Text>
         <Text style={theme.Styles.subtitle}>
-          Remove background noise from your audio using AI-powered DeepFilterNet
+          Remove background noise from your audio and video using AI-powered DeepFilterNet
         </Text>
       </View>
 
@@ -82,8 +82,8 @@ export default function HomeScreen() {
               color={theme.COLORS.primary}
               style={{ marginBottom: 12 }}
             />
-            <Text style={styles.importTitle}>Import Audio File</Text>
-            <Text style={styles.importSubtitle}>Tap to browse your files</Text>
+            <Text style={styles.importTitle}>Import Media File</Text>
+            <Text style={styles.importSubtitle}>Tap to browse audio or video</Text>
           </TouchableOpacity>
         ) : (
           <View style={[theme.Styles.card, styles.fileCard]}>

@@ -75,7 +75,9 @@
         }
       ],
       "onnxruntime-react-native",
-      "expo-asset"
+      "expo-asset",
+      "expo-video",
+      "expo-share-intent"
     ],
     "experiments": {
       "typedRoutes": true,

@@ -16,6 +16,14 @@ export async function extractAndTranscodeAudio(
   );
 }
 
+export async function mixAudioVideo(
+  videoUri: string,
+  audioUri: string,
+  outputUri: string,
+): Promise<string> {
+  return await AudioProcessorModule.mixAudioVideo(videoUri, audioUri, outputUri);
+}
+
 export async function decodeToPCM(
   inputUri: string,
   outputUri: string,
