@@ -32,7 +32,21 @@ export default function ProcessScreen() {
   const [progress, setProgress] = useState(0);
   const [progressText, setProgressText] = useState("");
   const [denoisedFile, setDenoisedFile] = useState<fs.File | null>(null);
+  const [eta, setEta] = useState<string | null>(null);
+  const [processingTime, setProcessingTime] = useState(0);
+  const timeHandler = (totalSeconds: number) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60);
+    const s = Math.floor(totalSeconds % 60);
 
+    if (h > 0) {
+      return `${h}h:${m}m:${s}s`;
+    } else if (m > 0) {
+      return `${m}m:${s}s`;
+    } else {
+      return `${s}s`;
+    }
+  }
   useEffect(() => {
     if (!fileuri) {
       router.navigate("/");
@@ -62,6 +76,7 @@ export default function ProcessScreen() {
     setDenoising(true);
     setProgress(0);
     setProgressText("Initializing...");
+    setEta(null);
 
     try {
       setProgressText("Converting to PCM...");
@@ -79,9 +94,19 @@ export default function ProcessScreen() {
       await denoiser.loadModel(modelAsset.localUri!);
 
       setProgressText("Denoising...");
+      const startTime = Date.now();
       const denoisedArray = await denoiser.denoise(float32Array, (p) => {
         setProgress(p);
+        if (p > 0) {
+          const elapsed = (Date.now() - startTime) / 1000;
+          const remaining = elapsed / (p / 100) - elapsed;
+          if (remaining > 0 && Number.isFinite(remaining)) {
+            const totalSeconds = Math.ceil(remaining);
+            setEta(`${timeHandler(totalSeconds)} remaining`);
+          }
+        }
       });
+      setEta(null);
 
       setProgressText("Saving denoised audio...");
       const denoisedPcmFile = await ArraytoPCM(denoisedArray);
@@ -89,11 +114,13 @@ export default function ProcessScreen() {
       setProgressText("Finalizing...");
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
       setDenoisedFile(finalWavFile);
+      setProcessingTime((Date.now() - startTime) / 1000);
     } catch (error) {
       console.error("Error during denoising:", error);
     } finally {
       setDenoising(false);
       setProgressText("");
+      setEta(null);
     }
   };
 
@@ -139,6 +166,7 @@ export default function ProcessScreen() {
               </View>
               <Text style={styles.progressPercent}>{progress}%</Text>
             </View>
+            {eta && <Text style={styles.etaText}>{eta}</Text>}
           </View>
         )}
 
@@ -162,6 +190,9 @@ export default function ProcessScreen() {
             <View style={styles.playerContainer}>
               <AudioPlayer uri={denoisedFile.uri} />
             </View>
+            <Text style={styles.etaText}>
+              Took: {timeHandler(processingTime)}
+            </Text>
           </View>
         )}
       </View>
@@ -276,9 +307,15 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     width: 35,
   },
+  etaText: {
+    color: theme.COLORS.subtext,
+    fontSize: theme.FONT_SIZE.small,
+    marginTop: 8,
+    textAlign: "right",
+  },
   resultCard: {
     borderColor: theme.COLORS.success,
-    backgroundColor: "rgba(16, 185, 129, 0.05)",
+    backgroundColor: theme.COLORS.surface,
     borderRadius: 16,
     padding: theme.SPACING.medium,
     borderWidth: 1,
