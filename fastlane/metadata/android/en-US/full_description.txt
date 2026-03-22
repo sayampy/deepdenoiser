@@ -1,0 +1,10 @@
+DeepDenoiser is an open-source utility designed for high-fidelity noise suppression in audio and video files. 
+
+### Key Features:
+- **Local Processing:** All AI stuff happens on-device using the ONNX Runtime. Your data never leaves your phone.
+- **Multi-format Support:** Process both video and audio streams seamlessly.
+- **Neural Denoising:** Uses deep learning models to isolate speech and remove complex background artifacts (wind, traffic, hum).
+- **Material 3 UI:** A clean, minimalist interface designed for efficiency.
+
+<b>Technical Note:</b> 
+As a local AI tool, performance depends on your device's CPU and RAM. deepDenoiser is built with React Native and focused on maintaining a small footprint while delivering professional-grade results.
