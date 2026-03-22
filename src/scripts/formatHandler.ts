@@ -1,6 +1,7 @@
 import {
   decodeToPCM,
-  extractAndTranscodeAudio
+  extractAndTranscodeAudio,
+  mixAudioVideo
 } from "@/modules/AudioProcessorModule";
 import * as fs from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
@@ -92,17 +93,7 @@ export async function PCMtoWav(file: fs.File): Promise<fs.File> {
     const outputUri = outputFile.uri;
     await outputFile.write(wavData);
 
-    try {
-      const asset = await MediaLibrary.createAssetAsync(outputUri);
-      const album = await MediaLibrary.getAlbumAsync("AudioDenoiser");
-      if (album) {
-        await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
-      } else {
-        await MediaLibrary.createAlbumAsync("AudioDenoiser", asset, false);
-      }
-    } catch (e) {
-      console.log(e);
-    }
+
     return outputFile;
   } catch (error) {
     console.error("Failed to convert to WAV.", error);
@@ -157,4 +148,45 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
   // await outputFile.write(base64, { encoding: fs.EncodingType.BASE64 });
 
   return outputFile;
+}
+export async function saveToDevice(file: fs.File) {
+  try {
+    const asset = await MediaLibrary.createAssetAsync(file.uri);
+    const album = await MediaLibrary.getAlbumAsync("AudioDenoiser");
+    if (album) {
+      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+    } else {
+      await MediaLibrary.createAlbumAsync("DeepDenoiser", asset, false);
+    }
+  } catch (e) {
+    console.log(e);
+  }
+}
+export async function mergeAudioVideo(
+  video: fs.File,
+  audio: fs.File,
+): Promise<fs.File> {
+  console.log("Merging audio and video...");
+  try {
+    // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
+    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_transcoded.m4a`);
+    await extractAndTranscodeAudio(
+      audio.uri.replace('file://', ''),
+      transcodedAudio.uri.replace('file://', ''),
+      128000, // 128kbps AAC
+    );
+
+    const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.mp4`);
+    await mixAudioVideo(
+      video.uri.replace('file://', ''),
+      transcodedAudio.uri.replace('file://', ''),
+      outputFile.uri.replace('file://', ''),
+    );
+    return outputFile;
+  } catch (error) {
+    console.error("Failed to merge audio and video.", error);
+    throw new Error(
+      `Merge failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }

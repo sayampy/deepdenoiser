@@ -22,7 +22,7 @@ export default function HomeScreen() {
   const handleImportFile = async () => {
     try {
       const result: any = await DocumentPicker.getDocumentAsync({
-        type: ["audio/*"],
+        type: ["audio/*", "video/*"],
         copyToCacheDirectory: true,
       });
 
@@ -42,7 +42,7 @@ export default function HomeScreen() {
       setIsLoading(false);
       Alert.alert(
         "Error",
-        "An unexpected error occurred while importing the file."
+        "An unexpected error occurred while importing the file.",
       );
       console.error("Error importing file:", error);
     }
@@ -63,17 +63,27 @@ export default function HomeScreen() {
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
       <View style={theme.Styles.header}>
-        <Feather name="mic" size={48} color={theme.COLORS.primary} style={{ marginBottom: 16 }} />
+        <Feather
+          name="mic"
+          size={48}
+          color={theme.COLORS.primary}
+          style={{ marginBottom: 16 }}
+        />
         <Text style={theme.Styles.title}>DeepDenoiser</Text>
         <Text style={theme.Styles.subtitle}>
-          Remove background noise from your audio using AI-powered DeepFilterNet
+          Remove background noise from your audio and video using DeepFilterNet
+          3
         </Text>
       </View>
 
       <View style={styles.mainContent}>
         {!tempFile ? (
           <TouchableOpacity
-            style={[theme.Styles.card, styles.importCard, { borderStyle: 'dashed' }]}
+            style={[
+              theme.Styles.card,
+              styles.importCard,
+              { borderStyle: "dashed" },
+            ]}
             onPress={handleImportFile}
           >
             <Feather
@@ -82,8 +92,10 @@ export default function HomeScreen() {
               color={theme.COLORS.primary}
               style={{ marginBottom: 12 }}
             />
-            <Text style={styles.importTitle}>Import Audio File</Text>
-            <Text style={styles.importSubtitle}>Tap to browse your files</Text>
+            <Text style={styles.importTitle}>Import Media File</Text>
+            <Text style={styles.importSubtitle}>
+              Tap to browse audio or video
+            </Text>
           </TouchableOpacity>
         ) : (
           <View style={[theme.Styles.card, styles.fileCard]}>
@@ -123,7 +135,7 @@ export default function HomeScreen() {
           style={[
             theme.Styles.button,
             !tempFile && theme.Styles.disabledButton,
-            { width: '100%' }
+            { width: "100%" },
           ]}
           onPress={handleProceed}
           disabled={!tempFile || isLoading}
@@ -144,18 +156,18 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
-    justifyContent: 'center',
-    width: '100%',
+    justifyContent: "center",
+    width: "100%",
   },
   importCard: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingVertical: 48,
-    backgroundColor: 'rgba(0, 229, 255, 0.05)',
+    backgroundColor: "rgba(0, 229, 255, 0.05)",
   },
   importTitle: {
     color: theme.COLORS.text,
     fontSize: theme.FONT_SIZE.heading,
-    fontWeight: '700',
+    fontWeight: "700",
   },
   importSubtitle: {
     color: theme.COLORS.subtext,
@@ -170,9 +182,9 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 12,
-    backgroundColor: 'rgba(0, 229, 255, 0.1)',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: "rgba(0, 229, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   fileDetails: {
     marginLeft: 16,

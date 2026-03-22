@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMuxer
 import android.net.Uri
 import com.linkedin.android.litr.MediaTransformer
 import com.linkedin.android.litr.TransformationListener
@@ -12,6 +13,7 @@ import com.linkedin.android.litr.analytics.TrackTransformationInfo
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.ByteBuffer
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
@@ -78,53 +80,130 @@ class MediaProcessor(private val context: Context) {
 
     // (5) Audio-Video Muxing
     // Combines video from videoPath and audio from audioPath
-    suspend fun muxAudioVideo(videoPath: String, audioPath: String, outputPath: String) =
-            suspendCancellableCoroutine { continuation ->
-                // Note: Litr supports multi-track composition via its experimental APIs,
-                // but for a strict mux without re-encoding, MediaMuxer via Android framework is
-                // often cleaner.
-                // However, assuming Litr for stability across API levels:
-                val requestId = "mux_${System.currentTimeMillis()}"
+    suspend fun muxAudioVideo(videoPath: String, audioPath: String, outputPath: String): String =
+            withContext(Dispatchers.IO) {
+                var muxer: MediaMuxer? = null
+                var videoExtractor: MediaExtractor? = null
+                var audioExtractor: MediaExtractor? = null
+                var isMuxerStarted = false
 
-                // Setup requires custom TrackTransforms in Litr, which is verbose.
-                // A direct MediaExtractor + MediaMuxer loop is more efficient for pure passthrough
-                // muxing.
-                // For brevity and robustness, we use Litr's Composition API or raw Muxer.
-                // *Code omitted for pure muxer loop due to space, but pattern mirrors the PCM
-                // extractor below.*
-                continuation.resume(outputPath)
+                try {
+                    // Setup muxer
+                    muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+
+                    // Setup video extractor
+                    videoExtractor = MediaExtractor()
+                    videoExtractor.setDataSource(context, Uri.parse(videoPath), null)
+                    val videoTrack = findTrackIndex(videoExtractor, "video/")
+                    if (videoTrack == -1) throw Exception("No video track found in $videoPath")
+                    val videoFormat = videoExtractor.getTrackFormat(videoTrack)
+                    val videoMuxerTrack = muxer.addTrack(videoFormat)
+
+                    // Setup audio extractor
+                    audioExtractor = MediaExtractor()
+                    audioExtractor.setDataSource(context, Uri.parse(audioPath), null)
+                    val audioTrack = findTrackIndex(audioExtractor, "audio/")
+                    if (audioTrack == -1) throw Exception("No audio track found in $audioPath")
+                    val audioFormat = audioExtractor.getTrackFormat(audioTrack)
+                    val audioMuxerTrack = muxer.addTrack(audioFormat)
+
+                    muxer.start()
+                    isMuxerStarted = true
+
+                    val buffer = ByteBuffer.allocate(1 * 1024 * 1024)
+                    val bufferInfo = MediaCodec.BufferInfo()
+
+                    videoExtractor.selectTrack(videoTrack)
+                    audioExtractor.selectTrack(audioTrack)
+
+                    var videoEOS = false
+                    var audioEOS = false
+
+                    while (!videoEOS || !audioEOS) {
+                        val writeVideo =
+                                !videoEOS &&
+                                        (audioEOS ||
+                                                videoExtractor.sampleTime <=
+                                                        audioExtractor.sampleTime)
+
+                        if (writeVideo) {
+                            val sampleSize = videoExtractor.readSampleData(buffer, 0)
+                            if (sampleSize < 0) {
+                                videoEOS = true
+                            } else {
+                                bufferInfo.size = sampleSize
+                                bufferInfo.offset = 0
+                                bufferInfo.presentationTimeUs = videoExtractor.sampleTime
+                                bufferInfo.flags = videoExtractor.sampleFlags
+                                muxer.writeSampleData(videoMuxerTrack, buffer, bufferInfo)
+                                videoExtractor.advance()
+                            }
+                        } else if (!audioEOS) {
+                            val sampleSize = audioExtractor.readSampleData(buffer, 0)
+                            if (sampleSize < 0) {
+                                audioEOS = true
+                            } else {
+                                bufferInfo.size = sampleSize
+                                bufferInfo.offset = 0
+                                bufferInfo.presentationTimeUs = audioExtractor.sampleTime
+                                bufferInfo.flags = audioExtractor.sampleFlags
+                                muxer.writeSampleData(audioMuxerTrack, buffer, bufferInfo)
+                                audioExtractor.advance()
+                            }
+                        }
+                    }
+                } finally {
+                    if (isMuxerStarted) {
+                        try {
+                            muxer?.stop()
+                        } catch (e: Exception) {
+                            // Log or ignore
+                        }
+                    }
+                    muxer?.release()
+                    videoExtractor?.release()
+                    audioExtractor?.release()
+                }
+                outputPath
             }
 
     // (2) Audio Decoding to Raw PCM
     // Bypasses Litr. Drops down to MediaCodec to get raw byte buffers.
     suspend fun decodeToPCM(inputPath: String, outputPath: String) =
             withContext(Dispatchers.IO) {
-                val extractor = MediaExtractor()
-                extractor.setDataSource(context, Uri.parse(inputPath), null)
-
-                var audioTrackIndex = -1
-                var format: MediaFormat? = null
-
-                for (i in 0 until extractor.trackCount) {
-                    val f = extractor.getTrackFormat(i)
-                    if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
-                        audioTrackIndex = i
-                        format = f
-                        break
-                    }
-                }
-
-                if (audioTrackIndex == -1 || format == null) throw Exception("No audio track found")
-
-                extractor.selectTrack(audioTrackIndex)
-                val mime = format.getString(MediaFormat.KEY_MIME)!!
-                val codec = MediaCodec.createDecoderByType(mime)
-
-                val fos = FileOutputStream(outputPath)
+                var extractor: MediaExtractor? = null
+                var codec: MediaCodec? = null
+                var fos: FileOutputStream? = null
+                var isCodecStarted = false
 
                 try {
+                    extractor = MediaExtractor()
+                    extractor.setDataSource(context, Uri.parse(inputPath), null)
+
+                    var audioTrackIndex = -1
+                    var format: MediaFormat? = null
+
+                    for (i in 0 until extractor.trackCount) {
+                        val f = extractor.getTrackFormat(i)
+                        if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                            audioTrackIndex = i
+                            format = f
+                            break
+                        }
+                    }
+
+                    if (audioTrackIndex == -1 || format == null)
+                            throw Exception("No audio track found")
+
+                    extractor.selectTrack(audioTrackIndex)
+                    val mime = format.getString(MediaFormat.KEY_MIME)!!
+                    codec = MediaCodec.createDecoderByType(mime)
+
+                    fos = FileOutputStream(outputPath)
+
                     codec.configure(format, null, null, 0)
                     codec.start()
+                    isCodecStarted = true
 
                     val info = MediaCodec.BufferInfo()
                     var isEOS = false
@@ -180,10 +259,16 @@ class MediaProcessor(private val context: Context) {
                         }
                     }
                 } finally {
-                    codec.stop()
-                    codec.release()
-                    extractor.release()
-                    fos.close()
+                    if (isCodecStarted) {
+                        try {
+                            codec?.stop()
+                        } catch (e: Exception) {
+                            // Log or ignore
+                        }
+                    }
+                    codec?.release()
+                    extractor?.release()
+                    fos?.close()
                 }
                 outputPath
             }
@@ -279,6 +364,16 @@ class MediaProcessor(private val context: Context) {
         header[42] = ((pcmDataLength shr 16) and 0xffL).toByte()
         header[43] = ((pcmDataLength shr 24) and 0xffL).toByte()
         fos.write(header, 0, 44)
+    }
+
+    private fun findTrackIndex(extractor: MediaExtractor, mimeTypePrefix: String): Int {
+        for (i in 0 until extractor.trackCount) {
+            val format = extractor.getTrackFormat(i)
+            if (format.getString(MediaFormat.KEY_MIME)?.startsWith(mimeTypePrefix) == true) {
+                return i
+            }
+        }
+        return -1
     }
 
     private fun createAudioFormat(bitrate: Int): MediaFormat {
