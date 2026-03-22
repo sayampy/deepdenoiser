@@ -28,7 +28,7 @@ Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on yo
 ## 🚀 Get Started
 
 ### Prerequisites
-- Node.js & Bun (Recommended)
+- Bun (Recommended)
 - Android Development Environment (Android Studio)
 
 ### Installation
