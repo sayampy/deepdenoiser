@@ -1,4 +1,8 @@
-# 🎙️ DeepDenoiser
+<p align="center">
+<img src="./assets/images/android-icon-background.png" width=100/>
+</p>
+
+# DeepDenoiser
 
 [![Version](https://img.shields.io/github/v/release/sayampy/deepdenoiser?label=version)](https://github.com/sayampy/deepdenoiser/releases)
 [![License](https://img.shields.io/github/license/sayampy/deepdenoiser)](LICENSE)
