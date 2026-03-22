@@ -1,18 +1,55 @@
-# Welcome to DeepDenoiser app 👋
+# 🎙️ DeepDenoiser
 
-This is an opensource android app that remove noise from your audio & video files.
-It currently uses the deepfilternet3 model to denoise in realtime.
+[![Version](https://img.shields.io/github/v/release/sayampy/deepdenoiser?label=version)](https://github.com/sayampy/deepdenoiser/releases)
+[![License](https://img.shields.io/github/license/sayampy/deepdenoiser)](LICENSE)
+[![Platform](https://img.shields.io/badge/Platform-Android-green)](https://www.android.com/)
 
-## Get started
+**DeepDenoiser** is a powerful, open-source mobile application designed to remove background noise from your audio and video files instantly.
 
-1. Install dependencies
+Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on your device—ensuring your data remains private and your processing is lightning fast.
 
+---
+
+## ✨ Features
+
+- **🔇 Advanced Noise Suppression**: Eliminates background hiss, hums, and environmental noise using deep learning.
+- **🎥 Audio & Video Support**: Process both voice recordings and video clips seamlessly.
+- **🔒 Privacy First**: All processing happens locally on your device using ONNX Runtime. No data is ever uploaded to the cloud.
+- **🚀 High Performance**: Built with custom Native Modules (Kotlin) for efficient media transcoding and I/O.
+- **📱 Modern Design**: Clean, simple interface built with React Native & Expo.
+
+## 🛠️ Tech Stack
+
+- **Framework**: React Native (Expo SDK 54+)
+- **AI Model**: DeepFilterNet3 (via `onnxruntime-react-native`)
+- **Native Logic**: Custom Kotlin modules for Android `MediaCodec` handling
+- **State Management**: React Hooks & Expo Router
+
+## 🚀 Get Started
+
+### Prerequisites
+- Node.js & Bun (Recommended)
+- Android Development Environment (Android Studio)
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/sayampy/deepdenoiser.git
+   cd deepdenoiser
+   ```
+
+2. **Install dependencies**
    ```bash
    bun install
    ```
 
-2. Start the app
-
+3. **Run on Android**
+   *(Note: This project uses custom native code, so you must use a Development Build, not Expo Go)*
    ```bash
-   bunx expo start --dev-client
+   bunx expo run:android
    ```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
