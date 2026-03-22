@@ -120,7 +120,9 @@ export default function AboutScreen() {
 
               <TouchableOpacity
                 style={[styles.donationButton, styles.upiButton]}
-                onPress={() => openLink("https://donate.in/")}
+                onPress={() =>
+                  openLink("upi://pay?pa=sayampy.code@oksbi&pn=Sayampy&cu=INR")
+                }
               >
                 <Image
                   source={require("@/assets/images/upi-logo.png")}
