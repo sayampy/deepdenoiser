@@ -14,6 +14,12 @@ Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on yo
 
 ---
 
+<p align="center" float="left">
+  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="40%" />
+  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="40%" />
+</p>
+
+---
 ## ✨ Features
 
 - **🔇 Advanced Noise Suppression**: Eliminates background hiss, hums, and environmental noise using deep learning.
