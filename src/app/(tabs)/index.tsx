@@ -1,3 +1,5 @@
+import AudioPlayer from "@/src/components/audioPlayer";
+import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
@@ -99,18 +101,27 @@ export default function HomeScreen() {
           </TouchableOpacity>
         ) : (
           <View style={[theme.Styles.card, styles.fileCard]}>
-            <View style={styles.fileIconContainer}>
+            {/* <View style={styles.fileIconContainer}>
               <Feather
                 name={tempFile.type === "Audio" ? "music" : "video"}
                 size={32}
                 color={theme.COLORS.primary}
-              />
-            </View>
-            <View style={styles.fileDetails}>
-              <Text style={styles.fileName} numberOfLines={1}>
+                />
+                </View>
+                <View style={styles.fileDetails}>
+                <Text style={styles.fileName} numberOfLines={1}>
                 {tempFile.name}
-              </Text>
-              <Text style={styles.fileType}>{tempFile.type} File</Text>
+                </Text>
+                <Text style={styles.fileType}>{tempFile.type} File</Text>
+                </View> */}
+            <View style={styles.fileDetails}>
+              {tempFile && (
+                tempFile.type === "Video" ? (
+                  <VideoPlayer uri={tempFile.uri} />
+                ) : (
+                  <AudioPlayer uri={tempFile.uri} />
+                )
+              )}
             </View>
             <TouchableOpacity
               onPress={() => setTempFile(null)}
@@ -177,6 +188,8 @@ const styles = StyleSheet.create({
   fileCard: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
+    // padding: theme.SPACING.xsmall,
   },
   fileIconContainer: {
     width: 56,
@@ -187,7 +200,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   fileDetails: {
-    marginLeft: 16,
+    // marginLeft: 16,
     flex: 1,
   },
   fileName: {
@@ -201,7 +214,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   removeButton: {
-    padding: 8,
+    // padding: 4,
+    marginLeft: 8,
   },
   loader: {
     marginTop: 24,
