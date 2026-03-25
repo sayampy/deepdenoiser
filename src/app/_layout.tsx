@@ -1,18 +1,18 @@
+import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
+import { Feather } from "@expo/vector-icons";
+import * as MediaLibrary from "expo-media-library";
 import { Stack, useRouter } from "expo-router";
+import { ShareIntentProvider } from "expo-share-intent";
+import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import * as SplashScreen from "expo-splash-screen";
-import * as MediaLibrary from "expo-media-library";
 import {
-  View,
+  ActivityIndicator,
+  StyleSheet,
   Text,
   TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
+  View,
 } from "react-native";
-import { COLORS, Styles, FONT_SIZE } from "@/src/constants/theme";
-import { Feather } from "@expo/vector-icons";
-import { ShareIntentProvider } from "expo-share-intent";
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -80,7 +80,8 @@ export default function RootLayout() {
       onResetShareIntent: () => { router.replace("/(tabs)") }
     }}>
       <StatusBar style="light" />
-      <Stack screenOptions={{ headerShown: false }}>
+      <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
+
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="processing" />
       </Stack>
