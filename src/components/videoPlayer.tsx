@@ -1,26 +1,23 @@
 import * as theme from "@/src/constants/theme";
-import { Feather } from "@expo/vector-icons";
-import * as Sharing from "expo-sharing";
+import { File } from "expo-file-system";
 import { useVideoPlayer, VideoView } from "expo-video";
-import React, { useEffect, useState } from "react";
+import React from "react";
 import {
-  ActivityIndicator,
   StyleSheet,
   Text,
-  TouchableOpacity,
-  View,
+  View
 } from "react-native";
+
 
 interface VideoPlayerProps {
   uri: string;
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri }) => {
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Get filename from URI
-  const fileName = uri.split("/").pop() || "Video";
+  const file = new File(uri);
+  const fileName = file.name;
 
   const player = useVideoPlayer(uri, (player) => {
     player.loop = true;
@@ -28,53 +25,24 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri }) => {
     // player.showNowPlayingNotification = true;r
     // player.play();
   });
-
-  useEffect(() => {
-    setIsLoading(false);
-  }, []);
-
-  const handleShare = async () => {
-    if (await Sharing.isAvailableAsync()) {
-      await Sharing.shareAsync(uri);
-    }
-  };
-
   return (
     <View style={styles.card}>
       <View style={styles.videoContainer}>
-        {error ? (
-          <View style={styles.errorContainer}>
-            <Feather name="alert-circle" size={48} color={theme.COLORS.error} />
-            <Text style={styles.errorText}>Failed to load video</Text>
-          </View>
-        ) : (
-          <VideoView
-            style={styles.video}
-            player={player}
-            fullscreenOptions={{ enable: true }}
-            contentFit="contain"
-          />
-        )}
-        {isLoading && !error && (
-          <View style={styles.loaderContainer}>
-            <ActivityIndicator color={theme.COLORS.primary} size="large" />
-          </View>
-        )}
+
+        <VideoView
+          style={styles.video}
+          player={player}
+          fullscreenOptions={{ enable: true }}
+          contentFit="contain"
+        />
+
       </View>
 
       <View style={styles.footer}>
         <View style={styles.infoContainer}>
           <Text style={styles.title} numberOfLines={1}>{fileName}</Text>
-        </View>
 
-        <TouchableOpacity
-          style={styles.galleryButton}
-          onPress={handleShare}
-          activeOpacity={0.7}
-        >
-          <Feather name="external-link" size={18} color={theme.COLORS.background} />
-          <Text style={styles.buttonText}>Open</Text>
-        </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
@@ -88,11 +56,6 @@ const styles = StyleSheet.create({
     borderColor: theme.COLORS.border,
     overflow: "hidden",
     width: "100%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 5,
   },
   videoContainer: {
     width: "100%",
@@ -142,20 +105,7 @@ const styles = StyleSheet.create({
     fontSize: theme.FONT_SIZE.xsmall,
     marginTop: 2,
   },
-  galleryButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: theme.COLORS.primary,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    gap: 6,
-  },
-  buttonText: {
-    color: theme.COLORS.background,
-    fontSize: theme.FONT_SIZE.small,
-    fontWeight: "700",
-  },
+
 });
 
 export default VideoPlayer;

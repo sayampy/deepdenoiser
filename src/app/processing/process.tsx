@@ -1,4 +1,5 @@
 import AudioPlayer from "@/src/components/audioPlayer";
+import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
@@ -29,10 +30,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ProcessScreen() {
   const router = useRouter();
-  const { fileuri } = useLocalSearchParams<{ fileuri: string }>();
+  const { fileuri, filename = "" } = useLocalSearchParams<{ fileuri: string, filename: string }>();
 
   const [originalFile, setOriginalFile] = useState<fs.File | null>(null);
-  const [tempWavFile, setTempWavFile] = useState<fs.File | null>(null);
   const [isFileTypeVideo, setIsFileTypeVideo] = useState(false);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -66,14 +66,10 @@ export default function ProcessScreen() {
         setOriginalFile(inputFile);
 
         // Detect if video or audio from extension or mime (simple check)
-        const isVideo = fileuri.toLowerCase().endsWith('.mp4') ||
-          fileuri.toLowerCase().endsWith('.mov') ||
-          fileuri.toLowerCase().endsWith('.mkv');
+        const isVideo = inputFile.type.startsWith("video");
         setIsFileTypeVideo(isVideo);
 
-        // Convert/Extract to WAV for processing
-        const wavFile = await toWav(inputFile);
-        setTempWavFile(wavFile);
+
       } catch (error) {
         console.error("Error preparing file:", error);
         router.back();
@@ -86,7 +82,7 @@ export default function ProcessScreen() {
   }, [fileuri, router]);
 
   const handleDenoise = async () => {
-    if (!tempWavFile || !originalFile) return;
+    if (!originalFile) return;
 
     setDenoising(true);
     setProgress(0);
@@ -94,9 +90,11 @@ export default function ProcessScreen() {
     setEta(null);
 
     try {
+      // Convert/Extract to WAV for processing
+      setProgressText("Converting to WAV...")
+      const wavFile = await toWav(originalFile);
       setProgressText("Converting to PCM...");
-      const pcmFile = await WavtoPCM(tempWavFile);
-
+      const pcmFile = await WavtoPCM(wavFile);
       setProgressText("Reading audio data...");
       const float32Array = await PCMtoArray(pcmFile);
 
@@ -127,11 +125,15 @@ export default function ProcessScreen() {
       const denoisedPcmFile = await ArraytoPCM(denoisedArray);
 
       setProgressText("Finalizing audio...");
+      const baseName = filename.replace('%20', '\s');
+      /*(filename.substring(0, filename.lastIndexOf('.')). || filename || `denoised_${Date.now()}`;*/
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
+      finalWavFile.rename(`${baseName}_denoised.wav`)
 
       if (isFileTypeVideo) {
         setProgressText("Merging with video...");
         const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);
+        finalVideoFile.rename(`${baseName}_denoised.mp4`);
         setDenoisedFile(finalVideoFile);
       } else {
         setDenoisedFile(finalWavFile);
@@ -158,10 +160,10 @@ export default function ProcessScreen() {
   return (
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
-      <View style={[theme.Styles.header, styles.headerContainer]}>
+      <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.replace('/(tabs)')}
           disabled={denoising}
         >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
@@ -200,7 +202,7 @@ export default function ProcessScreen() {
 
         {denoisedFile && (
           <View style={[styles.resultCard, { marginTop: 20 }]}>
-            <View style={theme.Styles.row}>
+            <View style={[theme.Styles.row, { marginBottom: theme.SPACING.medium }]}>
               <Feather
                 name="check-circle"
                 size={20}
@@ -209,33 +211,38 @@ export default function ProcessScreen() {
               <Text
                 style={[
                   styles.sectionTitle,
-                  { marginLeft: 8, marginBottom: 0 },
+                  { marginLeft: 8, marginBottom: 0, flex: 1 },
                 ]}
               >
                 Denoised Result
               </Text>
+              <View style={[styles.timeStats]}>
+                <Feather name="clock" size={14} color={theme.COLORS.subtext} />
+                <Text style={styles.timeText}>{timeHandler(processingTime)}</Text>
+              </View>
             </View>
-            <View style={styles.playerContainer}>
+            <View>
               {isFileTypeVideo ? (
                 <VideoPlayer uri={denoisedFile.uri} />
               ) : (
                 <AudioPlayer uri={denoisedFile.uri} />
               )}
             </View>
-            <TouchableOpacity
-              style={{ marginTop: 8, }}
-              disabled={!denoisedFile}
-              onPress={async () => {
-                if (denoisedFile) {
-                  await saveToDevice(denoisedFile);
-                }
-              }}
-            >
-              <Feather name="download" size={24} color={theme.COLORS.primary} />
-            </TouchableOpacity>
-            <Text style={styles.etaText}>
-              Took: {timeHandler(processingTime)}
-            </Text>
+            <View style={styles.resultActions}>
+              <TouchableOpacity
+                style={styles.saveButton}
+                disabled={!denoisedFile}
+                onPress={async () => {
+                  if (denoisedFile) {
+                    await saveToDevice(denoisedFile);
+                  }
+                }}
+              >
+                <Feather name="download" size={18} color={theme.COLORS.background} />
+                <Text style={styles.saveButtonText}>Save to Device</Text>
+              </TouchableOpacity>
+              <ShareBtn uri={denoisedFile ? denoisedFile.uri : ""} />
+            </View>
           </View>
         )}
         <View style={{ height: 100 }} />
@@ -302,6 +309,8 @@ const styles = StyleSheet.create({
     marginTop: theme.SPACING.xsmall,
     fontSize: theme.FONT_SIZE.heading,
     zIndex: 10,
+    alignItems: "center",
+    marginBottom: theme.SPACING.medium,
   },
   sectionTitle: {
     fontSize: theme.FONT_SIZE.body,
@@ -349,13 +358,46 @@ const styles = StyleSheet.create({
     color: theme.COLORS.primary,
     fontSize: theme.FONT_SIZE.small,
     fontWeight: "700",
-    width: 35,
+    width: 40,
   },
   etaText: {
     color: theme.COLORS.subtext,
     fontSize: theme.FONT_SIZE.small,
     marginTop: 8,
     textAlign: "right",
+  },
+  resultActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: theme.COLORS.border,
+  },
+  saveButton: {
+    backgroundColor: theme.COLORS.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 8,
+  },
+  saveButtonText: {
+    color: theme.COLORS.background,
+    fontWeight: "600",
+    fontSize: theme.FONT_SIZE.small,
+  },
+  timeStats: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  timeText: {
+    color: theme.COLORS.subtext,
+    fontSize: theme.FONT_SIZE.small,
+    fontWeight: "500",
   },
   resultCard: {
     borderColor: theme.COLORS.success,
