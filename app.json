@@ -1,6 +1,6 @@
 {
   "expo": {
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "deepdenoiser",
@@ -35,14 +35,13 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      "./DisableDependencyInfo",
       "expo-router",
       [
         "expo-build-properties",
         {
           "android": {
-            "buildArchs": [
-              "arm64-v8a"
-            ],
+            "buildArchs": ["arm64-v8a"],
             "enableBundleCompression": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResoursesInReleaseBuilds": true,
@@ -71,15 +70,18 @@
         "expo-media-library",
         {
           "isAccessMediaLocationEnabled": true,
-          "granularPermissions": [
-            "audio",
-            "video"
-          ]
+          "granularPermissions": ["audio", "video"]
         }
       ],
       "onnxruntime-react-native",
       "expo-asset",
-      "expo-video"
+      "expo-video",
+      [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["video/*", "audio/*"]
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
