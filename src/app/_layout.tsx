@@ -1,4 +1,4 @@
-import { Stack } from "expo-router";
+import { Stack, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
 import * as SplashScreen from "expo-splash-screen";
@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { COLORS, Styles, FONT_SIZE } from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
+import { ShareIntentProvider } from "expo-share-intent";
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -19,6 +20,7 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+  const router = useRouter();
 
   useEffect(() => {
     async function prepare() {
@@ -73,13 +75,16 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <ShareIntentProvider options={{
+      resetOnBackground: true,
+      onResetShareIntent: () => { router.replace("/(tabs)") }
+    }}>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="processing" />
       </Stack>
-    </>
+    </ShareIntentProvider>
   );
 }
 
