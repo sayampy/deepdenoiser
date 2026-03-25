@@ -1,4 +1,5 @@
 import * as theme from "@/src/constants/theme";
+import { File } from "expo-file-system";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React from "react";
 import {
@@ -15,7 +16,8 @@ interface VideoPlayerProps {
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri }) => {
 
   // Get filename from URI
-  const fileName = uri.split("/").pop() || "Video";
+  const file = new File(uri);
+  const fileName = file.name;
 
   const player = useVideoPlayer(uri, (player) => {
     player.loop = true;

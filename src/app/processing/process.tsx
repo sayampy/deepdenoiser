@@ -30,7 +30,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ProcessScreen() {
   const router = useRouter();
-  const { fileuri } = useLocalSearchParams<{ fileuri: string }>();
+  const { fileuri, filename = "" } = useLocalSearchParams<{ fileuri: string, filename: string }>();
 
   const [originalFile, setOriginalFile] = useState<fs.File | null>(null);
   const [isFileTypeVideo, setIsFileTypeVideo] = useState(false);
@@ -95,7 +95,6 @@ export default function ProcessScreen() {
       const wavFile = await toWav(originalFile);
       setProgressText("Converting to PCM...");
       const pcmFile = await WavtoPCM(wavFile);
-
       setProgressText("Reading audio data...");
       const float32Array = await PCMtoArray(pcmFile);
 
@@ -126,11 +125,15 @@ export default function ProcessScreen() {
       const denoisedPcmFile = await ArraytoPCM(denoisedArray);
 
       setProgressText("Finalizing audio...");
+      const baseName = filename.replace('%20', '\s');
+      /*(filename.substring(0, filename.lastIndexOf('.')). || filename || `denoised_${Date.now()}`;*/
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
+      finalWavFile.rename(`${baseName}_denoised.wav`)
 
       if (isFileTypeVideo) {
         setProgressText("Merging with video...");
         const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);
+        finalVideoFile.rename(`${baseName}_denoised.mp4`);
         setDenoisedFile(finalVideoFile);
       } else {
         setDenoisedFile(finalWavFile);
@@ -157,7 +160,7 @@ export default function ProcessScreen() {
   return (
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
-      <View style={[theme.Styles.header, styles.headerContainer]}>
+      <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
           onPress={() => router.back()}
@@ -199,7 +202,7 @@ export default function ProcessScreen() {
 
         {denoisedFile && (
           <View style={[styles.resultCard, { marginTop: 20 }]}>
-            <View style={theme.Styles.row}>
+            <View style={[theme.Styles.row, { marginBottom: theme.SPACING.medium }]}>
               <Feather
                 name="check-circle"
                 size={20}
@@ -306,6 +309,8 @@ const styles = StyleSheet.create({
     marginTop: theme.SPACING.xsmall,
     fontSize: theme.FONT_SIZE.heading,
     zIndex: 10,
+    alignItems: "center",
+    marginBottom: theme.SPACING.medium,
   },
   sectionTitle: {
     fontSize: theme.FONT_SIZE.body,
@@ -353,7 +358,7 @@ const styles = StyleSheet.create({
     color: theme.COLORS.primary,
     fontSize: theme.FONT_SIZE.small,
     fontWeight: "700",
-    width: 35,
+    width: 40,
   },
   etaText: {
     color: theme.COLORS.subtext,

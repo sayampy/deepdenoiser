@@ -90,7 +90,6 @@ export async function PCMtoWav(file: fs.File): Promise<fs.File> {
       fs.Paths.cache,
       `Denoised_${file.modificationTime}.wav`,
     );
-    const outputUri = outputFile.uri;
     await outputFile.write(wavData);
 
 

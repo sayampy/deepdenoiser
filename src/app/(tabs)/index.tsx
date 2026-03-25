@@ -2,10 +2,12 @@ import AudioPlayer from "@/src/components/audioPlayer";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
+
 import * as DocumentPicker from "expo-document-picker";
+import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -18,12 +20,23 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const [tempFile, setTempFile] = useState(null);
+  const [tempFile, setTempFile] = useState<{
+    uri: string;
+    name: string;
+    type: "Audio" | "Video";
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
+  useEffect(() => {
+    //Clears Cache
+    const cache = new fs.Directory(fs.Paths.cache);
+    cache.list().forEach((file) => {
+      file.delete();
+    });
+  },
+    []);
   const handleImportFile = async () => {
     try {
-      const result: any = await DocumentPicker.getDocumentAsync({
+      const result = await DocumentPicker.getDocumentAsync({
         type: ["audio/*", "video/*"],
         copyToCacheDirectory: true,
       });
@@ -35,7 +48,7 @@ export default function HomeScreen() {
         const asset = result.assets[0];
         setTempFile({
           uri: asset.uri,
-          name: asset.name,
+          name: asset.name.split('.').slice(0, -1).join('.'),
           type: asset.mimeType?.startsWith("audio") ? "Audio" : "Video",
         });
         setIsLoading(false);
@@ -57,7 +70,10 @@ export default function HomeScreen() {
     }
     router.push({
       pathname: "/processing/process",
-      params: { fileuri: tempFile.uri },
+      params: {
+        fileuri: tempFile.uri,
+        filename: tempFile.name,
+      },
     });
   };
 
@@ -100,27 +116,14 @@ export default function HomeScreen() {
             </Text>
           </TouchableOpacity>
         ) : (
-          <View style={[theme.Styles.card, styles.fileCard]}>
-            {/* <View style={styles.fileIconContainer}>
-              <Feather
-                name={tempFile.type === "Audio" ? "music" : "video"}
-                size={32}
-                color={theme.COLORS.primary}
-                />
-                </View>
-                <View style={styles.fileDetails}>
-                <Text style={styles.fileName} numberOfLines={1}>
-                {tempFile.name}
-                </Text>
-                <Text style={styles.fileType}>{tempFile.type} File</Text>
-                </View> */}
+          <View style={styles.previewContainer}>
             <View style={styles.fileDetails}>
-              {tempFile && (
-                tempFile.type === "Video" ? (
-                  <VideoPlayer uri={tempFile.uri} />
-                ) : (
+              {tempFile.type === "Video" ? (
+                <VideoPlayer uri={tempFile.uri} />
+              ) : (
+                <View style={theme.Styles.card}>
                   <AudioPlayer uri={tempFile.uri} />
-                )
+                </View>
               )}
             </View>
             <TouchableOpacity
@@ -128,6 +131,7 @@ export default function HomeScreen() {
               style={styles.removeButton}
             >
               <Feather name="trash-2" size={20} color={theme.COLORS.error} />
+              <Text style={styles.removeText}>Remove File</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -185,37 +189,24 @@ const styles = StyleSheet.create({
     fontSize: theme.FONT_SIZE.body,
     marginTop: 4,
   },
-  fileCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    // padding: theme.SPACING.xsmall,
-  },
-  fileIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: "rgba(0, 229, 255, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
+  previewContainer: {
+    width: "100%",
   },
   fileDetails: {
-    // marginLeft: 16,
-    flex: 1,
-  },
-  fileName: {
-    fontSize: theme.FONT_SIZE.body,
-    fontWeight: "600",
-    color: theme.COLORS.text,
-  },
-  fileType: {
-    fontSize: theme.FONT_SIZE.small,
-    color: theme.COLORS.subtext,
-    marginTop: 2,
+    width: "100%",
   },
   removeButton: {
-    // padding: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 16,
+    padding: 8,
+  },
+  removeText: {
+    color: theme.COLORS.error,
     marginLeft: 8,
+    fontWeight: "600",
+    fontSize: theme.FONT_SIZE.small,
   },
   loader: {
     marginTop: 24,

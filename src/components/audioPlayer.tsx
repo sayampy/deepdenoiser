@@ -1,6 +1,7 @@
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import { File } from "expo-file-system";
 import React, { useEffect, useState } from "react";
 import {
   Dimensions,
@@ -33,8 +34,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
   const isSeeking = useSharedValue(false);
 
   // Get filename from URI
-  const fileName = uri.split("/").pop() || "Audio";
-
+  const file = new File(uri);
+  const fileName = file.name;
   const pan = Gesture.Pan()
     .onBegin(() => {
       isSeeking.value = true;
