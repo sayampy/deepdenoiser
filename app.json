@@ -71,10 +71,10 @@
           "granularPermissions": ["audio", "video"]
         }
       ],
-      "onnxruntime-react-native",
-      ["expo-asset", { "assets": ["@/assets"] }],
+      "expo-asset",
       "expo-video",
       "expo-audio",
+      "./app.plugin",
       [
         "expo-sharing",
         {
