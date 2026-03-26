@@ -2,7 +2,6 @@ import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import * as MediaLibrary from "expo-media-library";
 import { Stack, useRouter } from "expo-router";
-import { ShareIntentProvider } from "expo-share-intent";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
@@ -75,17 +74,14 @@ export default function RootLayout() {
   }
 
   return (
-    <ShareIntentProvider options={{
-      resetOnBackground: true,
-      onResetShareIntent: () => { router.replace("/(tabs)") }
-    }}>
+    <>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
 
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="processing" />
       </Stack>
-    </ShareIntentProvider>
+    </>
   );
 }
 

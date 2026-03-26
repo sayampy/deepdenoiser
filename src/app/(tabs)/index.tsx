@@ -6,7 +6,6 @@ import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
-import { useShareIntentContext } from "expo-share-intent";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
 import {
@@ -21,14 +20,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { hasShareIntent } = useShareIntentContext();
-  useEffect(() => {
-    if (hasShareIntent) {
-      console.log("Share Intent Detected")
-      router.replace('/share-handler')
-    }
-  }
-    , [hasShareIntent]);
   const [tempFile, setTempFile] = useState<{
     uri: string;
     name: string;
