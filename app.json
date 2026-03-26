@@ -74,8 +74,9 @@
         }
       ],
       "onnxruntime-react-native",
-      "expo-asset",
+      ["expo-asset", { "assets": ["@/assets"] }],
       "expo-video",
+      "expo-audio",
       [
         "expo-share-intent",
         {

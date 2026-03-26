@@ -1,6 +1,6 @@
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
-import { Audio } from "expo-av";
+import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { File } from "expo-file-system";
 import React, { useEffect, useState } from "react";
 import {
@@ -25,10 +25,8 @@ interface AudioPlayerProps {
 }
 
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState<number>(0);
-  const [position, setPosition] = useState<number>(0);
+  const player = useAudioPlayer(uri);
+  const status = useAudioPlayerStatus(player);
   const progressBarWidth = Dimensions.get("window").width * 0.5;
   const progress = useSharedValue(0);
   const isSeeking = useSharedValue(false);
@@ -36,6 +34,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
   // Get filename from URI
   const file = new File(uri);
   const fileName = file.name;
+
   const pan = Gesture.Pan()
     .onBegin(() => {
       isSeeking.value = true;
@@ -47,74 +46,43 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
     })
     .onFinalize(() => {
       isSeeking.value = false;
-      if (sound && duration) {
-        const newPosition = progress.value * duration;
-        sound.setPositionAsync(newPosition);
+      if (player && status.duration) {
+        const newPosition = progress.value * status.duration;
+        player.seekTo(newPosition);
       }
     })
     .runOnJS(true);
 
   useEffect(() => {
-    const loadSound = async () => {
-      if (!uri) return;
-      try {
-        const { sound } = await Audio.Sound.createAsync({ uri });
-        setSound(sound);
-        const status = await sound.getStatusAsync();
-        if (status.isLoaded) {
-          setDuration(status.durationMillis || 0);
-        }
-      } catch (error) {
-        console.error("Error loading sound:", error);
-      }
-    };
-
-    loadSound();
-
-    return () => {
-      if (sound) {
-        sound.unloadAsync();
-      }
-    };
-  }, [uri]);
+    if (!isSeeking.value && status.duration > 0) {
+      progress.value = status.currentTime / status.duration;
+    }
+  }, [status.currentTime, status.duration, isSeeking.value]);
 
   useEffect(() => {
-    if (sound) {
-      sound.setOnPlaybackStatusUpdate(onPlaybackStatusUpdate);
+    if (status.currentTime >= status.duration && status.duration > 0 && !status.playing) {
+      player.seekTo(0);
+      progress.value = 0;
     }
-  }, [sound]);
+  }, [status.currentTime, status.duration, status.playing]);
 
-  const onPlaybackStatusUpdate = (status: any) => {
-    if (status.isLoaded) {
-      setPosition(status.positionMillis);
-      setDuration(status.durationMillis || 0);
-      if (!isSeeking.value) {
-        progress.value = status.positionMillis / (status.durationMillis || 1);
-      }
-      if (status.didJustFinish) {
-        setIsPlaying(false);
-        sound?.stopAsync();
-        sound?.setPositionAsync(0);
-        progress.value = 0;
-      }
-    }
-  };
-
-  const handlePlayPause = async () => {
-    if (!sound) return;
-    if (isPlaying) {
-      await sound.pauseAsync();
+  const handlePlayPause = () => {
+    if (!player) return;
+    if (status.playing) {
+      player.pause();
     } else {
-      await sound.playAsync();
+      if (status.currentTime >= status.duration && status.duration > 0) {
+        player.seekTo(0);
+      }
+      player.play();
     }
-    setIsPlaying(!isPlaying);
   };
 
-  const formatTime = (millis: number) => {
-    const totalSeconds = Math.floor(millis / 1000);
+  const formatTime = (seconds: number) => {
+    const totalSeconds = Math.floor(seconds);
     const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    return `${minutes}:${seconds < 10 ? "0" : ""}${seconds}`;
+    const s = totalSeconds % 60;
+    return `${minutes}:${s < 10 ? "0" : ""}${s}`;
   };
 
   const animatedProgressStyle = useAnimatedStyle(() => {
@@ -129,7 +97,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
         <TouchableOpacity style={styles.playButton} onPress={handlePlayPause}>
           <View style={styles.iconCircle}>
             <Feather
-              name={isPlaying ? "pause" : "play"}
+              name={status.playing ? "pause" : "play"}
               size={24}
               color={theme.COLORS.background}
             />
@@ -138,8 +106,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
 
         <View style={styles.controlsContainer}>
           <View style={styles.timeContainer}>
-            <Text style={styles.timeText}>{formatTime(position)}</Text>
-            <Text style={styles.timeText}>{formatTime(duration)}</Text>
+            <Text style={styles.timeText}>{formatTime(status.currentTime)}</Text>
+            <Text style={styles.timeText}>{formatTime(status.duration)}</Text>
           </View>
 
           <GestureDetector gesture={pan}>
