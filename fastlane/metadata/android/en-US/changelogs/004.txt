@@ -1,0 +1,5 @@
+# v1.1.0
+- Added Sharing from other apps
+- Updated to Expo SDK 55
+- UI Updated
+    - 

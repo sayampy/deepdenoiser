@@ -15,11 +15,15 @@ Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on yo
 ---
 
 <p align="center" float="left">
-  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="40%" />
-  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="40%" />
+  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="33%" />
+  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="33%" />
+  <video width="33%">
+  <source src="/fastlane/metadata/android/en-US/images/phoneScreenshots/recording.mp4" type="video/mp4">
+  </video>
 </p>
 
 ---
+
 ## ✨ Features
 
 - **🔇 Advanced Noise Suppression**: Eliminates background hiss, hums, and environmental noise using deep learning.
@@ -38,24 +42,27 @@ Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on yo
 ## 🚀 Get Started
 
 ### Prerequisites
+
 - Bun (Recommended)
 - Android Development Environment (Android Studio)
 
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/sayampy/deepdenoiser.git
    cd deepdenoiser
    ```
 
 2. **Install dependencies**
+
    ```bash
    bun install
    ```
 
 3. **Run on Android**
-   *(Note: This project uses custom native code, so you must use a Development Build, not Expo Go)*
+   _(Note: This project uses custom native code, so you must use a Development Build, not Expo Go)_
    ```bash
    bunx expo run:android
    ```
