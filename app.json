@@ -33,7 +33,8 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
-      "./DisableDependencyInfo",
+      "./plugins/DisableDependencyInfo",
+      "./plugins/withOnnxruntime",
       "expo-router",
       [
         "expo-build-properties",
@@ -74,7 +75,7 @@
       "expo-asset",
       "expo-video",
       "expo-audio",
-      "./app.plugin",
+
       [
         "expo-sharing",
         {

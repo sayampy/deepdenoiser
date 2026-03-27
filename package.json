@@ -9,7 +9,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
@@ -50,6 +51,7 @@
     "eslint": "^9.39.1",
     "eslint-config-expo": "~55.0.0",
     "expo-dev-client": "~55.0.18",
+    "patch-package": "^8.0.1",
     "typescript": "~5.9.3"
   },
   "private": true,
