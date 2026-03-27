@@ -5,6 +5,7 @@ import { Feather } from "@expo/vector-icons";
 
 import * as DocumentPicker from "expo-document-picker";
 import * as fs from "expo-file-system";
+import { File } from "expo-file-system";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React, { useEffect, useState } from "react";
@@ -46,8 +47,10 @@ export default function HomeScreen() {
       if (result.assets && result.assets.length > 0) {
         setIsLoading(true);
         const asset = result.assets[0];
+        const asset_file = new File(asset.uri);
+        asset_file.rename(asset.name);
         setTempFile({
-          uri: asset.uri,
+          uri: asset_file.uri,
           name: asset.name.split('.').slice(0, -1).join('.'),
           type: asset.mimeType?.startsWith("audio") ? "Audio" : "Video",
         });
