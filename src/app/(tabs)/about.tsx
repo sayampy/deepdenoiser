@@ -3,8 +3,8 @@ import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import React, { useState } from "react";
 import {
-  Modal,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -30,11 +30,11 @@ export default function AboutScreen() {
       >
         <View style={theme.Styles.header}>
           <Text style={theme.Styles.title}>About DeepDenoiser</Text>
-          <Text style={theme.Styles.subtitle}>Version 1.0.0</Text>
+          <Text style={theme.Styles.subtitle}>Version 1.1.0</Text>
         </View>
 
         <View style={[theme.Styles.card, styles.infoCard]}>
-          <Text style={styles.cardTitle}>What is DeepDenoiser</Text>
+          <Text style={styles.cardTitle}>What is DeepDenoiser?</Text>
           <Text style={styles.cardText}>
             DeepDenoiser is an open-source tool designed to make
             professional-grade audio noise reduction accessible to everyone. It

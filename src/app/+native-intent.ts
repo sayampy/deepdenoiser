@@ -1,4 +1,3 @@
-
 export function redirectSystemPath({
     path,
     initial,
@@ -7,14 +6,16 @@ export function redirectSystemPath({
     initial: boolean;
 }) {
     try {
-        // Route any incoming native share launch to your handler screen.
-        // Adjust the condition if your build produces a different incoming path.
-        if (initial) {
+        // Check if the incoming path is from expo-sharing
+        // This can be via a custom scheme like expo-sharing:// or a deep link
+        if (path.includes("expo-sharing")) {
             return "/share-handler";
         }
 
+        // Default path handling
         return path;
-    } catch {
+    } catch (e) {
+        // If everything fails, fallback to home
         return "/(tabs)";
     }
 }

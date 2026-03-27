@@ -1,54 +1,70 @@
 import * as theme from "@/src/constants/theme";
-import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
-import { useShareIntentContext } from "expo-share-intent";
+import { useIncomingShare } from "expo-sharing";
 import { useEffect } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-export default function ShareReceived() {
-    const { isReady, hasShareIntent, shareIntent, resetShareIntent, error } = useShareIntentContext();
-    const router = useRouter();
+export default function ShareHandler() {
+  const { resolvedSharedPayloads, isResolving, clearSharedPayloads, error } = useIncomingShare();
+  const router = useRouter();
 
-    useEffect(() => {
-        if (!hasShareIntent) {
-            router.replace("/(tabs)")
-            // resetShareIntent();
-            return;
-        };
-        if (!isReady) return;
-        console.log("shareIntent", shareIntent);
-        const payload = shareIntent.files?.[0];
-        if (payload) {
-            const processSharedFile = async () => {
-                try {
-                    const uri = payload.path;
-                    const file = new fs.File(uri);
-                    const fileName = file.name ?? `shared_${Date.now()}`;
-                    const destFile = new fs.File(fs.Paths.cache, fileName);
-                    // if (destFile.exists) { destFile.delete() }
-                    // if (file.exists) file.copy(fs.Paths.cache);
-                    resetShareIntent();
-                    router.replace({
-                        pathname: "/processing/process",
-                        params: {
-                            fileuri: file.uri,
-                            filename: fileName.split('.').slice(0, -1).join('.')
-                        },
-                    });
-                } catch (error) {
-                    console.log("error", error);
-                    resetShareIntent()
-                    console.error("Failed to process shared file", error);
-                }
-            };
-            processSharedFile();
+  useEffect(() => {
+    if (!isResolving) {
+      if (resolvedSharedPayloads.length > 0) {
+        const payload = resolvedSharedPayloads[0];
+        // In expo-sharing SDK 55, payload has contentUri, originalName, contentType
+        if (payload.contentUri) {
+          console.log("Processing shared content:", payload.contentUri);
+          
+          // Navigate to processing screen
+          router.replace({
+            pathname: "/processing/process",
+            params: {
+              fileuri: payload.contentUri,
+              filename: (payload.originalName || "shared_file").split('.').slice(0, -1).join('.')
+            },
+          });
+          
+          // Clear shared payloads to avoid reprocessing
+          clearSharedPayloads();
+        } else {
+          console.warn("Shared payload has no contentUri");
+          router.replace("/(tabs)");
         }
-    }, [shareIntent, isReady]);
+      } else if (error) {
+        console.error("Error resolving shared payload:", error);
+        router.replace("/(tabs)");
+      }
+    }
+  }, [resolvedSharedPayloads, isResolving, error]);
 
-    return (
-        <View style={[theme.Styles.container, theme.Styles.centered]} >
-            <ActivityIndicator size="large" color={theme.COLORS.primary} />
-            {!hasShareIntent && <Text>No Share Intent</Text>}
-        </View>
-    );
+  return (
+    <View style={[theme.Styles.container, styles.centered]}>
+      <ActivityIndicator size="large" color={theme.COLORS.primary} />
+      <Text style={styles.loadingText}>
+        {isResolving ? "Preparing shared file..." : "Redirecting..."}
+      </Text>
+      {error && <Text style={styles.errorText}>Error: {error.message}</Text>}
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  centered: {
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  loadingText: {
+    marginTop: 20,
+    fontSize: theme.FONT_SIZE.body,
+    color: theme.COLORS.text,
+    textAlign: "center",
+  },
+  errorText: {
+    marginTop: 10,
+    fontSize: theme.FONT_SIZE.small,
+    color: theme.COLORS.error,
+    textAlign: "center",
+  },
+});
