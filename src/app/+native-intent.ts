@@ -9,6 +9,7 @@ export function redirectSystemPath({
         // Check if the incoming path is from expo-sharing
         // This can be via a custom scheme like expo-sharing:// or a deep link
         if (path.includes("expo-sharing")) {
+            console.log(path);
             return "/share-handler";
         }
 

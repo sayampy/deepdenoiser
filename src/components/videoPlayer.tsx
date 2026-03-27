@@ -11,9 +11,10 @@ import {
 
 interface VideoPlayerProps {
   uri: string;
+  name: string;
 }
 
-const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri }) => {
+const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
 
   // Get filename from URI
   const file = new File(uri);
@@ -40,7 +41,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri }) => {
 
       <View style={styles.footer}>
         <View style={styles.infoContainer}>
-          <Text style={styles.title} numberOfLines={1}>{fileName}</Text>
+          <Text style={styles.title} numberOfLines={1}>{name.replaceAll('%20', '\s')}</Text>
 
         </View>
       </View>

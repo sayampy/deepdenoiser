@@ -1,7 +1,7 @@
 import AudioPlayer from "@/src/components/audioPlayer";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 
 import * as DocumentPicker from "expo-document-picker";
 import * as fs from "expo-file-system";
@@ -48,10 +48,11 @@ export default function HomeScreen() {
         setIsLoading(true);
         const asset = result.assets[0];
         const asset_file = new File(asset.uri);
-        asset_file.rename(asset.name);
+        const filename = asset.name;
+        // asset_file.rename(asset.name);
         setTempFile({
           uri: asset_file.uri,
-          name: asset.name.split('.').slice(0, -1).join('.'),
+          name: filename,
           type: asset.mimeType?.startsWith("audio") ? "Audio" : "Video",
         });
         setIsLoading(false);
@@ -122,10 +123,10 @@ export default function HomeScreen() {
           <View style={styles.previewContainer}>
             <View style={styles.fileDetails}>
               {tempFile.type === "Video" ? (
-                <VideoPlayer uri={tempFile.uri} />
+                <VideoPlayer uri={tempFile.uri} name={tempFile.name} />
               ) : (
                 <View style={theme.Styles.card}>
-                  <AudioPlayer uri={tempFile.uri} />
+                  <AudioPlayer uri={tempFile.uri} name={tempFile.name} />
                 </View>
               )}
             </View>

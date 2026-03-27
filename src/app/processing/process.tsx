@@ -12,7 +12,7 @@ import {
   saveToDevice,
   toWav,
 } from "@/src/scripts/formatHandler";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -30,7 +30,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ProcessScreen() {
   const router = useRouter();
-  const { fileuri, filename = "" } = useLocalSearchParams<{ fileuri: string, filename: string }>();
+  const { fileuri, filename } = useLocalSearchParams<{ fileuri: string, filename: string }>();
 
   const [originalFile, setOriginalFile] = useState<fs.File | null>(null);
   const [isFileTypeVideo, setIsFileTypeVideo] = useState(false);
@@ -59,14 +59,20 @@ export default function ProcessScreen() {
       return;
     }
 
-    const processFile = async () => {
+    const processFile = () => {
       try {
         setIsLoading(true);
         const inputFile = new fs.File(fileuri);
         setOriginalFile(inputFile);
-
+        console.debug("File Type:", inputFile.type);
         // Detect if video or audio from extension or mime (simple check)
-        const isVideo = inputFile.type.startsWith("video");
+        const isVideo = !!inputFile.type?.startsWith("video") ||
+          filename.toLowerCase().endsWith(".mp4") ||
+          filename.toLowerCase().endsWith(".mov") ||
+          filename.toLowerCase().endsWith(".mkv") ||
+          filename.toLowerCase().endsWith(".avi") ||
+          filename.toLowerCase().endsWith(".m4v") ||
+          filename.toLowerCase().endsWith(".webm");
         setIsFileTypeVideo(isVideo);
 
 
@@ -79,7 +85,7 @@ export default function ProcessScreen() {
     };
 
     processFile();
-  }, [fileuri, router]);
+  }, [fileuri]);
 
   const handleDenoise = async () => {
     if (!originalFile) return;
@@ -125,7 +131,7 @@ export default function ProcessScreen() {
       const denoisedPcmFile = await ArraytoPCM(denoisedArray);
 
       setProgressText("Finalizing audio...");
-      const baseName = filename.replace('%20', '\s');
+      const baseName = filename.split('.').slice(0, -1).join('.').replaceAll('%20', '\s');
       /*(filename.substring(0, filename.lastIndexOf('.')). || filename || `denoised_${Date.now()}`;*/
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
       finalWavFile.rename(`${baseName}_denoised.wav`)
@@ -177,9 +183,9 @@ export default function ProcessScreen() {
           <View style={styles.playerContainer}>
             {originalFile && (
               isFileTypeVideo ? (
-                <VideoPlayer uri={originalFile.uri} />
+                <VideoPlayer uri={originalFile.uri} name={filename} />
               ) : (
-                <AudioPlayer uri={originalFile.uri} />
+                <AudioPlayer uri={originalFile.uri} name={filename} />
               )
             )}
           </View>
@@ -223,9 +229,9 @@ export default function ProcessScreen() {
             </View>
             <View>
               {isFileTypeVideo ? (
-                <VideoPlayer uri={denoisedFile.uri} />
+                <VideoPlayer uri={denoisedFile.uri} name={denoisedFile.name} />
               ) : (
-                <AudioPlayer uri={denoisedFile.uri} />
+                <AudioPlayer uri={denoisedFile.uri} name={denoisedFile.name} />
               )}
             </View>
             <View style={styles.resultActions}>
@@ -370,10 +376,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 16,
-    paddingTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: theme.COLORS.border,
+    paddingTop: 8,
   },
   saveButton: {
     backgroundColor: theme.COLORS.primary,

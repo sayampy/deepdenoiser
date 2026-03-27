@@ -15,16 +15,16 @@ export default function ShareHandler() {
         // In expo-sharing SDK 55, payload has contentUri, originalName, contentType
         if (payload.contentUri) {
           console.log("Processing shared content:", payload.contentUri);
-          
+
           // Navigate to processing screen
           router.replace({
             pathname: "/processing/process",
             params: {
               fileuri: payload.contentUri,
-              filename: (payload.originalName || "shared_file").split('.').slice(0, -1).join('.')
+              filename: (payload.originalName || "shared_file")
             },
           });
-          
+
           // Clear shared payloads to avoid reprocessing
           clearSharedPayloads();
         } else {

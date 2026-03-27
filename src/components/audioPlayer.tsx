@@ -1,8 +1,8 @@
 import * as theme from "@/src/constants/theme";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { File } from "expo-file-system";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import {
   Dimensions,
   StyleSheet,
@@ -22,9 +22,10 @@ import Animated, {
 
 interface AudioPlayerProps {
   uri: string;
+  name: string;
 }
 
-const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
+const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   const player = useAudioPlayer(uri);
   const status = useAudioPlayerStatus(player);
   const progressBarWidth = Dimensions.get("window").width * 0.5;
@@ -128,7 +129,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri }) => {
 
       <View style={styles.footer}>
         <View style={styles.infoContainer}>
-          <Text style={styles.title} numberOfLines={1}>{fileName}</Text>
+          <Text style={styles.title} numberOfLines={1}>{name.replaceAll('%20', '\s')}</Text>
         </View>
       </View>
     </View>

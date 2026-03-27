@@ -5,6 +5,7 @@ import { Stack, useRouter } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
+import { useFonts } from "expo-font";
 import {
   ActivityIndicator,
   StyleSheet,
@@ -21,24 +22,29 @@ export default function RootLayout() {
   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
   const router = useRouter();
 
+  const [fontsLoaded, fontError] = useFonts({
+    ...Feather.font,
+  });
+
   useEffect(() => {
     async function prepare() {
       try {
-        // Pre-load fonts, make any API calls you need here
-        // For now just artificial delay to simulate loading or permission check
-        await new Promise((resolve) => setTimeout(resolve, 1000));
+        // Pre-load fonts or other resources here
+        // The useFonts hook handles the font loading, but we wait for it
       } catch (e) {
         console.warn(e);
       } finally {
-        setAppIsReady(true);
-        await SplashScreen.hideAsync();
+        if (fontsLoaded || fontError) {
+          setAppIsReady(true);
+          await SplashScreen.hideAsync();
+        }
       }
     }
 
     prepare();
-  }, []);
+  }, [fontsLoaded, fontError]);
 
-  if (!appIsReady) {
+  if (!appIsReady && !fontError) {
     return null;
   }
 

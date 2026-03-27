@@ -1,5 +1,5 @@
 import * as theme from "@/src/constants/theme";
-import { Feather } from "@expo/vector-icons";
+import Feather from "@expo/vector-icons/Feather";
 import * as Sharing from "expo-sharing";
 import React from "react";
 import {
