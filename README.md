@@ -3,11 +3,12 @@
 </p>
 
 # DeepDenoiser
-
 [![Version](https://img.shields.io/github/v/release/sayampy/deepdenoiser?label=version)](https://github.com/sayampy/deepdenoiser/releases)
 [![License](https://img.shields.io/github/license/sayampy/deepdenoiser)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Android-green)](https://www.android.com/)
+---
 [![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/T6T61O5FRY)
+
 **DeepDenoiser** is a powerful, open-source mobile application designed to remove background noise from your audio and video files instantly.
 
 Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on your device—ensuring your data remains private and your processing is lightning fast.
@@ -17,10 +18,11 @@ Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on yo
 <p align="center" float="left">
   <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="33%" />
   <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="33%" />
-  <video width="33%">
-  <source src="/fastlane/metadata/android/en-US/images/phoneScreenshots/recording.mp4" type="video/mp4">
-  </video>
 </p>
+
+
+https://github.com/user-attachments/assets/29f147db-ff8b-486a-877d-1d765922ed5c
+
 
 ---
 
