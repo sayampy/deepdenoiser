@@ -1,7 +1,8 @@
 import * as theme from "@/src/constants/theme";
+import { useFocusEffect } from "@react-navigation/native";
 import { File } from "expo-file-system";
 import { useVideoPlayer, VideoView } from "expo-video";
-import React from "react";
+import React, { useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -26,6 +27,21 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
     // player.showNowPlayingNotification = true;r
     // player.play();
   });
+  useFocusEffect(useCallback(() => {
+    return () => {
+      try {
+        if (player && player?.playing) {
+          player?.pause();
+          player?.release();
+        };
+        console.debug("player released");
+      } catch (error) {
+        console.warn(error);
+      }
+    };
+  },
+    []));
+
   return (
     <View style={styles.card}>
       <View style={styles.videoContainer}>

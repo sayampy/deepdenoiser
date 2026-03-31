@@ -1,8 +1,9 @@
 import * as theme from "@/src/constants/theme";
 import Feather from "@expo/vector-icons/Feather";
+import { useFocusEffect } from "@react-navigation/native";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import { File } from "expo-file-system";
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect } from "react";
 import {
   Dimensions,
   StyleSheet,
@@ -35,6 +36,20 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   // Get filename from URI
   const file = new File(uri);
   const fileName = file.name;
+  useFocusEffect(useCallback(() => {
+    return () => {
+      try {
+        if (player && player?.playing) {
+          player?.pause();
+          player?.release();
+        };
+        console.debug("player released");
+      } catch (error) {
+        console.warn(error);
+      }
+    };
+  },
+    []));
 
   const pan = Gesture.Pan()
     .onBegin(() => {
@@ -50,6 +65,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
       if (player && status.duration) {
         const newPosition = progress.value * status.duration;
         player.seekTo(newPosition);
+        player.pause();
       }
     })
     .runOnJS(true);
@@ -64,6 +80,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
     if (status.currentTime >= status.duration && status.duration > 0 && !status.playing) {
       player.seekTo(0);
       progress.value = 0;
+      player.pause();
     }
   }, [status.currentTime, status.duration, status.playing]);
 
