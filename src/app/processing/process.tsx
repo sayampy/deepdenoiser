@@ -1,3 +1,4 @@
+import AdvanceSettings from "@/src/components/advanceSettings";
 import AudioPlayer from "@/src/components/audioPlayer";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
@@ -42,6 +43,7 @@ export default function ProcessScreen() {
   const [denoisedFile, setDenoisedFile] = useState<fs.File | null>(null);
   const [eta, setEta] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState(0);
+  const [attenLimDb, setAttenLimDb] = useState(0);
 
   const timeHandler = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
@@ -124,7 +126,7 @@ export default function ProcessScreen() {
             setEta(`${timeHandler(totalSeconds)} remaining`);
           }
         }
-      });
+      }, attenLimDb);
       setEta(null);
 
       setProgressText("Saving denoised audio...");
@@ -190,6 +192,11 @@ export default function ProcessScreen() {
             )}
           </View>
         </View>
+
+        <AdvanceSettings
+          attenLimDb={attenLimDb}
+          onAttenLimDbChange={setAttenLimDb}
+        />
 
         {denoising && (
           <View style={[theme.Styles.card, styles.progressCard, { marginTop: 20 }]}>

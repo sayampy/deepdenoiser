@@ -93,8 +93,7 @@ export default function HomeScreen() {
         />
         <Text style={theme.Styles.title}>DeepDenoiser</Text>
         <Text style={theme.Styles.subtitle}>
-          Remove background noise from your audio and video using DeepFilterNet
-          3
+          Remove background noise from your audio and video using DeepFilterNet 3
         </Text>
       </View>
 

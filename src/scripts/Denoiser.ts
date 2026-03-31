@@ -50,7 +50,7 @@ export class DeepFilterNet {
         }
     }
 
-    private initStates(): {
+    private initStates(attenLimDbValue: number = 0.0): {
         states: Tensor | Tensor[];
         attenLimDb: Tensor;
     } {
@@ -71,7 +71,7 @@ export class DeepFilterNet {
             }
         }
 
-        const attenLimDb = new Tensor("float32", new Float32Array([0.0]), [1]);
+        const attenLimDb = new Tensor("float32", new Float32Array([attenLimDbValue]), [1]);
         return { states, attenLimDb };
     }
 
@@ -81,6 +81,7 @@ export class DeepFilterNet {
     public async denoise(
         audio: Float32Array | Float32Array[],
         onProgress?: ((p: number) => void) | ((p: number, i: number) => void),
+        attenLimDbValue: number = 0.0,
     ): Promise<Float32Array | Float32Array[]> {
         if (!this.session) {
             throw new Error("Model not loaded. Please call loadModel() first.");
@@ -101,7 +102,7 @@ export class DeepFilterNet {
             }
         }
 
-        const results = await this.runDenoiseLoop(feeds, onProgress);
+        const results = await this.runDenoiseLoop(feeds, onProgress, attenLimDbValue);
 
         return isArray ? results : results[0];
     }
@@ -109,6 +110,7 @@ export class DeepFilterNet {
     private async runDenoiseLoop(
         audioFeeds: Float32Array[],
         onProgress?: ((p: number) => void) | ((p: number, i: number) => void),
+        attenLimDbValue: number = 0.0,
     ): Promise<Float32Array[]> {
         if (!this.session) throw new Error("Session not initialized");
 
@@ -123,7 +125,7 @@ export class DeepFilterNet {
 
         // Prepare resources for all feeds
         const feedStates = audioFeeds.map(() => {
-            const { states, attenLimDb } = this.initStates();
+            const { states, attenLimDb } = this.initStates(attenLimDbValue);
             const inputFrameData = new Float32Array(this.hopSize);
             const inputFrame = new Tensor("float32", inputFrameData, [this.hopSize]);
             const paddedAudio = new Float32Array(paddedLen);

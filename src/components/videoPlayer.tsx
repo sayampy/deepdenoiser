@@ -22,7 +22,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
   const fileName = file.name;
 
   const player = useVideoPlayer(uri, (player) => {
-    player.loop = true;
+    player.loop = false;
     player.muted = false;
     // player.showNowPlayingNotification = true;r
     // player.play();
