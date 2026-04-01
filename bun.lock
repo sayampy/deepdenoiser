@@ -5,6 +5,7 @@
     "": {
       "name": "deepdenoiser",
       "dependencies": {
+        "@aptabase/react-native": "^0.4.0",
         "@expo/vector-icons": "^15.0.3",
         "@react-navigation/bottom-tabs": "^7.4.0",
         "@react-navigation/elements": "^2.8.1",
@@ -52,6 +53,8 @@
     "unrs-resolver",
   ],
   "packages": {
+    "@aptabase/react-native": ["@aptabase/react-native@0.4.0", "", { "peerDependencies": { "react": ">=19.1.0", "react-native": ">=0.81.4" } }, "sha512-m/0rTrPpB581UEOdfwERhuBhuu/4dvMCu+5mGalbWDbh3tv2zS75LRNfOYUMEuA8WqFNYHtbhCh6EiPq6eL1CQ=="],
+
     "@babel/code-frame": ["@babel/code-frame@7.29.0", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.28.5", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-9NhCeYjq9+3uxgdtp20LSiJXJvN0FeCtNGpJxuMFZ1Kv3cWUNb6DOhJwUvcVCzKGR66cw4njwM6hrJLqgOwbcw=="],
 
     "@babel/compat-data": ["@babel/compat-data@7.29.0", "", {}, "sha512-T1NCJqT/j9+cn8fvkt7jtwbLBfLC/1y1c7NtCeXFRgzGTsafi68MRv8yzkYSapBnFA6L3U2VSc02ciDzoAJhJg=="],
