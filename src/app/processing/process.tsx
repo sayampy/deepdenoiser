@@ -319,7 +319,7 @@ export default function ProcessScreen() {
                   borderColor: theme.COLORS.primary,
                 },
               ]}
-              onPress={handleDenoise}
+              onPress={() => { denoisedFile.delete(); handleDenoise() }}
             >
               <Feather
                 name="refresh-ccw"
@@ -468,5 +468,7 @@ const styles = StyleSheet.create({
     paddingBottom: theme.SPACING.xlarge,
     backgroundColor: theme.COLORS.background,
     paddingTop: theme.SPACING.small,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20
   },
 });

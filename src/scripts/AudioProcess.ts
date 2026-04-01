@@ -16,7 +16,7 @@ export function normalizeAudio(
   const maxAllowedPeak = Math.pow(10, maxPeakDb / 20);
 
   // Pass 1: Calculate current RMS and Peak
-  let sumSquares = 0;
+  let sumSquares = 0.0;
   let currentPeak = 0;
 
   for (let i = 0; i < audio.length; i++) {
@@ -42,10 +42,43 @@ export function normalizeAudio(
     gain = maxAllowedPeak / currentPeak;
   }
 
-  // Pass 2: Apply gain and return new array
+  // Pass 2: Apply dynamic gain adjustment using a sliding window.
+  // This adjusts gain for quiet and loud parts while preventing clipping.
   const result = new Float32Array(audio.length);
-  for (let i = 0; i < audio.length; i++) {
-    result[i] = audio[i] * gain;
+  const blockSize = 2048; // ~42ms at 48kHz
+  let lastGain = gain;
+
+  for (let i = 0; i < audio.length; i += blockSize) {
+    const end = Math.min(i + blockSize, audio.length);
+    let blockSumSq = 0;
+    let blockMax = 0;
+
+    for (let j = i; j < end; j++) {
+      const val = audio[j];
+      blockSumSq += val * val;
+      const absVal = Math.abs(val);
+      if (absVal > blockMax) blockMax = absVal;
+    }
+
+    const blockRms = Math.sqrt(blockSumSq / (end - i));
+    let targetBlockGain = gain;
+
+    if (blockRms > 1e-7) {
+      targetBlockGain = targetRms / blockRms;
+      // Limit boost to 4x the global normalization gain to prevent noise floor amplification
+      targetBlockGain = Math.min(targetBlockGain, gain * 4.0);
+    }
+
+    if (blockMax * targetBlockGain > maxAllowedPeak) {
+      targetBlockGain = maxAllowedPeak / (blockMax || 1e-8);
+    }
+
+    for (let j = i; j < end; j++) {
+      const alpha = (j - i) / (end - i);
+      const currentGain = lastGain * (1 - alpha) + targetBlockGain * alpha;
+      result[j] = audio[j] * currentGain;
+    }
+    lastGain = targetBlockGain;
   }
 
   return result;
