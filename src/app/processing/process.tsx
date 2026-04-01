@@ -3,6 +3,7 @@ import AudioPlayer from "@/src/components/audioPlayer";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
+import { normalizeAudio } from "@/src/scripts/AudioProcess";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
 import {
   ArraytoPCM,
@@ -44,6 +45,15 @@ export default function ProcessScreen() {
   const [eta, setEta] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState(0);
   const [attenLimDb, setAttenLimDb] = useState(0);
+  const [normalize, setNormalize] = useState<{
+    toggle: boolean;
+    targetRMS: number;
+    maxPeakDb: number;
+  }>({
+    toggle: false,
+    targetRMS: -14.0,
+    maxPeakDb: -1.0,
+  });
 
   const timeHandler = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
@@ -87,7 +97,7 @@ export default function ProcessScreen() {
     };
 
     processFile();
-  }, [fileuri]);
+  }, [fileuri, filename, router]);
 
   const handleDenoise = async () => {
     if (!originalFile) return;
@@ -104,7 +114,12 @@ export default function ProcessScreen() {
       setProgressText("Converting to PCM...");
       const pcmFile = await WavtoPCM(wavFile);
       setProgressText("Reading audio data...");
-      const float32Array = await PCMtoArray(pcmFile);
+      let float32Array = await PCMtoArray(pcmFile);
+
+      if (normalize?.toggle) {
+        setProgressText("Normalizing audio...");
+        float32Array = normalizeAudio(float32Array, normalize.targetRMS, normalize.maxPeakDb);
+      }
 
       setProgressText("Loading AI model...");
       const denoiser = new DeepFilterNet();
@@ -196,6 +211,8 @@ export default function ProcessScreen() {
         <AdvanceSettings
           attenLimDb={attenLimDb}
           onAttenLimDbChange={setAttenLimDb}
+          normalize={normalize}
+          onNormalizeChange={setNormalize}
         />
 
         {denoising && (

@@ -65,7 +65,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
       if (player && status.duration) {
         const newPosition = progress.value * status.duration;
         player.seekTo(newPosition);
-        player.pause();
       }
     })
     .runOnJS(true);
