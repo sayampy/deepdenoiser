@@ -1,3 +1,4 @@
+import { trackAppEvent } from "./analytics";
 import {
   decodeToPCM,
   extractAndTranscodeAudio,
@@ -157,6 +158,7 @@ export async function saveToDevice(file: fs.File) {
     } else {
       await MediaLibrary.createAlbumAsync("DeepDenoiser", asset, false);
     }
+    trackAppEvent("save_file");
   } catch (e) {
     console.log(e);
   }

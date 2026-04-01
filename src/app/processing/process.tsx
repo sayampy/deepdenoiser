@@ -1,3 +1,4 @@
+import { trackAppEvent, trackAppError } from "@/src/scripts/analytics";
 import AdvanceSettings from "@/src/components/advanceSettings";
 import AudioPlayer from "@/src/components/audioPlayer";
 import ShareBtn from "@/src/components/shareBtn";
@@ -161,9 +162,20 @@ export default function ProcessScreen() {
       } else {
         setDenoisedFile(finalWavFile);
       }
-      setProcessingTime((Date.now() - startTime) / 1000);
+      const duration = (Date.now() - startTime) / 1000;
+      setProcessingTime(duration);
+
+      trackAppEvent("denoise_complete", {
+        duration,
+        file_type: isFileTypeVideo ? "video" : "audio",
+        atten_lim: attenLimDb,
+        normalized: normalize.toggle,
+      });
     } catch (error) {
       console.error("Error during denoising:", error);
+      trackAppError(error instanceof Error ? error : new Error(String(error)), {
+        context: "handleDenoise",
+      });
     } finally {
       setDenoising(false);
       setProgressText("");
