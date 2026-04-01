@@ -307,18 +307,44 @@ export default function ProcessScreen() {
             </Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity
-            style={[theme.Styles.button, { width: "100%" }]}
-            onPress={() => router.replace("/")}
-          >
-            <Feather
-              name="refresh-cw"
-              size={20}
-              color={theme.COLORS.background}
-              style={{ marginRight: 10 }}
-            />
-            <Text style={theme.Styles.buttonText}>Process Another File</Text>
-          </TouchableOpacity>
+          <View>
+            <TouchableOpacity
+              style={[
+                theme.Styles.button,
+                {
+                  width: "100%",
+                  marginBottom: 12,
+                  backgroundColor: "transparent",
+                  borderWidth: 1,
+                  borderColor: theme.COLORS.primary,
+                },
+              ]}
+              onPress={handleDenoise}
+            >
+              <Feather
+                name="refresh-ccw"
+                size={20}
+                color={theme.COLORS.primary}
+                style={{ marginRight: 10 }}
+              />
+              <Text style={[theme.Styles.buttonText, { color: theme.COLORS.primary }]}>
+                Re-denoise
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[theme.Styles.button, { width: "100%" }]}
+              onPress={() => router.replace("/")}
+            >
+              <Feather
+                name="refresh-cw"
+                size={20}
+                color={theme.COLORS.background}
+                style={{ marginRight: 10 }}
+              />
+              <Text style={theme.Styles.buttonText}>Process Another File</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </SafeAreaView>

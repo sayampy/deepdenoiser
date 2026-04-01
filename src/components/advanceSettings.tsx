@@ -18,8 +18,6 @@ import Animated, {
   useSharedValue,
   withSpring,
   runOnJS,
-  FadeIn,
-  FadeOut,
 } from "react-native-reanimated";
 import InfoBubble from "./InfoBubble";
 
@@ -255,14 +253,14 @@ export default function AdvanceSettings({
           </View>
 
           {normalize.toggle && (
-            <Animated.View entering={FadeIn} exiting={FadeOut}>
+            <View>
                <CustomSlider
                 label="Target RMS"
                 value={normalize.targetRMS}
                 onValueChange={handleTargetRMSChange}
                 min={-30}
                 max={-10}
-                decimalPlaces={1}
+                decimalPlaces={0}
                 info="Target average loudness level. -14dB is standard for mobile apps."
               />
               <CustomSlider
@@ -270,11 +268,11 @@ export default function AdvanceSettings({
                 value={normalize.maxPeakDb}
                 onValueChange={handleMaxPeakChange}
                 min={-10}
-                max={-0.1}
-                decimalPlaces={1}
+                max={0}
+                decimalPlaces={0}
                 info="Maximum allowed peak level to prevent clipping. -1.0dB is safe."
               />
-            </Animated.View>
+            </View>
           )}
 
           <View style={{ height: 1, backgroundColor: "rgba(255, 255, 255, 0.05)", marginVertical: 15 }} />
