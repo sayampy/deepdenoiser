@@ -1,4 +1,5 @@
 import * as theme from "@/src/constants/theme";
+import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import React from "react";
 import {
@@ -42,6 +43,19 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
               source={require("@/assets/images/support_me_on_kofi.png")}
               style={styles.kofiImage}
             />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.donationButton, styles.githubButton]}
+            onPress={() => openLink("https://github.com/sponsors/sayampy")}
+          >
+            <Feather
+              name="github"
+              size={24}
+              color="white"
+              style={styles.githubIcon}
+            />
+            <Text style={styles.githubText}>Sponsor on GitHub</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -121,6 +135,20 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
     resizeMode: "contain",
+  },
+  githubButton: {
+    backgroundColor: "#24292e",
+    borderRadius: 18,
+    flexDirection: "row",
+  },
+  githubIcon: {
+    marginRight: 10,
+  },
+  githubText: {
+    fontSize: theme.FONT_SIZE.body,
+    fontWeight: "600",
+    color: "white",
+
   },
   upiButton: {
     backgroundColor: "orange",
