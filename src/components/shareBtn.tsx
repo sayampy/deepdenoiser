@@ -1,3 +1,4 @@
+import { trackAppEvent } from "@/src/scripts/analytics";
 import * as theme from "@/src/constants/theme";
 import Feather from "@expo/vector-icons/Feather";
 import * as Sharing from "expo-sharing";
@@ -14,6 +15,7 @@ const ShareBtn: React.FC<ShareBtnProps> = ({ uri }) => {
     const handleShare = async () => {
         if (await Sharing.isAvailableAsync()) {
             await Sharing.shareAsync(uri);
+            trackAppEvent("share_file");
         }
     };
 

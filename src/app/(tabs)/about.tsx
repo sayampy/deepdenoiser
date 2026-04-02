@@ -4,8 +4,6 @@ import * as Linking from "expo-linking";
 import React, { useState } from "react";
 import {
   Image,
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,10 +11,14 @@ import {
   View,
 } from "react-native";
 
+import DonationModal from "@/src/components/DonationModal";
+import SettingsSidebar from "@/src/components/SettingsSidebar";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Constants from "expo-constants";
 
 export default function AboutScreen() {
   const [modalVisible, setModalVisible] = useState(false);
+  const [settingsVisible, setSettingsVisible] = useState(false);
 
   const openLink = (url: string) => {
     Linking.openURL(url);
@@ -28,9 +30,15 @@ export default function AboutScreen() {
         contentContainerStyle={theme.Styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={() => setSettingsVisible(true)}
+        >
+          <Feather name="settings" size={24} color={theme.COLORS.text} />
+        </TouchableOpacity>
         <View style={theme.Styles.header}>
           <Text style={theme.Styles.title}>About DeepDenoiser</Text>
-          <Text style={theme.Styles.subtitle}>Version 1.1.0</Text>
+          <Text style={theme.Styles.subtitle}>Version {Constants.expoConfig?.version}</Text>
         </View>
 
         <View style={[theme.Styles.card, styles.infoCard]}>
@@ -92,91 +100,27 @@ export default function AboutScreen() {
           </Text>
         </View>
 
-        <Modal
-          animationType="fade"
-          transparent={true}
+        <DonationModal
           visible={modalVisible}
-          onRequestClose={() => setModalVisible(false)}
-        >
-          <Pressable
-            style={styles.modalOverlay}
-            onPress={() => setModalVisible(false)}
-          >
-            <Pressable
-              style={styles.modalContent}
-              onPress={(e) => e.stopPropagation()}
-            >
-              <Text style={styles.modalTitle}>Support Development</Text>
+          onClose={() => setModalVisible(false)}
+        />
 
-              <TouchableOpacity
-                style={styles.donationButton}
-                onPress={() => openLink("https://ko-fi.com/sayampy")}
-              >
-                <Image
-                  source={require("@/assets/images/support_me_on_kofi.png")}
-                  style={styles.kofiImage}
-                />
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.donationButton, styles.upiButton]}
-                onPress={() =>
-                  openLink("upi://pay?pa=sayampy.code@oksbi&pn=Sayampy&cu=INR")
-                }
-              >
-                <Image
-                  source={require("@/assets/images/upi-logo.png")}
-                  style={styles.upiIcon}
-                />
-                <Text style={styles.upiText}>Donate via UPI</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  theme.Styles.button,
-                  theme.Styles.buttonSecondary,
-                  styles.closeButton,
-                ]}
-                onPress={() => setModalVisible(false)}
-              >
-                <Text
-                  style={[
-                    theme.Styles.buttonText,
-                    theme.Styles.buttonTextSecondary,
-                  ]}
-                >
-                  Close
-                </Text>
-              </TouchableOpacity>
-            </Pressable>
-          </Pressable>
-        </Modal>
+        <SettingsSidebar
+          visible={settingsVisible}
+          onClose={() => setSettingsVisible(false)}
+        />
       </ScrollView>
     </SafeAreaView>
   );
 }
 
-// function FeatureItem({
-//   icon,
-//   title,
-//   description,
-// }: {
-//   icon: any;
-//   title: string;
-//   description: string;
-// }) {
-//   return (
-//     <View style={styles.featureItem}>
-//       <View style={styles.featureIconContainer}>
-//         <Feather name={icon} size={24} color={theme.COLORS.primary} />
-//       </View>
-//       <Text style={styles.featureTitle}>{title}</Text>
-//       <Text style={styles.featureDescription}>{description}</Text>
-//     </View>
-//   );
-// }
-
 const styles = StyleSheet.create({
+  settingsButton: {
+    position: "absolute",
+    right: 0,
+    top: -10,
+    padding: 10,
+  },
   infoCard: {
     marginBottom: 24,
   },
@@ -248,70 +192,5 @@ const styles = StyleSheet.create({
   footerText: {
     color: theme.COLORS.subtext,
     fontSize: theme.FONT_SIZE.small,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modalContent: {
-    width: "100%",
-    maxWidth: 340,
-    backgroundColor: theme.COLORS.surface,
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: theme.FONT_SIZE.heading,
-    fontWeight: "700",
-    color: theme.COLORS.text,
-    marginBottom: 24,
-  },
-  donationButton: {
-    width: "100%",
-    height: 56,
-    marginBottom: 16,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  kofiImage: {
-    width: "100%",
-    height: "100%",
-    resizeMode: "contain",
-  },
-  upiButton: {
-    backgroundColor: "orange",
-    borderRadius: 18, // Match rounded aesthetic of app
-    borderWidth: 1,
-    borderColor: theme.COLORS.border,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    height: 56, // Enforce same height as kofi button area
-  },
-  upiIcon: {
-    height: 20,
-    marginRight: 5,
-    resizeMode: "contain",
-  },
-  upiText: {
-    fontSize: theme.FONT_SIZE.body,
-    fontWeight: "600",
-    color: theme.COLORS.surface,
-    marginRight: 25,
-  },
-  closeButton: {
-    width: "100%",
-    marginTop: 8,
   },
 });

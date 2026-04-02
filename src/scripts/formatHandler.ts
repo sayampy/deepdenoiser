@@ -1,3 +1,4 @@
+import { trackAppEvent } from "./analytics";
 import {
   decodeToPCM,
   extractAndTranscodeAudio,
@@ -157,6 +158,7 @@ export async function saveToDevice(file: fs.File) {
     } else {
       await MediaLibrary.createAlbumAsync("DeepDenoiser", asset, false);
     }
+    trackAppEvent("save_file");
   } catch (e) {
     console.log(e);
   }
@@ -188,4 +190,12 @@ export async function mergeAudioVideo(
       `Merge failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+export function renameFile(file: fs.File, newName: string): fs.File {
+  const check_file = new fs.File(fs.Paths.cache, newName);
+  if (check_file.exists) {
+    check_file.delete();
+  }
+  file.rename(newName);
+  return file;
 }

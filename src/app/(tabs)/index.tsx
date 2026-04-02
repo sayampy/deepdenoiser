@@ -12,6 +12,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -85,16 +86,13 @@ export default function HomeScreen() {
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
       <View style={theme.Styles.header}>
-        <Feather
-          name="mic"
-          size={48}
-          color={theme.COLORS.primary}
-          style={{ marginBottom: 16 }}
+        <Image
+          source={require("@/assets/images/splash-icon.png")}
+          style={styles.logo}
         />
         <Text style={theme.Styles.title}>DeepDenoiser</Text>
         <Text style={theme.Styles.subtitle}>
-          Remove background noise from your audio and video using DeepFilterNet
-          3
+          Remove background noise from your audio and video using DeepFilterNet 3
         </Text>
       </View>
 
@@ -178,10 +176,16 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: "100%",
   },
+  logo: {
+    width: 80,
+    height: 80,
+    marginBottom: 16,
+  },
   importCard: {
     alignItems: "center",
     paddingVertical: 48,
     backgroundColor: "rgba(0, 229, 255, 0.05)",
+    borderRadius: 16,
   },
   importTitle: {
     color: theme.COLORS.text,

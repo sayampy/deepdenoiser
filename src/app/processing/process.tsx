@@ -1,7 +1,10 @@
+import AdvanceSettings from "@/src/components/advanceSettings";
 import AudioPlayer from "@/src/components/audioPlayer";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
+import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
+import { normalizeAudio } from "@/src/scripts/AudioProcess";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
 import {
   ArraytoPCM,
@@ -9,6 +12,7 @@ import {
   PCMtoWav,
   WavtoPCM,
   mergeAudioVideo,
+  renameFile,
   saveToDevice,
   toWav,
 } from "@/src/scripts/formatHandler";
@@ -42,6 +46,16 @@ export default function ProcessScreen() {
   const [denoisedFile, setDenoisedFile] = useState<fs.File | null>(null);
   const [eta, setEta] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState(0);
+  const [attenLimDb, setAttenLimDb] = useState(0);
+  const [normalize, setNormalize] = useState<{
+    toggle: boolean;
+    targetRMS: number;
+    maxPeakDb: number;
+  }>({
+    toggle: false,
+    targetRMS: -14.0,
+    maxPeakDb: -1.0,
+  });
 
   const timeHandler = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
@@ -85,7 +99,7 @@ export default function ProcessScreen() {
     };
 
     processFile();
-  }, [fileuri]);
+  }, [fileuri, filename, router]);
 
   const handleDenoise = async () => {
     if (!originalFile) return;
@@ -94,7 +108,7 @@ export default function ProcessScreen() {
     setProgress(0);
     setProgressText("Initializing...");
     setEta(null);
-
+    setDenoisedFile(null);
     try {
       // Convert/Extract to WAV for processing
       setProgressText("Converting to WAV...")
@@ -102,7 +116,12 @@ export default function ProcessScreen() {
       setProgressText("Converting to PCM...");
       const pcmFile = await WavtoPCM(wavFile);
       setProgressText("Reading audio data...");
-      const float32Array = await PCMtoArray(pcmFile);
+      let float32Array = await PCMtoArray(pcmFile);
+
+      if (normalize?.toggle) {
+        setProgressText("Normalizing audio...");
+        float32Array = normalizeAudio(float32Array, normalize.targetRMS, normalize.maxPeakDb);
+      }
 
       setProgressText("Loading AI model...");
       const denoiser = new DeepFilterNet();
@@ -124,7 +143,7 @@ export default function ProcessScreen() {
             setEta(`${timeHandler(totalSeconds)} remaining`);
           }
         }
-      });
+      }, attenLimDb);
       setEta(null);
 
       setProgressText("Saving denoised audio...");
@@ -134,19 +153,29 @@ export default function ProcessScreen() {
       const baseName = filename.split('.').slice(0, -1).join('.').replaceAll('%20', '\s');
       /*(filename.substring(0, filename.lastIndexOf('.')). || filename || `denoised_${Date.now()}`;*/
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
-      finalWavFile.rename(`${baseName}_denoised.wav`)
-
+      renameFile(finalWavFile, `${baseName}_denoised.wav`)
       if (isFileTypeVideo) {
         setProgressText("Merging with video...");
         const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);
-        finalVideoFile.rename(`${baseName}_denoised.mp4`);
+        renameFile(finalVideoFile, `${baseName}_denoised.mp4`);
         setDenoisedFile(finalVideoFile);
       } else {
         setDenoisedFile(finalWavFile);
       }
-      setProcessingTime((Date.now() - startTime) / 1000);
+      const duration = (Date.now() - startTime) / 1000;
+      setProcessingTime(duration);
+
+      trackAppEvent("denoise_complete", {
+        duration: processingTime,
+        file_type: isFileTypeVideo ? "video" : "audio",
+        atten_lim: attenLimDb,
+        normalized: normalize.toggle,
+      });
     } catch (error) {
       console.error("Error during denoising:", error);
+      trackAppError(error instanceof Error ? error : new Error(String(error)), {
+        context: "handleDenoise",
+      });
     } finally {
       setDenoising(false);
       setProgressText("");
@@ -190,6 +219,13 @@ export default function ProcessScreen() {
             )}
           </View>
         </View>
+
+        <AdvanceSettings
+          attenLimDb={attenLimDb}
+          onAttenLimDbChange={setAttenLimDb}
+          normalize={normalize}
+          onNormalizeChange={setNormalize}
+        />
 
         {denoising && (
           <View style={[theme.Styles.card, styles.progressCard, { marginTop: 20 }]}>
@@ -283,18 +319,44 @@ export default function ProcessScreen() {
             </Text>
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity
-            style={[theme.Styles.button, { width: "100%" }]}
-            onPress={() => router.replace("/")}
-          >
-            <Feather
-              name="refresh-cw"
-              size={20}
-              color={theme.COLORS.background}
-              style={{ marginRight: 10 }}
-            />
-            <Text style={theme.Styles.buttonText}>Process Another File</Text>
-          </TouchableOpacity>
+          <View>
+            <TouchableOpacity
+              style={[
+                theme.Styles.button,
+                {
+                  width: "100%",
+                  marginBottom: 12,
+                  backgroundColor: "transparent",
+                  borderWidth: 1,
+                  borderColor: theme.COLORS.primary,
+                },
+              ]}
+              onPress={handleDenoise}
+            >
+              <Feather
+                name="refresh-ccw"
+                size={20}
+                color={theme.COLORS.primary}
+                style={{ marginRight: 10 }}
+              />
+              <Text style={[theme.Styles.buttonText, { color: theme.COLORS.primary }]}>
+                Restart
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[theme.Styles.button, { width: "100%" }]}
+              onPress={() => router.replace("/")}
+            >
+              <Feather
+                name="refresh-cw"
+                size={20}
+                color={theme.COLORS.background}
+                style={{ marginRight: 10 }}
+              />
+              <Text style={theme.Styles.buttonText}>Process Another File</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </SafeAreaView>
@@ -418,5 +480,7 @@ const styles = StyleSheet.create({
     paddingBottom: theme.SPACING.xlarge,
     backgroundColor: theme.COLORS.background,
     paddingTop: theme.SPACING.small,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20
   },
 });
