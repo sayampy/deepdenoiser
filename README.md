@@ -4,6 +4,7 @@
 
 # DeepDenoiser
 [![Version](https://img.shields.io/github/v/release/sayampy/deepdenoiser?label=version)](https://github.com/sayampy/deepdenoiser/releases)
+![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/sayampy/deepdenoiser/total)
 [![License](https://img.shields.io/github/license/sayampy/deepdenoiser)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Android-green)](https://www.android.com/)
 ---
