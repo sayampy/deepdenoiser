@@ -1,5 +1,7 @@
 import * as theme from "@/src/constants/theme";
+import Aptabase from "@aptabase/react-native";
 import { Feather } from "@expo/vector-icons";
+import Constants from "expo-constants";
 import React, { useEffect, useState } from "react";
 import {
   Modal,
@@ -11,7 +13,6 @@ import {
   View,
 } from "react-native";
 import { AppSettings, getSettings, updateSettings } from "../scripts/settings";
-import Aptabase from "@aptabase/react-native";
 
 interface SettingsSidebarProps {
   visible: boolean;
@@ -59,7 +60,7 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Privacy & Analytics</Text>
-            
+
             <View style={styles.settingItem}>
               <View style={styles.settingTextContainer}>
                 <Text style={styles.settingLabel}>Anonymous Analytics</Text>
@@ -89,10 +90,25 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
                 thumbColor={theme.COLORS.white}
               />
             </View>
+
+            <View style={styles.settingItem}>
+              <View style={styles.settingTextContainer}>
+                <Text style={styles.settingLabel}>Check for Updates</Text>
+                <Text style={styles.settingDescription}>
+                  Automatically check for new versions on startup.
+                </Text>
+              </View>
+              <Switch
+                value={settings.checkForUpdates}
+                onValueChange={(v) => handleToggle("checkForUpdates", v)}
+                trackColor={{ false: theme.COLORS.border, true: theme.COLORS.primary }}
+                thumbColor={theme.COLORS.white}
+              />
+            </View>
           </View>
 
           <View style={styles.footer}>
-            <Text style={styles.version}>Version 1.1.0</Text>
+            <Text style={styles.version}>Version {Constants.expoConfig?.version}</Text>
           </View>
         </View>
       </View>

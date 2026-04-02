@@ -3,6 +3,7 @@ import { File, Paths } from "expo-file-system";
 export interface AppSettings {
   analytics: boolean;
   crashlytics: boolean;
+  checkForUpdates: boolean;
 }
 
 const SETTINGS_FILE_NAME = "app_settings.json";
@@ -10,6 +11,7 @@ const SETTINGS_FILE_NAME = "app_settings.json";
 const DEFAULT_SETTINGS: AppSettings = {
   analytics: true,
   crashlytics: true,
+  checkForUpdates: true,
 };
 
 export async function getSettings(): Promise<AppSettings> {

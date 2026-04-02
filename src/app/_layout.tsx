@@ -1,5 +1,6 @@
 import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
 import { initAnalytics, trackAppEvent } from "@/src/scripts/analytics";
+import UpdateModal from "@/src/components/UpdateModal";
 import { Feather } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import * as MediaLibrary from "expo-media-library";
@@ -90,6 +91,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="processing" />
       </Stack>
+      <UpdateModal />
     </>
   );
 }

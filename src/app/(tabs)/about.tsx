@@ -14,6 +14,7 @@ import {
 import DonationModal from "@/src/components/DonationModal";
 import SettingsSidebar from "@/src/components/SettingsSidebar";
 import { SafeAreaView } from "react-native-safe-area-context";
+import Constants from "expo-constants";
 
 export default function AboutScreen() {
   const [modalVisible, setModalVisible] = useState(false);
@@ -37,7 +38,7 @@ export default function AboutScreen() {
         </TouchableOpacity>
         <View style={theme.Styles.header}>
           <Text style={theme.Styles.title}>About DeepDenoiser</Text>
-          <Text style={theme.Styles.subtitle}>Version 1.1.0</Text>
+          <Text style={theme.Styles.subtitle}>Version {Constants.expoConfig?.version}</Text>
         </View>
 
         <View style={[theme.Styles.card, styles.infoCard]}>

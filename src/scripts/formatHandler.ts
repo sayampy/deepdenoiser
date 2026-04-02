@@ -191,3 +191,11 @@ export async function mergeAudioVideo(
     );
   }
 }
+export function renameFile(file: fs.File, newName: string): fs.File {
+  const check_file = new fs.File(fs.Paths.cache, newName);
+  if (check_file.exists) {
+    check_file.delete();
+  }
+  file.rename(newName);
+  return file;
+}

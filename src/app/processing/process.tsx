@@ -1,9 +1,9 @@
-import { trackAppEvent, trackAppError } from "@/src/scripts/analytics";
 import AdvanceSettings from "@/src/components/advanceSettings";
 import AudioPlayer from "@/src/components/audioPlayer";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
+import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
 import { normalizeAudio } from "@/src/scripts/AudioProcess";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
 import {
@@ -12,6 +12,7 @@ import {
   PCMtoWav,
   WavtoPCM,
   mergeAudioVideo,
+  renameFile,
   saveToDevice,
   toWav,
 } from "@/src/scripts/formatHandler";
@@ -107,7 +108,7 @@ export default function ProcessScreen() {
     setProgress(0);
     setProgressText("Initializing...");
     setEta(null);
-
+    setDenoisedFile(null);
     try {
       // Convert/Extract to WAV for processing
       setProgressText("Converting to WAV...")
@@ -152,12 +153,11 @@ export default function ProcessScreen() {
       const baseName = filename.split('.').slice(0, -1).join('.').replaceAll('%20', '\s');
       /*(filename.substring(0, filename.lastIndexOf('.')). || filename || `denoised_${Date.now()}`;*/
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
-      finalWavFile.rename(`${baseName}_denoised.wav`)
-
+      renameFile(finalWavFile, `${baseName}_denoised.wav`)
       if (isFileTypeVideo) {
         setProgressText("Merging with video...");
         const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);
-        finalVideoFile.rename(`${baseName}_denoised.mp4`);
+        renameFile(finalVideoFile, `${baseName}_denoised.mp4`);
         setDenoisedFile(finalVideoFile);
       } else {
         setDenoisedFile(finalWavFile);
@@ -166,7 +166,7 @@ export default function ProcessScreen() {
       setProcessingTime(duration);
 
       trackAppEvent("denoise_complete", {
-        duration,
+        duration: processingTime,
         file_type: isFileTypeVideo ? "video" : "audio",
         atten_lim: attenLimDb,
         normalized: normalize.toggle,
@@ -331,7 +331,7 @@ export default function ProcessScreen() {
                   borderColor: theme.COLORS.primary,
                 },
               ]}
-              onPress={() => { denoisedFile.delete(); handleDenoise() }}
+              onPress={handleDenoise}
             >
               <Feather
                 name="refresh-ccw"
@@ -340,7 +340,7 @@ export default function ProcessScreen() {
                 style={{ marginRight: 10 }}
               />
               <Text style={[theme.Styles.buttonText, { color: theme.COLORS.primary }]}>
-                Re-denoise
+                Restart
               </Text>
             </TouchableOpacity>
 
