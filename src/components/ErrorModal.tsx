@@ -5,12 +5,11 @@ import * as Linking from "expo-linking";
 import React, { useState } from "react";
 import {
   Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 
 interface ErrorModalProps {
@@ -27,7 +26,6 @@ export default function ErrorModal({ visible, error, onClose }: ErrorModalProps)
   const interpretError = (err: Error) => {
     const msg = err.message.toLowerCase();
     const stack = err.stack?.toLowerCase() || "";
-
     if (msg.includes("out of memory") || msg.includes("allocation failed") || stack.includes("outofmemory")) {
       return {
         title: "Out of Memory",
@@ -40,6 +38,13 @@ export default function ErrorModal({ visible, error, onClose }: ErrorModalProps)
         title: "No Audio Track Found",
         description: "Make sure the file is not corrupted and has an audio track",
         icon: "mic-off" as const,
+      };
+    }
+    if (msg.includes("illegal character") || stack.includes("illegal character")) {
+      return {
+        title: "Illegal Character in Filename",
+        description: "rename the file with a valid filename without any ascii symbols",
+        icon: "file" as const,
       };
     }
 
@@ -59,7 +64,7 @@ export default function ErrorModal({ visible, error, onClose }: ErrorModalProps)
       };
     }
 
-    if (msg.includes("permission") || msg.includes("denied")) {
+    if (msg.includes("permission") && msg.includes("denied")) {
       return {
         title: "Permission Denied",
         description: "The app doesn't have permission to access your files. Please check your app settings.",
@@ -84,10 +89,9 @@ export default function ErrorModal({ visible, error, onClose }: ErrorModalProps)
   const submitToGithub = () => {
     const title = encodeURIComponent(`[Bug]: ${interpretation.title}`);
     const body = encodeURIComponent(
-      `**Error Message:**\n${error.message}\n\n` +
       `**Interpreted Error:**\n${interpretation.title}: ${interpretation.description}\n\n` +
-      `**Stack Trace:**\n\`\`\`\n${error.stack}\n\`\`\`\n\n` +
-      `**Device Info:**\n(Please add your device model and OS version here)`
+      `**Stack Trace:** (Paste Error Details)\n\n` +
+      `**Device Info:**\n(Please add your device model,RAM size and OS version here)`
     );
     const url = `https://github.com/sayampy/deepdenoiser/issues/new?title=${title}&body=${body}`;
     Linking.openURL(url);
@@ -244,7 +248,7 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 12,
-    fontFamily: theme.FONTS.default?.mono || "monospace",
+    fontFamily: theme.FONTS?.mono || "monospace",
     color: "#FFAAAA",
   },
   copyButton: {

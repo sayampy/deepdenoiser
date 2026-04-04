@@ -152,11 +152,13 @@ export default function ProcessScreen() {
       const denoisedPcmFile = await ArraytoPCM(denoisedArray);
 
       setProgressText("Finalizing audio...");
-      const baseName = decodeURIComponent(filename)
+      const baseName = filename
         .split('.')
         .slice(0, -1)
         .join('.')
-        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
+        .replaceAll(/[!<>:"/\\|?*\x00-\x1F]/g, '_')
+        .replaceAll(/[\u2236]/g, '-')
+        .replaceAll(/\s+/g, ' ');
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
       renameFile(finalWavFile, `${baseName}_denoised.wav`)
       if (isFileTypeVideo) {
