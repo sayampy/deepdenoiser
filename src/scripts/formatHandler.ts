@@ -10,16 +10,21 @@ import * as MediaLibrary from "expo-media-library";
 export async function toWav(file: fs.File): Promise<fs.File> {
   console.log("Converting to WAV:", file.uri);
   try {
-    // The native module handles file creation and returns the new URI
-    const outputFile = new fs.File(fs.Paths.cache, "transcoded_output.wav");
-    const outputUri = outputFile.uri;
-    console.log("Successfully converted to WAV at", outputUri);
+    // We transcode to high-bitrate AAC first to handle resampling/downmixing via Litr
+    // if the source is not already compatible.
+    const transcodedAudio = new fs.File(fs.Paths.cache, `transcoded_${Date.now()}.m4a`);
     await extractAndTranscodeAudio(
-      file.uri.replace("file://", ""),
-      outputUri.replace("file://", ""),
-      48000,
+      file.uri,
+      transcodedAudio.uri.replace("file://", ""),
+      256000, // High bitrate for quality
     );
-    return outputFile;
+
+    // Then decode to PCM
+    const pcmFile = await decodeToPCMFile(transcodedAudio);
+    
+    // Then wrap in WAV
+    const wavFile = await PCMtoWav(pcmFile);
+    return wavFile;
   } catch (error) {
     console.error("Failed to convert to WAV.", error);
     // Re-throw the error to be handled by the caller
@@ -29,29 +34,25 @@ export async function toWav(file: fs.File): Promise<fs.File> {
   }
 }
 
-export async function WavtoPCM(file: fs.File): Promise<fs.File> {
-  console.log("Converting to PCM:", file.uri);
+export async function decodeToPCMFile(file: fs.File): Promise<fs.File> {
+  console.log("Decoding to PCM:", file.uri);
   try {
-    // The native module handles file creation and returns the new URI
-    const outputFile = new fs.File(fs.Paths.cache, "decoded_output.PCM");
-    const outputUri = outputFile.uri;
-    // console.log("Successfully converted to WAV at", outputUri)
+    const outputFile = new fs.File(fs.Paths.cache, `decoded_${Date.now()}.pcm`);
     await decodeToPCM(
-      file.uri.replace("file://", ""),
-      outputUri.replace("file://", ""),
+      file.uri,
+      outputFile.uri.replace("file://", ""),
     );
     return outputFile;
   } catch (error) {
-    console.error("Failed to convert to PCM.", error);
-    // Re-throw the error to be handled by the caller
+    console.error("Failed to decode to PCM.", error);
     throw new Error(
-      `PCM conversion failed: ${error instanceof Error ? error.message : String(error)}`,
+      `PCM decoding failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
 
 export async function PCMtoWav(file: fs.File): Promise<fs.File> {
-  console.log("Converting to WAV:", file.uri);
+  console.log("Wrapping PCM in WAV:", file.uri);
   try {
     const pcmBase64 = await file.base64();
     const binaryString = atob(pcmBase64);
@@ -72,10 +73,10 @@ export async function PCMtoWav(file: fs.File): Promise<fs.File> {
     writeString(view, 12, "fmt ");
     view.setUint32(16, 16, true); // Subchunk1Size
     view.setUint16(20, 1, true); // AudioFormat
-    view.setUint16(22, 1, true); // NumChannels
-    view.setUint32(24, 48000, true); // SampleRate
-    view.setUint32(28, 96000, true); // ByteRate
-    view.setUint16(32, 2, true); // BlockAlign
+    view.setUint16(22, 1, true); // NumChannels (Native module now downmixes to Mono)
+    view.setUint32(24, 48000, true); // SampleRate (Assumed/Expected by denoiser)
+    view.setUint32(28, 96000, true); // ByteRate (48000 * 1 * 16 / 8)
+    view.setUint16(32, 2, true); // BlockAlign (1 * 16 / 8)
     view.setUint16(34, 16, true); // BitsPerSample
     writeString(view, 36, "data");
     view.setUint32(40, len, true); // Subchunk2Size
@@ -89,17 +90,15 @@ export async function PCMtoWav(file: fs.File): Promise<fs.File> {
 
     const outputFile = new fs.File(
       fs.Paths.cache,
-      `Denoised_${file.modificationTime}.wav`,
+      `Denoised_${Date.now()}.wav`,
     );
     await outputFile.write(wavData);
 
-
     return outputFile;
   } catch (error) {
-    console.error("Failed to convert to WAV.", error);
-    // Re-throw the error to be handled by the caller
+    console.error("Failed to wrap PCM in WAV.", error);
     throw new Error(
-      `WAV conversion failed: ${error instanceof Error ? error.message : String(error)}`,
+      `WAV wrapping failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
@@ -172,15 +171,15 @@ export async function mergeAudioVideo(
     // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
     const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_transcoded.m4a`);
     await extractAndTranscodeAudio(
-      audio.uri.replace('file://', ''),
+      audio.uri,
       transcodedAudio.uri.replace('file://', ''),
       128000, // 128kbps AAC
     );
 
     const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.mp4`);
     await mixAudioVideo(
-      video.uri.replace('file://', ''),
-      transcodedAudio.uri.replace('file://', ''),
+      video.uri,
+      transcodedAudio.uri,
       outputFile.uri.replace('file://', ''),
     );
     return outputFile;

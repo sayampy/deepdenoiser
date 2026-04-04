@@ -10,11 +10,10 @@ import {
   ArraytoPCM,
   PCMtoArray,
   PCMtoWav,
-  WavtoPCM,
+  decodeToPCMFile,
   mergeAudioVideo,
   renameFile,
   saveToDevice,
-  toWav,
 } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
 import { Asset } from "expo-asset";
@@ -110,11 +109,9 @@ export default function ProcessScreen() {
     setEta(null);
     setDenoisedFile(null);
     try {
-      // Convert/Extract to WAV for processing
-      setProgressText("Converting to WAV...")
-      const wavFile = await toWav(originalFile);
+      // Extract/Decode to PCM for processing
       setProgressText("Converting to PCM...");
-      const pcmFile = await WavtoPCM(wavFile);
+      const pcmFile = await decodeToPCMFile(originalFile);
       setProgressText("Reading audio data...");
       let float32Array = await PCMtoArray(pcmFile);
 
@@ -150,8 +147,11 @@ export default function ProcessScreen() {
       const denoisedPcmFile = await ArraytoPCM(denoisedArray);
 
       setProgressText("Finalizing audio...");
-      const baseName = filename.split('.').slice(0, -1).join('.').replaceAll('%20', '\s');
-      /*(filename.substring(0, filename.lastIndexOf('.')). || filename || `denoised_${Date.now()}`;*/
+      const baseName = decodeURIComponent(filename)
+        .split('.')
+        .slice(0, -1)
+        .join('.')
+        .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_');
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
       renameFile(finalWavFile, `${baseName}_denoised.wav`)
       if (isFileTypeVideo) {
