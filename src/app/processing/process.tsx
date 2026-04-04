@@ -1,5 +1,6 @@
 import AdvanceSettings from "@/src/components/advanceSettings";
 import AudioPlayer from "@/src/components/audioPlayer";
+import ErrorModal from "@/src/components/ErrorModal";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
@@ -56,6 +57,9 @@ export default function ProcessScreen() {
     maxPeakDb: -1.0,
   });
 
+  const [error, setError] = useState<Error | null>(null);
+  const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+
   const timeHandler = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
     const m = Math.floor((totalSeconds % 3600) / 60);
@@ -91,7 +95,8 @@ export default function ProcessScreen() {
 
       } catch (error) {
         console.error("Error preparing file:", error);
-        router.back();
+        setError(error instanceof Error ? error : new Error(String(error)));
+        setIsErrorModalVisible(true);
       } finally {
         setIsLoading(false);
       }
@@ -173,7 +178,10 @@ export default function ProcessScreen() {
       });
     } catch (error) {
       console.error("Error during denoising:", error);
-      trackAppError(error instanceof Error ? error : new Error(String(error)), {
+      const err = error instanceof Error ? error : new Error(String(error));
+      setError(err);
+      setIsErrorModalVisible(true);
+      trackAppError(err, {
         context: "handleDenoise",
       });
     } finally {
@@ -359,6 +367,11 @@ export default function ProcessScreen() {
           </View>
         )}
       </View>
+      <ErrorModal
+        visible={isErrorModalVisible}
+        error={error}
+        onClose={() => setIsErrorModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }

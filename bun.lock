@@ -14,6 +14,7 @@
         "expo-asset": "~55.0.10",
         "expo-audio": "~55.0.9",
         "expo-build-properties": "~55.0.10",
+        "expo-clipboard": "~55.0.11",
         "expo-constants": "~55.0.9",
         "expo-document-picker": "~55.0.9",
         "expo-file-system": "~55.0.12",
@@ -832,6 +833,8 @@
     "expo-audio": ["expo-audio@55.0.9", "", { "peerDependencies": { "expo": "*", "expo-asset": "*", "react": "*", "react-native": "*" } }, "sha512-3SsyjwrupXRBbOoDjD5rcqgGnQ5RiB8z4KF1eel88q4z8yue7NKik2o9e3QBMDKLX7xnbJo673ah14BKnF9OVA=="],
 
     "expo-build-properties": ["expo-build-properties@55.0.10", "", { "dependencies": { "@expo/schema-utils": "^55.0.2", "resolve-from": "^5.0.0", "semver": "^7.6.0" }, "peerDependencies": { "expo": "*" } }, "sha512-9+JCQuIQaEi27XDIFTR2Y4vok0FidWux2UKrKWD5E38/0fozbZcVUzS14FgMF1F0lalmXMgebH/vjRpbYWJIMA=="],
+
+    "expo-clipboard": ["expo-clipboard@55.0.11", "", { "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-l2zbhVdHamtK4U34zY/NpF0dd1vMcJnxtZz2CjcOudhyB9dlpuAcZMkgbELs9YTbnKWPF8+wRPKosDu8RPCUIw=="],
 
     "expo-constants": ["expo-constants@55.0.9", "", { "dependencies": { "@expo/config": "~55.0.10", "@expo/env": "~2.1.1" }, "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-iBiXjZeuU5S/8docQeNzsVvtDy4w0zlmXBpFEi1ypwugceEpdQQab65TVRbusXAcwpNVxCPMpNlDssYp0Pli2g=="],
 

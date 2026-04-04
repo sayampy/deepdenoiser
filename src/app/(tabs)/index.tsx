@@ -1,4 +1,5 @@
 import AudioPlayer from "@/src/components/audioPlayer";
+import ErrorModal from "@/src/components/ErrorModal";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import Feather from "@expo/vector-icons/Feather";
@@ -28,6 +29,10 @@ export default function HomeScreen() {
     type: "Audio" | "Video";
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  const [error, setError] = useState<Error | null>(null);
+  const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+
   useEffect(() => {
     //Clears Cache
     const cache = new fs.Directory(fs.Paths.cache);
@@ -60,11 +65,9 @@ export default function HomeScreen() {
       }
     } catch (error) {
       setIsLoading(false);
-      Alert.alert(
-        "Error",
-        "An unexpected error occurred while importing the file.",
-      );
       console.error("Error importing file:", error);
+      setError(error instanceof Error ? error : new Error(String(error)));
+      setIsErrorModalVisible(true);
     }
   };
 
@@ -166,6 +169,11 @@ export default function HomeScreen() {
           />
         </TouchableOpacity>
       </View>
+      <ErrorModal
+        visible={isErrorModalVisible}
+        error={error}
+        onClose={() => setIsErrorModalVisible(false)}
+      />
     </SafeAreaView>
   );
 }
