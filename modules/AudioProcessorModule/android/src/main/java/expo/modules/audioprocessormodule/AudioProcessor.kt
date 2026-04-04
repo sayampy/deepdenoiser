@@ -38,7 +38,7 @@ class MediaProcessor(private val context: Context) {
 
     // (1) Audio Extraction & (3) Bitrate Re-encoding
     // Litr handles the demuxing and decoding/encoding pipeline internally.
-    suspend fun transcodeAudio(inputPath: String, outputPath: String, targetBitrate: Int? = null) =
+    suspend fun transcodeAudio(inputPath: String, outputPath: String, targetBitrate: Int? = null): String =
             suspendCancellableCoroutine { continuation ->
                 val requestId = "transcode_${System.currentTimeMillis()}"
 
@@ -76,6 +76,24 @@ class MediaProcessor(private val context: Context) {
                             }
                         }
 
+                // Get source sample rate to avoid pitch shift
+                val extractor = MediaExtractor()
+                var sourceSampleRate = 48000
+                try {
+                    extractor.setDataSource(context, getSafeUri(inputPath), null)
+                    val audioTrack = findTrackIndex(extractor, "audio/")
+                    if (audioTrack != -1) {
+                        val format = extractor.getTrackFormat(audioTrack)
+                        if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                            sourceSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Fallback to 48000
+                } finally {
+                    extractor.release()
+                }
+
                 // For extraction + re-encoding, we isolate the audio track
                 // If targetBitrate is set, Litr will re-encode. Otherwise, it pass-throughs.
                 mediaTransformer.transform(
@@ -83,7 +101,7 @@ class MediaProcessor(private val context: Context) {
                         getSafeUri(inputPath),
                         outputPath,
                         null, // Video format (null to drop video)
-                        if (targetBitrate != null) createAudioFormat(targetBitrate) else null,
+                        if (targetBitrate != null) createAudioFormat(targetBitrate, sourceSampleRate) else null,
                         listener,
                         optionsBuilder.build()
                 )
@@ -190,12 +208,13 @@ class MediaProcessor(private val context: Context) {
 
     // (2) Audio Decoding to Raw PCM
     // Bypasses Litr. Drops down to MediaCodec to get raw byte buffers.
-    suspend fun decodeToPCM(inputPath: String, outputPath: String) =
+    suspend fun decodeToPCM(inputPath: String, outputPath: String): Map<String, Any> =
             withContext(Dispatchers.IO) {
                 var extractor: MediaExtractor? = null
                 var codec: MediaCodec? = null
                 var fos: FileOutputStream? = null
                 var isCodecStarted = false
+                var sampleRate = 48000
 
                 try {
                     extractor = MediaExtractor()
@@ -223,6 +242,9 @@ class MediaProcessor(private val context: Context) {
                     extractor.selectTrack(audioTrackIndex)
                     val mime = format.getString(MediaFormat.KEY_MIME)!!
                     val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                        sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                    }
                     
                     try {
                         codec = MediaCodec.createDecoderByType(mime)
@@ -319,7 +341,7 @@ class MediaProcessor(private val context: Context) {
                     extractor?.release()
                     fos?.close()
                 }
-                outputPath
+                mapOf("path" to outputPath, "sampleRate" to sampleRate)
             }
 
     // (4) PCM to WAV Conversion
@@ -425,8 +447,8 @@ class MediaProcessor(private val context: Context) {
         return -1
     }
 
-    private fun createAudioFormat(bitrate: Int): MediaFormat {
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 48000, 1)
+    private fun createAudioFormat(bitrate: Int, sampleRate: Int = 48000): MediaFormat {
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1)
         format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
         return format
     }

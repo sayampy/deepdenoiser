@@ -20,10 +20,10 @@ export async function toWav(file: fs.File): Promise<fs.File> {
     );
 
     // Then decode to PCM
-    const pcmFile = await decodeToPCMFile(transcodedAudio);
+    const { file: pcmFile, sampleRate } = await decodeToPCMFile(transcodedAudio);
     
     // Then wrap in WAV
-    const wavFile = await PCMtoWav(pcmFile);
+    const wavFile = await PCMtoWav(pcmFile, sampleRate);
     return wavFile;
   } catch (error) {
     console.error("Failed to convert to WAV.", error);
@@ -34,15 +34,15 @@ export async function toWav(file: fs.File): Promise<fs.File> {
   }
 }
 
-export async function decodeToPCMFile(file: fs.File): Promise<fs.File> {
+export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; sampleRate: number }> {
   console.log("Decoding to PCM:", file.uri);
   try {
     const outputFile = new fs.File(fs.Paths.cache, `decoded_${Date.now()}.pcm`);
-    await decodeToPCM(
+    const result = await decodeToPCM(
       file.uri,
       outputFile.uri.replace("file://", ""),
     );
-    return outputFile;
+    return { file: outputFile, sampleRate: result.sampleRate };
   } catch (error) {
     console.error("Failed to decode to PCM.", error);
     throw new Error(
@@ -51,8 +51,8 @@ export async function decodeToPCMFile(file: fs.File): Promise<fs.File> {
   }
 }
 
-export async function PCMtoWav(file: fs.File): Promise<fs.File> {
-  console.log("Wrapping PCM in WAV:", file.uri);
+export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promise<fs.File> {
+  console.log(`Wrapping PCM in WAV: ${file.uri} at ${sampleRate}Hz`);
   try {
     const pcmBase64 = await file.base64();
     const binaryString = atob(pcmBase64);
@@ -67,17 +67,22 @@ export async function PCMtoWav(file: fs.File): Promise<fs.File> {
       }
     };
 
+    const channels = 1;
+    const bitsPerSample = 16;
+    const byteRate = (sampleRate * channels * bitsPerSample) / 8;
+    const blockAlign = (channels * bitsPerSample) / 8;
+
     writeString(view, 0, "RIFF");
     view.setUint32(4, 36 + len, true); // ChunkSize
     writeString(view, 8, "WAVE");
     writeString(view, 12, "fmt ");
     view.setUint32(16, 16, true); // Subchunk1Size
     view.setUint16(20, 1, true); // AudioFormat
-    view.setUint16(22, 1, true); // NumChannels (Native module now downmixes to Mono)
-    view.setUint32(24, 48000, true); // SampleRate (Assumed/Expected by denoiser)
-    view.setUint32(28, 96000, true); // ByteRate (48000 * 1 * 16 / 8)
-    view.setUint16(32, 2, true); // BlockAlign (1 * 16 / 8)
-    view.setUint16(34, 16, true); // BitsPerSample
+    view.setUint16(22, channels, true); // NumChannels
+    view.setUint32(24, sampleRate, true); // SampleRate
+    view.setUint32(28, byteRate, true); // ByteRate
+    view.setUint16(32, blockAlign, true); // BlockAlign
+    view.setUint16(34, bitsPerSample, true); // BitsPerSample
     writeString(view, 36, "data");
     view.setUint32(40, len, true); // Subchunk2Size
 
@@ -101,6 +106,36 @@ export async function PCMtoWav(file: fs.File): Promise<fs.File> {
       `WAV wrapping failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+/**
+ * Resamples a Float32Array from inputRate to outputRate using linear interpolation.
+ */
+export function resample(
+  input: Float32Array,
+  inputRate: number,
+  outputRate: number
+): Float32Array {
+  if (inputRate === outputRate) return input;
+
+  const ratio = inputRate / outputRate;
+  const outputLength = Math.round(input.length / ratio);
+  const output = new Float32Array(outputLength);
+
+  for (let i = 0; i < outputLength; i++) {
+    const pos = i * ratio;
+    const index = Math.floor(pos);
+    const fraction = pos - index;
+
+    if (index + 1 < input.length) {
+      // Linear interpolation
+      output[i] = input[index] * (1 - fraction) + input[index + 1] * fraction;
+    } else {
+      output[i] = input[index];
+    }
+  }
+
+  return output;
 }
 export async function PCMtoArray(file: fs.File): Promise<Float32Array> {
   const pcmDataB64 = await file.base64();

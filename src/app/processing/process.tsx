@@ -14,6 +14,7 @@ import {
   decodeToPCMFile,
   mergeAudioVideo,
   renameFile,
+  resample,
   saveToDevice,
 } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
@@ -116,9 +117,14 @@ export default function ProcessScreen() {
     try {
       // Extract/Decode to PCM for processing
       setProgressText("Converting to PCM...");
-      const pcmFile = await decodeToPCMFile(originalFile);
+      const { file: pcmFile, sampleRate } = await decodeToPCMFile(originalFile);
       setProgressText("Reading audio data...");
       let float32Array = await PCMtoArray(pcmFile);
+
+      if (sampleRate !== 48000) {
+        setProgressText(`Resampling from ${sampleRate}Hz to 48kHz...`);
+        float32Array = resample(float32Array, sampleRate, 48000);
+      }
 
       if (normalize?.toggle) {
         setProgressText("Normalizing audio...");
