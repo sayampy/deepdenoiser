@@ -24,9 +24,21 @@ class MediaProcessor(private val context: Context) {
 
     private val mediaTransformer = MediaTransformer(context.applicationContext)
 
+    private fun getSafeUri(path: String): Uri {
+        return try {
+            if (path.startsWith("content://") || path.startsWith("file://")) {
+                Uri.parse(path)
+            } else {
+                Uri.fromFile(File(path))
+            }
+        } catch (e: Exception) {
+            Uri.parse(path)
+        }
+    }
+
     // (1) Audio Extraction & (3) Bitrate Re-encoding
     // Litr handles the demuxing and decoding/encoding pipeline internally.
-    suspend fun transcodeAudio(inputPath: String, outputPath: String, targetBitrate: Int? = null) =
+    suspend fun transcodeAudio(inputPath: String, outputPath: String, targetBitrate: Int? = null): String =
             suspendCancellableCoroutine { continuation ->
                 val requestId = "transcode_${System.currentTimeMillis()}"
 
@@ -57,20 +69,39 @@ class MediaProcessor(private val context: Context) {
                                     cause: Throwable?,
                                     stats: List<TrackTransformationInfo>?
                             ) {
+                                val message = cause?.message ?: "Unknown Litr Error"
                                 continuation.resumeWithException(
-                                        cause ?: java.lang.Exception("Unknown Litr Error")
+                                        Exception("Transcode failed ($inputPath): $message", cause)
                                 )
                             }
                         }
+
+                // Get source sample rate to avoid pitch shift
+                val extractor = MediaExtractor()
+                var sourceSampleRate = 48000
+                try {
+                    extractor.setDataSource(context, getSafeUri(inputPath), null)
+                    val audioTrack = findTrackIndex(extractor, "audio/")
+                    if (audioTrack != -1) {
+                        val format = extractor.getTrackFormat(audioTrack)
+                        if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                            sourceSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                        }
+                    }
+                } catch (e: Exception) {
+                    // Fallback to 48000
+                } finally {
+                    extractor.release()
+                }
 
                 // For extraction + re-encoding, we isolate the audio track
                 // If targetBitrate is set, Litr will re-encode. Otherwise, it pass-throughs.
                 mediaTransformer.transform(
                         requestId,
-                        Uri.parse(inputPath),
+                        getSafeUri(inputPath),
                         outputPath,
                         null, // Video format (null to drop video)
-                        if (targetBitrate != null) createAudioFormat(targetBitrate) else null,
+                        if (targetBitrate != null) createAudioFormat(targetBitrate, sourceSampleRate) else null,
                         listener,
                         optionsBuilder.build()
                 )
@@ -93,7 +124,11 @@ class MediaProcessor(private val context: Context) {
 
                     // Setup video extractor
                     videoExtractor = MediaExtractor()
-                    videoExtractor.setDataSource(context, Uri.parse(videoPath), null)
+                    try {
+                        videoExtractor.setDataSource(context, getSafeUri(videoPath), null)
+                    } catch (e: Exception) {
+                        throw Exception("Failed to open video source: $videoPath. ${e.message}")
+                    }
                     val videoTrack = findTrackIndex(videoExtractor, "video/")
                     if (videoTrack == -1) throw Exception("No video track found in $videoPath")
                     val videoFormat = videoExtractor.getTrackFormat(videoTrack)
@@ -101,7 +136,11 @@ class MediaProcessor(private val context: Context) {
 
                     // Setup audio extractor
                     audioExtractor = MediaExtractor()
-                    audioExtractor.setDataSource(context, Uri.parse(audioPath), null)
+                    try {
+                        audioExtractor.setDataSource(context, getSafeUri(audioPath), null)
+                    } catch (e: Exception) {
+                        throw Exception("Failed to open audio source: $audioPath. ${e.message}")
+                    }
                     val audioTrack = findTrackIndex(audioExtractor, "audio/")
                     if (audioTrack == -1) throw Exception("No audio track found in $audioPath")
                     val audioFormat = audioExtractor.getTrackFormat(audioTrack)
@@ -169,16 +208,21 @@ class MediaProcessor(private val context: Context) {
 
     // (2) Audio Decoding to Raw PCM
     // Bypasses Litr. Drops down to MediaCodec to get raw byte buffers.
-    suspend fun decodeToPCM(inputPath: String, outputPath: String) =
+    suspend fun decodeToPCM(inputPath: String, outputPath: String): Map<String, Any> =
             withContext(Dispatchers.IO) {
                 var extractor: MediaExtractor? = null
                 var codec: MediaCodec? = null
                 var fos: FileOutputStream? = null
                 var isCodecStarted = false
+                var sampleRate = 48000
 
                 try {
                     extractor = MediaExtractor()
-                    extractor.setDataSource(context, Uri.parse(inputPath), null)
+                    try {
+                        extractor.setDataSource(context, getSafeUri(inputPath), null)
+                    } catch (e: Exception) {
+                        throw Exception("Failed to open data source ($inputPath): ${e.message}")
+                    }
 
                     var audioTrackIndex = -1
                     var format: MediaFormat? = null
@@ -193,11 +237,20 @@ class MediaProcessor(private val context: Context) {
                     }
 
                     if (audioTrackIndex == -1 || format == null)
-                            throw Exception("No audio track found")
+                            throw Exception("No audio track found in $inputPath")
 
                     extractor.selectTrack(audioTrackIndex)
                     val mime = format.getString(MediaFormat.KEY_MIME)!!
-                    codec = MediaCodec.createDecoderByType(mime)
+                    val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                        sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                    }
+                    
+                    try {
+                        codec = MediaCodec.createDecoderByType(mime)
+                    } catch (e: Exception) {
+                        throw Exception("No decoder found for MIME type $mime ($inputPath): ${e.message}")
+                    }
 
                     fos = FileOutputStream(outputPath)
 
@@ -242,10 +295,28 @@ class MediaProcessor(private val context: Context) {
                             outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> if (isEOS) break
                             outIndex >= 0 -> {
                                 val outBuffer = codec.getOutputBuffer(outIndex)!!
-                                val chunk = ByteArray(info.size)
-
-                                // Respect buffer offset and size
-                                if (info.size > 0) {
+                                
+                                // Downmix to mono if multi-channel (Interleaved 16-bit PCM assumed)
+                                if (channels > 1 && info.size > 0) {
+                                    outBuffer.position(info.offset)
+                                    outBuffer.limit(info.offset + info.size)
+                                    
+                                    val shortBuffer = outBuffer.asShortBuffer()
+                                    val numFrames = shortBuffer.remaining() / channels
+                                    val monoBuffer = ByteBuffer.allocate(numFrames * 2)
+                                    monoBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                                    
+                                    for (f in 0 until numFrames) {
+                                        var sum = 0
+                                        for (c in 0 until channels) {
+                                            sum += shortBuffer.get()
+                                        }
+                                        val monoSample = (sum / channels).toShort()
+                                        monoBuffer.putShort(monoSample)
+                                    }
+                                    fos.write(monoBuffer.array())
+                                } else if (info.size > 0) {
+                                    val chunk = ByteArray(info.size)
                                     outBuffer.position(info.offset)
                                     outBuffer.limit(info.offset + info.size)
                                     outBuffer.get(chunk)
@@ -270,7 +341,7 @@ class MediaProcessor(private val context: Context) {
                     extractor?.release()
                     fos?.close()
                 }
-                outputPath
+                mapOf("path" to outputPath, "sampleRate" to sampleRate)
             }
 
     // (4) PCM to WAV Conversion
@@ -376,8 +447,8 @@ class MediaProcessor(private val context: Context) {
         return -1
     }
 
-    private fun createAudioFormat(bitrate: Int): MediaFormat {
-        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 48000, 1)
+    private fun createAudioFormat(bitrate: Int, sampleRate: Int = 48000): MediaFormat {
+        val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1)
         format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
         return format
     }

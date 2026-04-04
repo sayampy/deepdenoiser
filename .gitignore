@@ -3,6 +3,8 @@
 # dependencies
 node_modules/
 *.lock
+bun.lockb
+yarn.lock
 package-lock.json
 # Expo
 .expo/

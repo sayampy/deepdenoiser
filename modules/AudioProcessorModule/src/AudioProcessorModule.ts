@@ -8,7 +8,10 @@ declare class AudioProcessorModule extends NativeModule<AudioProcessorModuleEven
     outputUri: string,
     bitrate?: number,
   ): Promise<string>;
-  decodeToPCM(inputUri: string, outputUri: string): Promise<string>;
+  decodeToPCM(
+    inputUri: string,
+    outputUri: string,
+  ): Promise<{ path: string; sampleRate: number }>;
   pcmToWav(
     pcmUri: string,
     wavUri: string,

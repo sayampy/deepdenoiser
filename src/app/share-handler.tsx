@@ -1,12 +1,16 @@
 import * as theme from "@/src/constants/theme";
+import ErrorModal from "@/src/components/ErrorModal";
 import { useRouter } from "expo-router";
 import { useIncomingShare } from "expo-sharing";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 export default function ShareHandler() {
-  const { resolvedSharedPayloads, isResolving, clearSharedPayloads, error } = useIncomingShare();
+  const { resolvedSharedPayloads, isResolving, clearSharedPayloads, error: shareError } = useIncomingShare();
   const router = useRouter();
+  
+  const [error, setError] = useState<Error | null>(null);
+  const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
 
   useEffect(() => {
     if (!isResolving) {
@@ -31,12 +35,13 @@ export default function ShareHandler() {
           console.warn("Shared payload has no contentUri");
           router.replace("/(tabs)");
         }
-      } else if (error) {
-        console.error("Error resolving shared payload:", error);
-        router.replace("/(tabs)");
+      } else if (shareError) {
+        console.error("Error resolving shared payload:", shareError);
+        setError(shareError instanceof Error ? shareError : new Error(String(shareError)));
+        setIsErrorModalVisible(true);
       }
     }
-  }, [resolvedSharedPayloads, isResolving, error]);
+  }, [resolvedSharedPayloads, isResolving, shareError]);
 
   return (
     <View style={[theme.Styles.container, styles.centered]}>
@@ -44,7 +49,16 @@ export default function ShareHandler() {
       <Text style={styles.loadingText}>
         {isResolving ? "Preparing shared file..." : "Redirecting..."}
       </Text>
-      {error && <Text style={styles.errorText}>Error: {error.message}</Text>}
+      {shareError && <Text style={styles.errorText}>Error: {shareError.message}</Text>}
+      
+      <ErrorModal 
+        visible={isErrorModalVisible}
+        error={error}
+        onClose={() => {
+          setIsErrorModalVisible(false);
+          router.replace("/(tabs)");
+        }}
+      />
     </View>
   );
 }
