@@ -1,6 +1,5 @@
 import * as theme from "@/src/constants/theme";
 import { useFocusEffect } from "@react-navigation/native";
-import { File } from "expo-file-system";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback } from "react";
 import {
@@ -17,10 +16,6 @@ interface VideoPlayerProps {
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
 
-  // Get filename from URI
-  const file = new File(uri);
-  const fileName = file.name;
-
   const player = useVideoPlayer(uri, (player) => {
     player.loop = false;
     player.muted = false;
@@ -34,7 +29,6 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
           player?.pause();
           player?.release();
         };
-        console.debug("player released");
       } catch (error) {
         console.warn(error);
       }

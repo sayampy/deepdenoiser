@@ -13,7 +13,6 @@ export const initAnalytics = async () => {
     try {
       init(APTABASE_APP_KEY);
       isInitialized = true;
-      console.debug("Analytics initialized");
     } catch (e) {
       console.warn("Failed to initialize analytics:", e);
     }

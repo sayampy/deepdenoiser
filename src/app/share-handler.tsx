@@ -18,8 +18,6 @@ export default function ShareHandler() {
         const payload = resolvedSharedPayloads[0];
         // In expo-sharing SDK 55, payload has contentUri, originalName, contentType
         if (payload.contentUri) {
-          console.log("Processing shared content:", payload.contentUri);
-
           // Navigate to processing screen
           router.replace({
             pathname: "/processing/process",
@@ -41,7 +39,7 @@ export default function ShareHandler() {
         setIsErrorModalVisible(true);
       }
     }
-  }, [resolvedSharedPayloads, isResolving, shareError]);
+  }, [resolvedSharedPayloads, isResolving, shareError, clearSharedPayloads, router]);
 
   return (
     <View style={[theme.Styles.container, styles.centered]}>

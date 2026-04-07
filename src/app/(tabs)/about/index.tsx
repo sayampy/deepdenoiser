@@ -1,6 +1,7 @@
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   Image,
@@ -17,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 
 export default function AboutScreen() {
+  const router = useRouter();
   const [modalVisible, setModalVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
 
@@ -84,6 +86,31 @@ export default function AboutScreen() {
             </Text>
           </TouchableOpacity>
         </View>
+
+        <Text style={styles.sectionTitle}>Legal</Text>
+        <View style={styles.linkContainer}>
+          <TouchableOpacity
+            style={[
+              theme.Styles.button,
+              theme.Styles.buttonSecondary,
+              styles.linkButton,
+            ]}
+            onPress={() => router.push("/about/licenses")}
+          >
+            <Feather name="file-text" size={20} color={theme.COLORS.primary} />
+            <Text
+              style={[
+                theme.Styles.buttonText,
+                theme.Styles.buttonTextSecondary,
+                { marginLeft: 10 },
+              ]}
+            >
+              Open Source Licenses
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>

@@ -82,7 +82,6 @@ export default function ProcessScreen() {
         setIsLoading(true);
         const inputFile = new fs.File(fileuri);
         setOriginalFile(inputFile);
-        console.debug("File Type:", inputFile.type);
         // Detect if video or audio from extension or mime (simple check)
         const isVideo = !!inputFile.type?.startsWith("video") ||
           filename.toLowerCase().endsWith(".mp4") ||

@@ -43,7 +43,6 @@ export class DeepFilterNet {
                 intraOpNumThreads: 4,
             };
             this.session = await InferenceSession.create(modelPath, options);
-            console.log(`Successfully loaded model from ${modelPath}`);
         } catch (e) {
             console.error(`Failed to load model: ${e}`);
             throw e;

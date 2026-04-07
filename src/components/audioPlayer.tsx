@@ -2,7 +2,6 @@ import * as theme from "@/src/constants/theme";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import { File } from "expo-file-system";
 import React, { useCallback, useEffect } from "react";
 import {
   Dimensions,
@@ -33,9 +32,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   const progress = useSharedValue(0);
   const isSeeking = useSharedValue(false);
 
-  // Get filename from URI
-  const file = new File(uri);
-  const fileName = file.name;
   useFocusEffect(useCallback(() => {
     return () => {
       try {
@@ -43,7 +39,6 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
           player?.pause();
           player?.release();
         };
-        console.debug("player released");
       } catch (error) {
         console.warn(error);
       }

@@ -1,10 +1,10 @@
 import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
-import { initAnalytics, trackAppEvent } from "@/src/scripts/analytics";
+import { initAnalytics } from "@/src/scripts/analytics";
 import UpdateModal from "@/src/components/UpdateModal";
 import { Feather } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import * as MediaLibrary from "expo-media-library";
-import { Stack, useRouter } from "expo-router";
+import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
@@ -22,7 +22,6 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const [appIsReady, setAppIsReady] = useState(false);
   const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
-  const router = useRouter();
 
   const [fontsLoaded, fontError] = useFonts({
     ...Feather.font,

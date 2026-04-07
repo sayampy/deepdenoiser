@@ -8,7 +8,6 @@ import * as fs from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 
 export async function toWav(file: fs.File): Promise<fs.File> {
-  console.log("Converting to WAV:", file.uri);
   try {
     // We transcode to high-bitrate AAC first to handle resampling/downmixing via Litr
     // if the source is not already compatible.
@@ -35,7 +34,6 @@ export async function toWav(file: fs.File): Promise<fs.File> {
 }
 
 export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; sampleRate: number }> {
-  console.log("Decoding to PCM:", file.uri);
   try {
     const outputFile = new fs.File(fs.Paths.cache, `decoded_${Date.now()}.pcm`);
     const result = await decodeToPCM(
@@ -52,7 +50,6 @@ export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; s
 }
 
 export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promise<fs.File> {
-  console.log(`Wrapping PCM in WAV: ${file.uri} at ${sampleRate}Hz`);
   try {
     const pcmBase64 = await file.base64();
     const binaryString = atob(pcmBase64);
@@ -194,14 +191,13 @@ export async function saveToDevice(file: fs.File) {
     }
     trackAppEvent("save_file");
   } catch (e) {
-    console.log(e);
+    // Error logged in catch block or ignored if preferred
   }
 }
 export async function mergeAudioVideo(
   video: fs.File,
   audio: fs.File,
 ): Promise<fs.File> {
-  console.log("Merging audio and video...");
   try {
     // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
     const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_transcoded.m4a`);

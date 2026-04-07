@@ -27,16 +27,4 @@ const ShareBtn: React.FC<ShareBtnProps> = ({ uri }) => {
     </TouchableOpacity>
 
 }
-const styles = StyleSheet.create({
-    galleryButton: {
-        // flexDirection: "row",
-        // alignItems: "center",
-        // color: theme.COLORS.primary,
-        // paddingVertical: 8,
-        // paddingHorizontal: 16,
-        // borderRadius: 12,
-        // gap: 6,
-    },
-}
-)
 export default ShareBtn;

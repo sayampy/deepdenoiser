@@ -23,6 +23,12 @@
       "android": {
         "buildType": "apk"
       }
+    },
+    "playstore": {
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
