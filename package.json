@@ -30,7 +30,7 @@
     "expo-document-picker": "~55.0.11",
     "expo-file-system": "~55.0.14",
     "expo-font": "~55.0.6",
-    "expo-haptics": "~55.0.11",
+    "expo-haptics": "~55.0.12",
     "expo-linking": "~55.0.11",
     "expo-media-library": "~55.0.12",
     "expo-router": "~55.0.10",
