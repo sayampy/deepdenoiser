@@ -14,7 +14,6 @@ import {
 
 import DonationModal from "@/src/components/DonationModal";
 import SettingsSidebar from "@/src/components/SettingsSidebar";
-import { SafeAreaView } from "react-native-safe-area-context";
 import Constants from "expo-constants";
 
 export default function AboutScreen() {
@@ -27,7 +26,7 @@ export default function AboutScreen() {
   };
 
   return (
-    <SafeAreaView style={theme.Styles.container}>
+    <View style={theme.Styles.container}>
       <ScrollView
         contentContainerStyle={theme.Styles.contentContainer}
         showsVerticalScrollIndicator={false}
@@ -137,7 +136,7 @@ export default function AboutScreen() {
           onClose={() => setSettingsVisible(false)}
         />
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }
 

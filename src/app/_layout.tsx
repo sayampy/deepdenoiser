@@ -1,6 +1,6 @@
+import UpdateModal from "@/src/components/UpdateModal";
 import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
 import { initAnalytics } from "@/src/scripts/analytics";
-import UpdateModal from "@/src/components/UpdateModal";
 import { Feather } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import * as MediaLibrary from "expo-media-library";
@@ -15,6 +15,10 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import {
+  SafeAreaProvider
+} from "react-native-safe-area-context";
+
 
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
@@ -83,7 +87,7 @@ export default function RootLayout() {
   }
 
   return (
-    <>
+    <SafeAreaProvider>
       <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
 
@@ -91,7 +95,7 @@ export default function RootLayout() {
         <Stack.Screen name="processing" />
       </Stack>
       <UpdateModal />
-    </>
+    </SafeAreaProvider>
   );
 }
 
