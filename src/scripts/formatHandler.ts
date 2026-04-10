@@ -1,4 +1,3 @@
-import { trackAppEvent } from "./analytics";
 import {
   decodeToPCM,
   extractAndTranscodeAudio,
@@ -6,6 +5,7 @@ import {
 } from "@/modules/AudioProcessorModule";
 import * as fs from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
+import { trackAppEvent } from "./analytics";
 
 export async function toWav(file: fs.File): Promise<fs.File> {
   try {
@@ -20,7 +20,7 @@ export async function toWav(file: fs.File): Promise<fs.File> {
 
     // Then decode to PCM
     const { file: pcmFile, sampleRate } = await decodeToPCMFile(transcodedAudio);
-    
+
     // Then wrap in WAV
     const wavFile = await PCMtoWav(pcmFile, sampleRate);
     return wavFile;
@@ -52,8 +52,10 @@ export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; s
 export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promise<fs.File> {
   try {
     const pcmBase64 = await file.base64();
-    const binaryString = atob(pcmBase64);
-    const len = binaryString.length;
+    // const binaryString = atob(pcmBase64);
+    // const len = binaryString.length;
+    const pcmBytes = Buffer.from(pcmBase64, 'base64');
+    const len = pcmBytes.length;
 
     // Create WAV Header (44 bytes)
     const buffer = new ArrayBuffer(44);
@@ -86,10 +88,12 @@ export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promi
     // Combine Header and PCM
     const wavData = new Uint8Array(44 + len);
     wavData.set(new Uint8Array(buffer), 0);
-    for (let i = 0; i < len; i++) {
-      wavData[44 + i] = binaryString.charCodeAt(i);
+    // for (let i = 0; i < len; i++) {
+    //   wavData[44 + i] = binaryString.charCodeAt(i);
+    // }
+    for (let i = 0; i < len; i++) { // Copy PCM bytes after the header
+      wavData[44 + i] = pcmBytes[i];
     }
-
     const outputFile = new fs.File(
       fs.Paths.cache,
       `Denoised_${Date.now()}.wav`,

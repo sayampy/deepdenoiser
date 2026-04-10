@@ -134,12 +134,18 @@ class MediaProcessor(private val context: Context) {
                     val videoFormat = videoExtractor.getTrackFormat(videoTrack)
                     val videoMuxerTrack = muxer.addTrack(videoFormat)
 
+                    // Preserve video rotation
+                    if (videoFormat.containsKey(MediaFormat.KEY_ROTATION)) {
+                        val rotation = videoFormat.getInteger(MediaFormat.KEY_ROTATION)
+                        muxer.setOrientationHint(rotation)
+                    }
+
                     // Setup audio extractor
                     audioExtractor = MediaExtractor()
                     try {
                         audioExtractor.setDataSource(context, getSafeUri(audioPath), null)
                     } catch (e: Exception) {
-                        throw Exception("Failed to open audio source: $audioPath. ${e.message}")
+                        throw Exception("Failed to open audio source: $audioPath. ${e.message ?: e.toString()}")
                     }
                     val audioTrack = findTrackIndex(audioExtractor, "audio/")
                     if (audioTrack == -1) throw Exception("No audio track found in $audioPath")
@@ -149,7 +155,19 @@ class MediaProcessor(private val context: Context) {
                     muxer.start()
                     isMuxerStarted = true
 
-                    val buffer = ByteBuffer.allocate(1 * 1024 * 1024)
+                    // Determine max buffer size required by either track
+                    val maxVideoSize = if (videoFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                        videoFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                    } else {
+                        1 * 1024 * 1024 // 1MB fallback
+                    }
+                    val maxAudioSize = if (audioFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                        audioFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                    } else {
+                        256 * 1024 // 256KB fallback
+                    }
+                    val bufferSize = Math.max(maxVideoSize, maxAudioSize)
+                    val buffer = ByteBuffer.allocate(bufferSize)
                     val bufferInfo = MediaCodec.BufferInfo()
 
                     videoExtractor.selectTrack(videoTrack)
