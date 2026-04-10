@@ -118,15 +118,17 @@ export default function ProcessScreen() {
       setProgressText("Converting to PCM...");
       const { file: pcmFile, sampleRate } = await decodeToPCMFile(originalFile);
       setProgressText("Reading audio data...");
-      let float32Array = await PCMtoArray(pcmFile);
+      let float32Array: Float32Array | null = await PCMtoArray(pcmFile);
 
       if (sampleRate !== 48000) {
         setProgressText(`Resampling from ${sampleRate}Hz to 48kHz...`);
-        float32Array = resample(float32Array, sampleRate, 48000);
+        const resampled = resample(float32Array, sampleRate, 48000);
+        float32Array = resampled;
       }
 
       if (normalize?.toggle) {
         setProgressText("Normalizing audio...");
+        // normalizeAudio is now in-place, reducing memory usage
         float32Array = normalizeAudio(float32Array, normalize.targetRMS, normalize.maxPeakDb);
       }
 
@@ -151,10 +153,11 @@ export default function ProcessScreen() {
           }
         }
       }, attenLimDb);
+      float32Array = null;
       setEta(null);
 
       setProgressText("Saving denoised audio...");
-      const denoisedPcmFile = await ArraytoPCM(denoisedArray);
+      const denoisedPcmFile = await ArraytoPCM(denoisedArray as Float32Array);
 
       setProgressText("Finalizing audio...");
       const baseName = filename
@@ -213,7 +216,7 @@ export default function ProcessScreen() {
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.replace('/(tabs)')}
+          onPress={() => router.navigate('/(tabs)')}
           disabled={denoising}
         >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />

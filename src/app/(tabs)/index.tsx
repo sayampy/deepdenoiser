@@ -19,7 +19,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -86,7 +85,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={theme.Styles.container}>
+    <View style={theme.Styles.container}>
       <StatusBar style="light" />
       <View style={theme.Styles.header}>
         <Image
@@ -174,7 +173,7 @@ export default function HomeScreen() {
         error={error}
         onClose={() => setIsErrorModalVisible(false)}
       />
-    </SafeAreaView>
+    </View>
   );
 }
 

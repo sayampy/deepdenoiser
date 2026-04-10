@@ -90,7 +90,6 @@ export default function UpdateModal() {
 
       if (asset.localUri) {
         if (Platform.OS === 'android') {
-          // On Android, sharing is often more reliable to trigger APK installation
           await Sharing.shareAsync(asset.localUri, {
             mimeType: 'application/vnd.android.package-archive',
             dialogTitle: 'Install DeepDenoiser Update',

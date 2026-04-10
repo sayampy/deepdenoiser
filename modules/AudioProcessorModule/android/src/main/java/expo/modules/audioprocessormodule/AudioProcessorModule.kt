@@ -28,7 +28,7 @@ class AudioProcessorModule : Module() {
                     val result = processor.transcodeAudio(input, output, bitrate)
                     promise.resolve(result)
                 } catch (e: Exception) {
-                    promise.reject("ERR_TRANSCODE", e.message, e)
+                    promise.reject("ERR_TRANSCODE", e.message ?: e.toString(), e)
                 }
             }
         }
@@ -47,7 +47,7 @@ class AudioProcessorModule : Module() {
                     val result = processor.decodeToPCM(input, output)
                     promise.resolve(result)
                 } catch (e: Exception) {
-                    promise.reject("ERR_DECODE", e.message, e)
+                    promise.reject("ERR_DECODE", e.message ?: e.toString(), e)
                 }
             }
         }
@@ -70,7 +70,7 @@ class AudioProcessorModule : Module() {
                             processor.pcmToWav(pcmInput, wavOutput, sampleRate, channels, bitDepth)
                     promise.resolve(result)
                 } catch (e: Exception) {
-                    promise.reject("ERR_WAV_CONV", e.message, e)
+                    promise.reject("ERR_WAV_CONV", e.message ?: e.toString(), e)
                 }
             }
         }
@@ -90,7 +90,7 @@ class AudioProcessorModule : Module() {
                     val result = processor.muxAudioVideo(videoPath, audioPath, outputPath)
                     promise.resolve(result)
                 } catch (e: Exception) {
-                    promise.reject("ERR_MUX_AUDIO_VIDEO", e.message, e)
+                    promise.reject("ERR_MUX_AUDIO_VIDEO", e.message ?: e.toString(), e)
                 }
             }
         }

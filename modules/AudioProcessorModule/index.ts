@@ -27,7 +27,7 @@ export async function mixAudioVideo(
 export async function decodeToPCM(
   inputUri: string,
   outputUri: string,
-): Promise<string> {
+): Promise<{ path: string; sampleRate: number }> {
   return await AudioProcessorModule.decodeToPCM(inputUri, outputUri);
 }
 

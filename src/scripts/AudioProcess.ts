@@ -30,7 +30,7 @@ export function normalizeAudio(
 
   // If silent or extremely quiet, return as is
   if (currentRms < 1e-8 || currentPeak < 1e-8) {
-    return new Float32Array(audio);
+    return audio;
   }
 
   // Calculate required gain for target RMS
@@ -44,7 +44,7 @@ export function normalizeAudio(
 
   // Pass 2: Apply dynamic gain adjustment using a sliding window.
   // This adjusts gain for quiet and loud parts while preventing clipping.
-  const result = new Float32Array(audio.length);
+  // We perform this IN-PLACE to save memory.
   const blockSize = 2048; // ~42ms at 48kHz
   let lastGain = gain;
 
@@ -76,10 +76,10 @@ export function normalizeAudio(
     for (let j = i; j < end; j++) {
       const alpha = (j - i) / (end - i);
       const currentGain = lastGain * (1 - alpha) + targetBlockGain * alpha;
-      result[j] = audio[j] * currentGain;
+      audio[j] = audio[j] * currentGain;
     }
     lastGain = targetBlockGain;
   }
 
-  return result;
+  return audio;
 }
