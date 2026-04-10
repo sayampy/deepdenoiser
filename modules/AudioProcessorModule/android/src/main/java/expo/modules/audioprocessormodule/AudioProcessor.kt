@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
 import com.linkedin.android.litr.MediaTransformer
@@ -135,10 +136,23 @@ class MediaProcessor(private val context: Context) {
                     val videoMuxerTrack = muxer.addTrack(videoFormat)
 
                     // Preserve video rotation
+                    var rotation = 0
                     if (videoFormat.containsKey(MediaFormat.KEY_ROTATION)) {
-                        val rotation = videoFormat.getInteger(MediaFormat.KEY_ROTATION)
-                        muxer.setOrientationHint(rotation)
+                        rotation = videoFormat.getInteger(MediaFormat.KEY_ROTATION)
+                    } else {
+                        // Fallback to MediaMetadataRetriever
+                        val retriever = MediaMetadataRetriever()
+                        try {
+                            retriever.setDataSource(context, getSafeUri(videoPath))
+                            val rotationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                            rotation = rotationStr?.toInt() ?: 0
+                        } catch (e: Exception) {
+                            // Ignore
+                        } finally {
+                            retriever.release()
+                        }
                     }
+                    muxer.setOrientationHint(rotation)
 
                     // Setup audio extractor
                     audioExtractor = MediaExtractor()
