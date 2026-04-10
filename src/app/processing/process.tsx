@@ -216,7 +216,7 @@ export default function ProcessScreen() {
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.replace('/(tabs)')}
+          onPress={() => router.navigate('/(tabs)')}
           disabled={denoising}
         >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
