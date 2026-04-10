@@ -52,10 +52,10 @@ export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; s
 export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promise<fs.File> {
   try {
     const pcmBase64 = await file.base64();
-    // const binaryString = atob(pcmBase64);
-    // const len = binaryString.length;
-    const pcmBytes = Buffer.from(pcmBase64, 'base64');
-    const len = pcmBytes.length;
+    const binaryString = atob(pcmBase64);
+    const len = binaryString.length;
+    // const pcmBytes = Buffer.from(pcmBase64, 'base64');
+    // const len = pcmBytes.length;
 
     // Create WAV Header (44 bytes)
     const buffer = new ArrayBuffer(44);
@@ -88,17 +88,25 @@ export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promi
     // Combine Header and PCM
     const wavData = new Uint8Array(44 + len);
     wavData.set(new Uint8Array(buffer), 0);
-    // for (let i = 0; i < len; i++) {
-    //   wavData[44 + i] = binaryString.charCodeAt(i);
-    // }
-    for (let i = 0; i < len; i++) { // Copy PCM bytes after the header
-      wavData[44 + i] = pcmBytes[i];
+    for (let i = 0; i < len; i++) {
+      wavData[44 + i] = binaryString.charCodeAt(i);
     }
+    // for (let i = 0; i < len; i++) { // Copy PCM bytes after the header
+    //   wavData[44 + i] = pcmBytes[i];
+    // }
     const outputFile = new fs.File(
       fs.Paths.cache,
       `Denoised_${Date.now()}.wav`,
     );
     await outputFile.write(wavData);
+    // // Use native pcmToWav to avoid loading entire file into memory
+    // await nativePcmToWav(
+    //   file.uri.replace("file://", ""),
+    //   outputFile.uri.replace("file://", ""),
+    //   sampleRate,
+    //   1, // channels (mono)
+    //   16 // bitDepth (16-bit)
+    // );
 
     return outputFile;
   } catch (error) {
@@ -139,27 +147,23 @@ export function resample(
   return output;
 }
 export async function PCMtoArray(file: fs.File): Promise<Float32Array> {
-  const pcmDataB64 = await file.base64();
-  const binaryString = atob(pcmDataB64);
-  const len = binaryString.length;
+  // Use arrayBuffer() instead of base64() to avoid large string allocations and atob/loop overhead
+  const buffer = await file.arrayBuffer();
+  const len = buffer.byteLength;
 
   // Verify if the output is valid 16-bit PCM (must be even number of bytes)
   if (len % 2 !== 0) {
     throw new Error(`Invalid PCM data: Byte length (${len}) is not divisible by 2.`);
   }
 
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-
-  const pcmArray = new Int16Array(bytes.buffer);
+  const pcmArray = new Int16Array(buffer);
   const float32Array = new Float32Array(pcmArray.length);
   for (let i = 0; i < pcmArray.length; i++) {
     float32Array[i] = pcmArray[i] / 32768.0;
   }
   return float32Array;
 }
+
 export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
   const int16Array = new Int16Array(f32array.length);
   for (let i = 0; i < f32array.length; i++) {
