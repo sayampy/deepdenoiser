@@ -14,7 +14,6 @@ import {
   decodeToPCMFile,
   mergeAudioVideo,
   renameFile,
-  resample,
   saveToDevice,
 } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
@@ -116,15 +115,11 @@ export default function ProcessScreen() {
     try {
       // Extract/Decode to PCM for processing
       setProgressText("Converting to PCM...");
+      const startTime = Date.now();
       const { file: pcmFile, sampleRate } = await decodeToPCMFile(originalFile);
       setProgressText("Reading audio data...");
-      let float32Array: Float32Array | null = await PCMtoArray(pcmFile);
-
-      if (sampleRate !== 48000) {
-        setProgressText(`Resampling from ${sampleRate}Hz to 48kHz...`);
-        const resampled = resample(float32Array, sampleRate, 48000);
-        float32Array = resampled;
-      }
+      // Integrated resampling during loading to save memory
+      let float32Array: Float32Array | null = await PCMtoArray(pcmFile, sampleRate, 48000);
 
       if (normalize?.toggle) {
         setProgressText("Normalizing audio...");
@@ -141,7 +136,6 @@ export default function ProcessScreen() {
       await denoiser.loadModel(modelAsset.localUri!);
 
       setProgressText("Denoising...");
-      const startTime = Date.now();
       const denoisedArray = await denoiser.denoise(float32Array, (p) => {
         setProgress(p);
         if (p > 0) {

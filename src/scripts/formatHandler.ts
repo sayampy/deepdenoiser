@@ -1,7 +1,8 @@
 import {
   decodeToPCM,
   extractAndTranscodeAudio,
-  mixAudioVideo
+  mixAudioVideo,
+  pcmToWav as nativePcmToWav
 } from "@/modules/AudioProcessorModule";
 import * as fs from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
@@ -51,62 +52,19 @@ export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; s
 
 export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promise<fs.File> {
   try {
-    const pcmBase64 = await file.base64();
-    const binaryString = atob(pcmBase64);
-    const len = binaryString.length;
-    // const pcmBytes = Buffer.from(pcmBase64, 'base64');
-    // const len = pcmBytes.length;
-
-    // Create WAV Header (44 bytes)
-    const buffer = new ArrayBuffer(44);
-    const view = new DataView(buffer);
-    const writeString = (view: DataView, offset: number, text: string) => {
-      for (let i = 0; i < text.length; i++) {
-        view.setUint8(offset + i, text.charCodeAt(i));
-      }
-    };
-
-    const channels = 1;
-    const bitsPerSample = 16;
-    const byteRate = (sampleRate * channels * bitsPerSample) / 8;
-    const blockAlign = (channels * bitsPerSample) / 8;
-
-    writeString(view, 0, "RIFF");
-    view.setUint32(4, 36 + len, true); // ChunkSize
-    writeString(view, 8, "WAVE");
-    writeString(view, 12, "fmt ");
-    view.setUint32(16, 16, true); // Subchunk1Size
-    view.setUint16(20, 1, true); // AudioFormat
-    view.setUint16(22, channels, true); // NumChannels
-    view.setUint32(24, sampleRate, true); // SampleRate
-    view.setUint32(28, byteRate, true); // ByteRate
-    view.setUint16(32, blockAlign, true); // BlockAlign
-    view.setUint16(34, bitsPerSample, true); // BitsPerSample
-    writeString(view, 36, "data");
-    view.setUint32(40, len, true); // Subchunk2Size
-
-    // Combine Header and PCM
-    const wavData = new Uint8Array(44 + len);
-    wavData.set(new Uint8Array(buffer), 0);
-    for (let i = 0; i < len; i++) {
-      wavData[44 + i] = binaryString.charCodeAt(i);
-    }
-    // for (let i = 0; i < len; i++) { // Copy PCM bytes after the header
-    //   wavData[44 + i] = pcmBytes[i];
-    // }
     const outputFile = new fs.File(
       fs.Paths.cache,
       `Denoised_${Date.now()}.wav`,
     );
-    await outputFile.write(wavData);
-    // // Use native pcmToWav to avoid loading entire file into memory
-    // await nativePcmToWav(
-    //   file.uri.replace("file://", ""),
-    //   outputFile.uri.replace("file://", ""),
-    //   sampleRate,
-    //   1, // channels (mono)
-    //   16 // bitDepth (16-bit)
-    // );
+
+    // Use native pcmToWav to avoid loading entire file into memory as base64
+    await nativePcmToWav(
+      file.uri.replace("file://", ""),
+      outputFile.uri.replace("file://", ""),
+      sampleRate,
+      1, // channels (mono)
+      16 // bitDepth (16-bit)
+    );
 
     return outputFile;
   } catch (error) {
@@ -118,73 +76,116 @@ export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promi
 }
 
 /**
- * Resamples a Float32Array from inputRate to outputRate using linear interpolation.
+ * Resamples an Int16Array or Float32Array from inputRate to outputRate using linear interpolation.
  */
 export function resample(
-  input: Float32Array,
+  input: Int16Array | Float32Array,
   inputRate: number,
   outputRate: number
 ): Float32Array {
-  if (inputRate === outputRate) return input;
+  if (inputRate === outputRate) {
+    if (input instanceof Float32Array) return input;
+    const output = new Float32Array(input.length);
+    for (let i = 0; i < input.length; i++) output[i] = input[i] / 32768.0;
+    return output;
+  }
 
   const ratio = inputRate / outputRate;
   const outputLength = Math.round(input.length / ratio);
   const output = new Float32Array(outputLength);
+
+  const isInt16 = input instanceof Int16Array;
 
   for (let i = 0; i < outputLength; i++) {
     const pos = i * ratio;
     const index = Math.floor(pos);
     const fraction = pos - index;
 
-    if (index + 1 < input.length) {
-      // Linear interpolation
-      output[i] = input[index] * (1 - fraction) + input[index + 1] * fraction;
+    let s1, s2;
+    if (isInt16) {
+      s1 = input[index] / 32768.0;
+      s2 = index + 1 < input.length ? input[index + 1] / 32768.0 : s1;
     } else {
-      output[i] = input[index];
+      s1 = input[index];
+      s2 = index + 1 < input.length ? input[index + 1] : s1;
     }
+
+    output[i] = s1 * (1 - fraction) + s2 * fraction;
   }
 
   return output;
 }
-export async function PCMtoArray(file: fs.File): Promise<Float32Array> {
-  // Use arrayBuffer() instead of base64() to avoid large string allocations and atob/loop overhead
-  const buffer = await file.arrayBuffer();
-  const len = buffer.byteLength;
 
-  // Verify if the output is valid 16-bit PCM (must be even number of bytes)
-  if (len % 2 !== 0) {
-    throw new Error(`Invalid PCM data: Byte length (${len}) is not divisible by 2.`);
+export async function PCMtoArray(
+  file: fs.File,
+  inputRate?: number,
+  targetRate?: number
+): Promise<Float32Array> {
+  if (!file.exists) throw new Error("File does not exist");
+
+  const fileSize = file.size;
+  if (fileSize % 2 !== 0) {
+    throw new Error(`Invalid PCM data: Byte length (${fileSize}) is not divisible by 2.`);
   }
 
-  const pcmArray = new Int16Array(buffer);
-  const float32Array = new Float32Array(pcmArray.length);
-  for (let i = 0; i < pcmArray.length; i++) {
+  const numSamples = fileSize / 2;
+  const pcmArray = new Int16Array(numSamples);
+
+  const handle = file.open();
+  try {
+    const chunkSize = 256 * 1024; // 256KB chunks
+    for (let offset = 0; offset < fileSize; offset += chunkSize) {
+      const length = Math.min(chunkSize, fileSize - offset);
+      handle.offset = offset;
+      const bytes = handle.readBytes(length);
+      const chunk = new Int16Array(bytes.buffer);
+      pcmArray.set(chunk, offset / 2);
+    }
+  } finally {
+    handle.close();
+  }
+
+  if (inputRate && targetRate && inputRate !== targetRate) {
+    return resample(pcmArray, inputRate, targetRate);
+  }
+
+  // Convert to Float32Array
+  const float32Array = new Float32Array(numSamples);
+  for (let i = 0; i < numSamples; i++) {
     float32Array[i] = pcmArray[i] / 32768.0;
   }
   return float32Array;
 }
 
 export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
-  const int16Array = new Int16Array(f32array.length);
-  for (let i = 0; i < f32array.length; i++) {
-    // Scale Float32 (-1.0 to 1.0) to Int16 range and clamp
-    let val = f32array[i] * 32768.0;
-    if (val > 32767) val = 32767;
-    else if (val < -32768) val = -32768;
-    int16Array[i] = val;
-  }
-
-  const bytes = new Uint8Array(int16Array.buffer);
   const outputFile = new fs.File(fs.Paths.cache, `processed_${Date.now()}.pcm`);
-  await outputFile.write(bytes);
-  // let binaryString = "";
-  // // Process in chunks to avoid stack overflow with String.fromCharCode
-  // for (let i = 0; i < bytes.length; i += 8192) {
-  //   binaryString += String.fromCharCode(...bytes.subarray(i, i + 8192));
-  // }
-  // // const base64 = btoa(String.fromCharCode(...bytes));
-  // const base64 = btoa(binaryString);
-  // await outputFile.write(base64, { encoding: fs.EncodingType.BASE64 });
+
+  // Process and write in chunks to avoid large intermediate buffers
+  const chunkSize = 65536; // 64K samples = 128KB
+  for (let i = 0; i < f32array.length; i += chunkSize) {
+    const end = Math.min(i + chunkSize, f32array.length);
+    const pcmChunk = new Int16Array(end - i);
+
+    for (let j = 0; j < pcmChunk.length; j++) {
+      let val = f32array[i + j] * 32768.0;
+      if (val > 32767) val = 32767;
+      else if (val < -32768) val = -32768;
+      pcmChunk[j] = val;
+    }
+
+    const bytes = new Uint8Array(pcmChunk.buffer);
+    let binaryString = "";
+    // Process in chunks to avoid stack overflow with String.fromCharCode
+    for (let k = 0; k < bytes.length; k += 8192) {
+      binaryString += String.fromCharCode(...bytes.subarray(k, k + 8192));
+    }
+    const base64 = btoa(binaryString);
+
+    await outputFile.write(base64, {
+      encoding: "base64",
+      append: i > 0,
+    });
+  }
 
   return outputFile;
 }
