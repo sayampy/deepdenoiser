@@ -38,6 +38,7 @@ export default function AboutScreen() {
           <Feather name="settings" size={24} color={theme.COLORS.text} />
         </TouchableOpacity>
         <View style={theme.Styles.header}>
+
           <Text style={theme.Styles.title}>About DeepDenoiser</Text>
           <Text style={theme.Styles.subtitle}>Version {Constants.expoConfig?.version}</Text>
         </View>
@@ -144,7 +145,7 @@ const styles = StyleSheet.create({
   settingsButton: {
     position: "absolute",
     right: 0,
-    top: -10,
+    marginTop: 14,
     padding: 10,
   },
   infoCard: {

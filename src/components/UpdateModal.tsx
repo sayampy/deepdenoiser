@@ -25,6 +25,10 @@ interface UpdateInfo {
 }
 
 const GITHUB_API_URL = 'https://api.github.com/repos/sayampy/deepdenoiser/releases/latest';
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.sayampy.deepdenoiser';
+
+// Manually change this to true if building for Play Store
+const isPlayStore = false;
 
 const compareVersions = (v1: string, v2: string) => {
   const cleanV1 = v1.replace(/^v/, '').split('.').map(Number);
@@ -61,10 +65,10 @@ export default function UpdateModal() {
       if (data.tag_name) {
         if (compareVersions(data.tag_name, currentVersion) > 0) {
           const apkAsset = data.assets?.find((a: any) => a.name.endsWith('.apk'));
-          if (apkAsset) {
+          if (apkAsset || isPlayStore) {
             setUpdateInfo({
               version: data.tag_name,
-              url: apkAsset.browser_download_url,
+              url: apkAsset ? apkAsset.browser_download_url : '',
               notes: data.body || 'No release notes provided.',
               published_at: data.published_at,
             });
@@ -80,6 +84,11 @@ export default function UpdateModal() {
 
   const handleDownload = async () => {
     if (!updateInfo) return;
+
+    if (isPlayStore) {
+      Linking.openURL(PLAY_STORE_URL);
+      return;
+    }
 
     setDownloading(true);
     setError(null);
@@ -171,7 +180,9 @@ export default function UpdateModal() {
                   style={styles.primaryButton}
                   onPress={handleDownload}
                 >
-                  <Text style={styles.primaryButtonText}>Download & Install</Text>
+                  <Text style={styles.primaryButtonText}>
+                    {isPlayStore ? 'Update from Play Store' : 'Download & Install'}
+                  </Text>
                 </TouchableOpacity>
               </>
             )}
@@ -231,7 +242,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     borderRadius: 16,
     padding: SPACING.medium,
-    height: 150,
+    height: 250,
     borderWidth: 1,
     borderColor: COLORS.border,
   },
