@@ -140,7 +140,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
 
       <View style={styles.footer}>
         <View style={styles.infoContainer}>
-          <Text style={styles.title} numberOfLines={1}>{name.replaceAll('%20', '\s')}</Text>
+          <Text style={styles.title} numberOfLines={1}>{name.replaceAll('%20', ' ')}</Text>
         </View>
       </View>
     </View>

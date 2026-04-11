@@ -136,10 +136,11 @@ export default function ProcessScreen() {
       await denoiser.loadModel(modelAsset.localUri!);
 
       setProgressText("Denoising...");
+      const model_startTime = Date.now();
       const denoisedArray = await denoiser.denoise(float32Array, (p) => {
         setProgress(p);
         if (p > 0) {
-          const elapsed = (Date.now() - startTime) / 1000;
+          const elapsed = (Date.now() - model_startTime) / 1000;
           const remaining = elapsed / (p / 100) - elapsed;
           if (remaining > 0 && Number.isFinite(remaining)) {
             const totalSeconds = Math.ceil(remaining);
@@ -158,7 +159,7 @@ export default function ProcessScreen() {
         .split('.')
         .slice(0, -1)
         .join('.')
-        .replaceAll(/[!<>:"/\\|?*\x00-\x1F]/g, '_')
+        .replaceAll(/[!<>:"/\\|?*[\]#%：？\x00-\x1F]/g, '_')
         .replaceAll(/[\u2236]/g, '-')
         .replaceAll(/\s+/g, ' ');
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
