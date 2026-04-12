@@ -160,7 +160,7 @@ export async function PCMtoArray(
 export async function readPCMChunks(
   file: fs.File,
   chunkSize: number, // in samples
-  onChunk: (chunk: Float32Array) => Promise<void>,
+  onChunk: (chunk: Float32Array, inputSamples: number) => Promise<void>,
   inputRate?: number,
   targetRate?: number
 ): Promise<void> {
@@ -172,6 +172,7 @@ export async function readPCMChunks(
     const bytesPerChunk = chunkSize * 2;
     for (let offset = 0; offset < fileSize; offset += bytesPerChunk) {
       const length = Math.min(bytesPerChunk, fileSize - offset);
+      const inputSamples = length / 2;
       handle.offset = offset;
       const bytes = handle.readBytes(length);
       const pcmChunk = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
@@ -186,7 +187,7 @@ export async function readPCMChunks(
         }
       }
 
-      await onChunk(floatChunk);
+      await onChunk(floatChunk, inputSamples);
     }
   } finally {
     handle.close();

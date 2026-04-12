@@ -46,8 +46,8 @@ export class DeepFilterNet {
             const options: InferenceSession.SessionOptions = {
                 executionProviders: ["cpu"],
                 graphOptimizationLevel: "all",
-                interOpNumThreads: 4, // Optimized for multi-core mobile CPUs
-                intraOpNumThreads: 4,
+                interOpNumThreads: 1, // Optimized for multi-core mobile CPUs
+                intraOpNumThreads: 2,
             };
             this.session = await InferenceSession.create(modelPath, options);
         } catch (e) {
@@ -185,7 +185,7 @@ export class DeepFilterNet {
 
         const numFeeds = audioFeeds.length;
         const origLen = audioFeeds[0].length;
-        
+
         // ALIGNMENT: Prepend fftSize zeros for delay compensation
         const hopSizePadding = (this.hopSize - (origLen % this.hopSize)) % this.hopSize;
         const totalPadding = this.fftSize + hopSizePadding;

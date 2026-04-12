@@ -126,13 +126,13 @@ export default function ProcessScreen() {
         setProgressText("Analyzing audio...");
         let maxPeak = 0;
         let analyzedSamples = 0;
-        await readPCMChunks(pcmFile, 1024 * 1024, async (chunk) => {
+        await readPCMChunks(pcmFile, 1024 * 1024, async (chunk, inputSamples) => {
           for (let i = 0; i < chunk.length; i++) {
             const abs = Math.abs(chunk[i]);
             if (abs > maxPeak) maxPeak = abs;
           }
-          analyzedSamples += chunk.length;
-          setProgress(Math.round((analyzedSamples / totalSamples) * 100));
+          analyzedSamples += inputSamples;
+          setProgress(Math.min(Math.round((analyzedSamples / totalSamples) * 100), 100));
         });
 
         const targetPeak = Math.pow(10, normalize.maxPeakDb / 20);
@@ -161,13 +161,13 @@ export default function ProcessScreen() {
       if (denoisedPcmFile.exists) denoisedPcmFile.delete();
 
       // State for chunked processing
-      let inputBuffer = new Float32Array(fftSize); // Start with zeros for delay compensation (match runDenoiseLoop)
+      let inputBuffer = new Float32Array(fftSize); // Start with zeros for delay compensation
       let processedInputSamples = 0;
       let firstWrite = true;
       let outputSamplesSkipped = 0;
       const samplesPer10Sec = sampleRate * 10;
 
-      await readPCMChunks(pcmFile, samplesPer10Sec, async (chunk) => {
+      await readPCMChunks(pcmFile, samplesPer10Sec, async (chunk, inputSamples) => {
         // Apply normalization gain
         if (normalize?.toggle) {
           for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
@@ -203,8 +203,8 @@ export default function ProcessScreen() {
           firstWrite = false;
         }
 
-        processedInputSamples += chunk.length;
-        const p = Math.round((processedInputSamples / totalSamples) * 100);
+        processedInputSamples += inputSamples;
+        const p = Math.min(Math.round((processedInputSamples / totalSamples) * 100), 100);
         setProgress(p);
 
         // Accurate ETA
