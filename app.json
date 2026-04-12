@@ -1,10 +1,10 @@
 {
   "expo": {
-    "version": "1.3.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "deepdenoiser",
     "userInterfaceStyle": "automatic",
+    "platforms": ["android"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sayampy.deepdenoiser"
@@ -27,10 +27,6 @@
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
-    },
-    "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
       "./plugins/DisableDependencyInfo",
@@ -76,7 +72,6 @@
       "expo-asset",
       "expo-video",
       "expo-audio",
-
       [
         "expo-sharing",
         {
@@ -94,9 +89,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "6b6db3b2-ee4b-49fd-8d13-6fefd79b17ec"
+        "projectId": "ff271cc2-a2e1-4138-b347-473d9f30821e"
       }
     },
-    "owner": "sympy"
+    "owner": "sayampy"
   }
 }
