@@ -37,7 +37,7 @@ https://github.com/user-attachments/assets/29f147db-ff8b-486a-877d-1d765922ed5c
 
 ## 🛠️ Tech Stack
 
-- **Framework**: React Native (Expo SDK 54+)
+- **Framework**: React Native (Expo SDK 55+)
 - **AI Model**: DeepFilterNet3 (via `onnxruntime-react-native`)
 - **Native Logic**: Custom Kotlin modules for Android `MediaCodec` handling
 - **State Management**: React Hooks & Expo Router
