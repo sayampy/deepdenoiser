@@ -27,8 +27,8 @@ interface UpdateInfo {
 const GITHUB_API_URL = 'https://api.github.com/repos/sayampy/deepdenoiser/releases/latest';
 const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.sayampy.deepdenoiser';
 
-// Manually change this to true if building for Play Store
-const isPlayStore = true;
+// true if building for Play Store
+const isPlayStore = false;
 
 const compareVersions = (v1: string, v2: string) => {
   const cleanV1 = v1.replace(/^v/, '').split('.').map(Number);
