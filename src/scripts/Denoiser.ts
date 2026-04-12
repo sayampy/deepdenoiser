@@ -12,6 +12,13 @@ export class DeepFilterNet {
     private readonly inputNames: string[];
     private readonly outputNames: string[];
 
+    private streamStates: {
+        states: Tensor | Tensor[];
+        attenLimDb: Tensor;
+        inputFrameData: Float32Array;
+        inputFrame: Tensor;
+    } | null = null;
+
     constructor() {
         this.hopSize = metadata.hop_size;
         this.fftSize = metadata.fft_size;
@@ -47,6 +54,69 @@ export class DeepFilterNet {
             console.error(`Failed to load model: ${e}`);
             throw e;
         }
+    }
+
+    public setupStreaming(attenLimDbValue: number = 0.0): void {
+        const { states, attenLimDb } = this.initStates(attenLimDbValue);
+        const inputFrameData = new Float32Array(this.hopSize);
+        const inputFrame = new Tensor("float32", inputFrameData, [this.hopSize]);
+        this.streamStates = {
+            states,
+            attenLimDb,
+            inputFrameData,
+            inputFrame,
+        };
+    }
+
+    public async processFrame(frame: Float32Array): Promise<Float32Array> {
+        if (!this.session) throw new Error("Session not initialized");
+        if (!this.streamStates) throw new Error("Streaming not setup. Call setupStreaming() first.");
+
+        const { states, attenLimDb, inputFrameData, inputFrame } = this.streamStates;
+
+        // Copy input frame data
+        inputFrameData.set(frame);
+
+        const feeds: Record<string, Tensor> = {
+            input_frame: inputFrame
+        };
+
+        if (this.inputNames.includes("atten_lim_db")) {
+            feeds["atten_lim_db"] = attenLimDb;
+        }
+
+        if (this.hasSingleStateTensor) {
+            feeds["states"] = states as Tensor;
+        } else {
+            const stateTensors = states as Tensor[];
+            for (let j = 0; j < stateTensors.length; j++) {
+                feeds[this.stateInputNames[j]] = stateTensors[j];
+            }
+        }
+
+        const results = await this.session.run(feeds);
+
+        // Update output buffer and states
+        const outFrameRaw = results[this.outputNames[0]].data as Float32Array;
+
+        if (this.hasSingleStateTensor) {
+            const nextStateRaw = results[this.outputNames[1]].data as Float32Array;
+            this.streamStates.states = new Tensor("float32", nextStateRaw, this.statesShape);
+        } else {
+            const newStates: Tensor[] = [];
+            for (let j = 0; j < this.stateInputNames.length; j++) {
+                const nextMultiStateRaw = results[this.outputNames[j + 1]].data as Float32Array;
+                const originalShape = (states as Tensor[])[j].dims;
+                newStates.push(new Tensor("float32", nextMultiStateRaw, originalShape));
+            }
+            this.streamStates.states = newStates;
+        }
+
+        return outFrameRaw;
+    }
+
+    public resetStates(): void {
+        this.streamStates = null;
     }
 
     private initStates(attenLimDbValue: number = 0.0): {
@@ -128,8 +198,6 @@ export class DeepFilterNet {
             const inputFrameData = new Float32Array(this.hopSize);
             const inputFrame = new Tensor("float32", inputFrameData, [this.hopSize]);
             const paddedAudio = new Float32Array(paddedLen);
-            // Note: In case of multi-feed, we assume they all have same length
-            // We'll set the actual audio later in a loop or here if they are already known
             return {
                 states,
                 attenLimDb,
@@ -150,10 +218,7 @@ export class DeepFilterNet {
         for (let step = 0; step < numSteps; step++) {
             const start = step * this.hopSize;
 
-            // Prepare feeds_array for parallel execution
-            // then asynchronously iterate through the feeds_array and run this.session.run with every feed
             const inferencePromises = feedStates.map(async (f) => {
-                // Fast data copy into reusable tensor buffer
                 f.inputFrameData.set(f.paddedAudio.subarray(start, start + this.hopSize));
 
                 const feeds: Record<string, Tensor> = {
@@ -175,7 +240,6 @@ export class DeepFilterNet {
 
                 const results = await this.session!.run(feeds);
 
-                // Update output buffer and states
                 const outFrameRaw = results[this.outputNames[0]].data as Float32Array;
                 f.enhancedAudio.set(outFrameRaw, start);
 
@@ -195,7 +259,6 @@ export class DeepFilterNet {
 
             await Promise.all(inferencePromises);
 
-            // Progress reporting
             if (onProgress) {
                 const progress = Math.round(((step + 1) / numSteps) * 100);
                 if (progress > lastReportedProgress) {
@@ -211,7 +274,7 @@ export class DeepFilterNet {
             }
         }
 
-        // Return trimmed denoised buffers
         return feedStates.map(f => f.enhancedAudio.slice(this.fftSize, origLen + this.fftSize));
     }
+
 }

@@ -138,7 +138,7 @@ export async function PCMtoArray(
       const length = Math.min(chunkSize, fileSize - offset);
       handle.offset = offset;
       const bytes = handle.readBytes(length);
-      const chunk = new Int16Array(bytes.buffer);
+      const chunk = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
       pcmArray.set(chunk, offset / 2);
     }
   } finally {
@@ -155,6 +155,71 @@ export async function PCMtoArray(
     float32Array[i] = pcmArray[i] / 32768.0;
   }
   return float32Array;
+}
+
+export async function readPCMChunks(
+  file: fs.File,
+  chunkSize: number, // in samples
+  onChunk: (chunk: Float32Array) => Promise<void>,
+  inputRate?: number,
+  targetRate?: number
+): Promise<void> {
+  if (!file.exists) throw new Error("File does not exist");
+
+  const fileSize = file.size;
+  const handle = file.open();
+  try {
+    const bytesPerChunk = chunkSize * 2;
+    for (let offset = 0; offset < fileSize; offset += bytesPerChunk) {
+      const length = Math.min(bytesPerChunk, fileSize - offset);
+      handle.offset = offset;
+      const bytes = handle.readBytes(length);
+      const pcmChunk = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+
+      let floatChunk: Float32Array;
+      if (inputRate && targetRate && inputRate !== targetRate) {
+        floatChunk = resample(pcmChunk, inputRate, targetRate);
+      } else {
+        floatChunk = new Float32Array(pcmChunk.length);
+        for (let i = 0; i < pcmChunk.length; i++) {
+          floatChunk[i] = pcmChunk[i] / 32768.0;
+        }
+      }
+
+      await onChunk(floatChunk);
+    }
+  } finally {
+    handle.close();
+  }
+}
+
+export async function writePCMChunk(
+  file: fs.File,
+  chunk: Float32Array,
+  append: boolean
+): Promise<void> {
+  const pcmChunk = new Int16Array(chunk.length);
+  for (let j = 0; j < pcmChunk.length; j++) {
+    let val = chunk[j] * 32768.0;
+    if (val > 32767) val = 32767;
+    else if (val < -32768) val = -32768;
+    pcmChunk[j] = val;
+  }
+
+  const bytes = new Uint8Array(pcmChunk.buffer);
+  let binaryString = "";
+  // Process in chunks to avoid stack overflow with String.fromCharCode(...spread)
+  const step = 8192;
+  for (let k = 0; k < bytes.length; k += step) {
+    const chunk = bytes.subarray(k, Math.min(k + step, bytes.length));
+    binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+  }
+  const base64 = btoa(binaryString);
+
+  await file.write(base64, {
+    encoding: "base64",
+    append: append,
+  });
 }
 
 export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
@@ -176,8 +241,10 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
     const bytes = new Uint8Array(pcmChunk.buffer);
     let binaryString = "";
     // Process in chunks to avoid stack overflow with String.fromCharCode
-    for (let k = 0; k < bytes.length; k += 8192) {
-      binaryString += String.fromCharCode(...bytes.subarray(k, k + 8192));
+    const step = 8192;
+    for (let k = 0; k < bytes.length; k += step) {
+      const chunk = bytes.subarray(k, Math.min(k + step, bytes.length));
+      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
     }
     const base64 = btoa(binaryString);
 
