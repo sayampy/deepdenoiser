@@ -15,7 +15,7 @@ export async function toWav(file: fs.File): Promise<fs.File> {
     const transcodedAudio = new fs.File(fs.Paths.cache, `transcoded_${Date.now()}.m4a`);
     await extractAndTranscodeAudio(
       file.uri,
-      transcodedAudio.uri.replace("file://", ""),
+      transcodedAudio.uri,
       256000, // High bitrate for quality
     );
 
@@ -39,7 +39,7 @@ export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; s
     const outputFile = new fs.File(fs.Paths.cache, `decoded_${Date.now()}.pcm`);
     const result = await decodeToPCM(
       file.uri,
-      outputFile.uri.replace("file://", ""),
+      outputFile.uri,
     );
     return { file: outputFile, sampleRate: result.sampleRate };
   } catch (error) {
@@ -59,8 +59,8 @@ export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promi
 
     // Use native pcmToWav to avoid loading entire file into memory as base64
     await nativePcmToWav(
-      file.uri.replace("file://", ""),
-      outputFile.uri.replace("file://", ""),
+      file.uri,
+      outputFile.uri,
       sampleRate,
       1, // channels (mono)
       16 // bitDepth (16-bit)

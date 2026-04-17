@@ -37,6 +37,36 @@ class MediaProcessor(private val context: Context) {
         }
     }
 
+    private fun setDataSource(extractor: MediaExtractor, path: String) {
+        val uri = getSafeUri(path)
+        if (uri.scheme == "content") {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                extractor.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            } ?: throw Exception("Failed to open content URI: $path")
+        } else {
+            val file = File(uri.path ?: path)
+            if (!file.exists()) throw Exception("File does not exist: ${file.absolutePath}")
+            FileInputStream(file).use { fis ->
+                extractor.setDataSource(fis.fd)
+            }
+        }
+    }
+
+    private fun setDataSource(retriever: MediaMetadataRetriever, path: String) {
+        val uri = getSafeUri(path)
+        if (uri.scheme == "content") {
+            context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
+                retriever.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            } ?: throw Exception("Failed to open content URI: $path")
+        } else {
+            val file = File(uri.path ?: path)
+            if (!file.exists()) throw Exception("File does not exist: ${file.absolutePath}")
+            FileInputStream(file).use { fis ->
+                retriever.setDataSource(fis.fd)
+            }
+        }
+    }
+
     // (1) Audio Extraction & (3) Bitrate Re-encoding
     // Litr handles the demuxing and decoding/encoding pipeline internally.
     suspend fun transcodeAudio(inputPath: String, outputPath: String, targetBitrate: Int? = null): String =
@@ -81,7 +111,7 @@ class MediaProcessor(private val context: Context) {
                 val extractor = MediaExtractor()
                 var sourceSampleRate = 48000
                 try {
-                    extractor.setDataSource(context, getSafeUri(inputPath), null)
+                    setDataSource(extractor, inputPath)
                     val audioTrack = findTrackIndex(extractor, "audio/")
                     if (audioTrack != -1) {
                         val format = extractor.getTrackFormat(audioTrack)
@@ -126,7 +156,7 @@ class MediaProcessor(private val context: Context) {
                     // Setup video extractor
                     videoExtractor = MediaExtractor()
                     try {
-                        videoExtractor.setDataSource(context, getSafeUri(videoPath), null)
+                        setDataSource(videoExtractor, videoPath)
                     } catch (e: Exception) {
                         throw Exception("Failed to open video source: $videoPath. ${e.message}")
                     }
@@ -143,7 +173,7 @@ class MediaProcessor(private val context: Context) {
                         // Fallback to MediaMetadataRetriever
                         val retriever = MediaMetadataRetriever()
                         try {
-                            retriever.setDataSource(context, getSafeUri(videoPath))
+                            setDataSource(retriever, videoPath)
                             val rotationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
                             rotation = rotationStr?.toInt() ?: 0
                         } catch (e: Exception) {
@@ -157,7 +187,7 @@ class MediaProcessor(private val context: Context) {
                     // Setup audio extractor
                     audioExtractor = MediaExtractor()
                     try {
-                        audioExtractor.setDataSource(context, getSafeUri(audioPath), null)
+                        setDataSource(audioExtractor, audioPath)
                     } catch (e: Exception) {
                         throw Exception("Failed to open audio source: $audioPath. ${e.message ?: e.toString()}")
                     }
@@ -251,7 +281,7 @@ class MediaProcessor(private val context: Context) {
                 try {
                     extractor = MediaExtractor()
                     try {
-                        extractor.setDataSource(context, getSafeUri(inputPath), null)
+                        setDataSource(extractor, inputPath)
                     } catch (e: Exception) {
                         throw Exception("Failed to open data source ($inputPath): ${e.message}")
                     }
