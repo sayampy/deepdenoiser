@@ -43,8 +43,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
         console.warn(error);
       }
     };
-  },
-    []));
+  }, [player]));
 
   const pan = Gesture.Pan()
     .onBegin(() => {
@@ -76,7 +75,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
       progress.value = 0;
       player.pause();
     }
-  }, [status.currentTime, status.duration, status.playing]);
+  }, [status.currentTime, status.duration, status.playing, player]);
 
   const handlePlayPause = () => {
     if (!player) return;
@@ -104,8 +103,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   });
 
   return (
-    <View>
-      <GestureHandlerRootView style={styles.audioContainer}>
+    <View style={styles.container}>
+      <GestureHandlerRootView style={styles.audioControls}>
         <TouchableOpacity style={styles.playButton} onPress={handlePlayPause}>
           <View style={styles.iconCircle}>
             <Feather
@@ -116,117 +115,126 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
           </View>
         </TouchableOpacity>
 
-        <View style={styles.controlsContainer}>
-          <View style={styles.timeContainer}>
+        <View style={styles.sliderSection}>
+          <View style={styles.timeLabels}>
             <Text style={styles.timeText}>{formatTime(status.currentTime)}</Text>
             <Text style={styles.timeText}>{formatTime(status.duration)}</Text>
           </View>
 
           <GestureDetector gesture={pan}>
-            <View style={styles.progressBarContainer}>
-              <View style={styles.progressBar}>
-                <Animated.View style={[styles.progress, animatedProgressStyle]} />
+            <View style={styles.trackContainer}>
+              <View style={styles.track}>
+                <Animated.View style={[styles.progressFill, animatedProgressStyle]} />
               </View>
+              <Animated.View 
+                style={[
+                  styles.knob, 
+                  { left: `${progress.value * 100}%` },
+                  useAnimatedStyle(() => ({
+                    transform: [{ scale: isSeeking.value ? 1.2 : 1 }]
+                  }))
+                ]} 
+              />
             </View>
           </GestureDetector>
         </View>
       </GestureHandlerRootView>
-      <View
-        style={{
-          height: 1,
-          backgroundColor: theme.COLORS.border,
-        }}
-      />
 
-      <View style={styles.footer}>
-        <View style={styles.infoContainer}>
-          <Text style={styles.title} numberOfLines={1}>{name.replaceAll('%20', ' ')}</Text>
-        </View>
+      <View style={styles.divider} />
+
+      <View style={styles.fileNameContainer}>
+        <Feather name="music" size={14} color={theme.COLORS.primary} style={{ marginRight: 8 }} />
+        <Text style={styles.fileName} numberOfLines={1}>
+          {name.replaceAll('%20', ' ')}
+        </Text>
       </View>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: theme.COLORS.surface,
-    // borderRadius: 24,
-    // borderWidth: 1,
-    // borderColor: theme.COLORS.border,
-    overflow: "hidden",
+  container: {
     width: "100%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.2,
-    shadowRadius: 16,
-    elevation: 5,
+    backgroundColor: "transparent",
   },
-  audioContainer: {
+  audioControls: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: theme.SPACING.small,
-    paddingHorizontal: theme.SPACING.xsmall,
+    paddingVertical: 12,
   },
   playButton: {
     marginRight: 16,
   },
   iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: theme.COLORS.primary,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: theme.COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
-  controlsContainer: {
+  sliderSection: {
     flex: 1,
   },
-  timeContainer: {
+  timeLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   timeText: {
     color: theme.COLORS.subtext,
-    fontSize: theme.FONT_SIZE.xsmall,
-    fontWeight: '600',
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
-  progressBarContainer: {
-    height: 20,
+  trackContainer: {
+    height: 24,
     justifyContent: 'center',
   },
-  progressBar: {
+  track: {
     height: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderRadius: 3,
     overflow: "hidden",
   },
-  progress: {
+  progressFill: {
     height: "100%",
     backgroundColor: theme.COLORS.primary,
   },
-  footer: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: theme.SPACING.small,
-    paddingHorizontal: theme.SPACING.xsmall,
-    backgroundColor: theme.COLORS.surface,
+  knob: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: theme.COLORS.white,
+    marginLeft: -7,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  infoContainer: {
-    flex: 1,
+  divider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    marginVertical: 4,
+  },
+  fileNameContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    paddingTop: 8,
   },
-  title: {
+  fileName: {
     color: theme.COLORS.text,
-    fontSize: theme.FONT_SIZE.body,
-    fontWeight: "700",
+    fontSize: theme.FONT_SIZE.small,
+    fontWeight: "600",
     flex: 1,
-    marginRight: 10,
   },
 });
 
 export default AudioPlayer;
-

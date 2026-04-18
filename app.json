@@ -3,7 +3,7 @@
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "deepdenoiser",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "dark",
     "platforms": ["android"],
     "ios": {
       "supportsTablet": true,
@@ -24,6 +24,7 @@
       "permissions": [
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.RECORD_AUDIO",
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
@@ -71,7 +72,13 @@
       ],
       "expo-asset",
       "expo-video",
-      "expo-audio",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Allow DeepDenoiser to access your microphone for voice recording and denoising.",
+          "enableBackgroundRecording": true
+        }
+      ],
       [
         "expo-sharing",
         {

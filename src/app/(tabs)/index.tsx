@@ -14,11 +14,13 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -85,69 +87,106 @@ export default function HomeScreen() {
   };
 
   return (
-    <View style={theme.Styles.container}>
+    <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
-      <View style={theme.Styles.header}>
-        <Image
-          source={require("@/assets/images/splash-icon.png")}
-          style={styles.logo}
-        />
-        <Text style={theme.Styles.title}>DeepDenoiser</Text>
-        <Text style={theme.Styles.subtitle}>
-          Remove background noise from your audio and video using DeepFilterNet 3
-        </Text>
-      </View>
-
-      <View style={styles.mainContent}>
-        {!tempFile ? (
-          <TouchableOpacity
-            style={[
-              theme.Styles.card,
-              styles.importCard,
-              { borderStyle: "dashed" },
-            ]}
-            onPress={handleImportFile}
-          >
-            <Feather
-              name="upload-cloud"
-              size={40}
-              color={theme.COLORS.primary}
-              style={{ marginBottom: 12 }}
-            />
-            <Text style={styles.importTitle}>Import Media File</Text>
-            <Text style={styles.importSubtitle}>
-              Tap to browse audio or video
-            </Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.previewContainer}>
-            <View style={styles.fileDetails}>
-              {tempFile.type === "Video" ? (
-                <VideoPlayer uri={tempFile.uri} name={tempFile.name} />
-              ) : (
-                <View style={theme.Styles.card}>
-                  <AudioPlayer uri={tempFile.uri} name={tempFile.name} />
-                </View>
-              )}
-            </View>
-            <TouchableOpacity
-              onPress={() => setTempFile(null)}
-              style={styles.removeButton}
-            >
-              <Feather name="trash-2" size={20} color={theme.COLORS.error} />
-              <Text style={styles.removeText}>Remove File</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {isLoading && (
-          <ActivityIndicator
-            size="large"
-            color={theme.COLORS.primary}
-            style={styles.loader}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={theme.Styles.header}>
+          <Image
+            source={require("@/assets/images/splash-icon.png")}
+            style={styles.logo}
           />
-        )}
-      </View>
+          <Text style={theme.Styles.title}>DeepDenoiser</Text>
+          <Text style={theme.Styles.subtitle}>
+            Remove background noise from your audio and video using DeepFilterNet 3
+          </Text>
+        </View>
+
+        <View style={styles.mainContent}>
+          {!tempFile ? (
+            <View style={styles.actionsContainer}>
+              <TouchableOpacity
+                style={[styles.actionCard, { borderColor: theme.COLORS.primary }]}
+                onPress={handleImportFile}
+              >
+                <View style={[styles.iconWrapper, { backgroundColor: "rgba(0, 229, 255, 0.1)" }]}>
+                  <Feather
+                    name="upload-cloud"
+                    size={32}
+                    color={theme.COLORS.primary}
+                  />
+                </View>
+                <View style={styles.actionTextContainer}>
+                  <Text style={styles.actionTitle}>Import File</Text>
+                  <Text style={styles.actionSubtitle}>
+                    Audio or Video from your device
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={20} color={theme.COLORS.border} />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionCard, { borderColor: theme.COLORS.error }]}
+                onPress={() => router.push("/recording")}
+              >
+                <View style={[styles.iconWrapper, { backgroundColor: "rgba(255, 61, 0, 0.1)" }]}>
+                  <Feather
+                    name="mic"
+                    size={32}
+                    color={theme.COLORS.error}
+                  />
+                </View>
+                <View style={styles.actionTextContainer}>
+                  <Text style={[styles.actionTitle, { color: theme.COLORS.error }]}>Record Voice</Text>
+                  <Text style={styles.actionSubtitle}>
+                    Real-time denoising for recordings
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={20} color={theme.COLORS.border} />
+              </TouchableOpacity>
+
+              {/* <View style={styles.infoBox}>
+                <Feather name="info" size={16} color={theme.COLORS.primary} style={{ marginRight: 10 }} />
+                <Text style={styles.infoText}>
+                  Uses DeepFilterNet 3 model for high-quality background noise removal.
+                </Text>
+              </View> */}
+            </View>
+          ) : (
+            <View style={styles.previewContainer}>
+              <View style={styles.previewHeader}>
+                <Text style={styles.previewTitle}>Selected File</Text>
+                <TouchableOpacity
+                  onPress={() => setTempFile(null)}
+                  style={styles.removeBadge}
+                >
+                  <Feather name="x" size={14} color={theme.COLORS.white} />
+                  <Text style={styles.removeBadgeText}>Remove</Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.fileDetails}>
+                {tempFile.type === "Video" ? (
+                  <VideoPlayer uri={tempFile.uri} name={tempFile.name} />
+                ) : (
+                  <View style={theme.Styles.card}>
+                    <AudioPlayer uri={tempFile.uri} name={tempFile.name} />
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+
+          {isLoading && (
+            <View style={styles.loaderContainer}>
+              <ActivityIndicator size="large" color={theme.COLORS.primary} />
+              <Text style={styles.loaderText}>Processing asset...</Text>
+            </View>
+          )}
+        </View>
+      </ScrollView>
 
       <View style={styles.footer}>
         <TouchableOpacity
@@ -168,65 +207,138 @@ export default function HomeScreen() {
           />
         </TouchableOpacity>
       </View>
+
       <ErrorModal
         visible={isErrorModalVisible}
         error={error}
         onClose={() => setIsErrorModalVisible(false)}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  mainContent: {
-    flex: 1,
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: theme.SPACING.xxlarge,
+  },
+  logoContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    alignItems: "center",
     justifyContent: "center",
-    width: "100%",
+    marginBottom: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
   logo: {
-    width: 80,
-    height: 80,
-    marginBottom: 16,
+    width: 60,
+    height: 60,
   },
-  importCard: {
+  mainContent: {
+    flex: 1,
+    marginTop: theme.SPACING.medium,
+  },
+  actionsContainer: {
+    gap: 16,
+  },
+  actionCard: {
+    backgroundColor: theme.COLORS.surface,
+    borderRadius: 20,
+    padding: 20,
+    flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 48,
-    backgroundColor: "rgba(0, 229, 255, 0.05)",
-    borderRadius: 16,
+    borderWidth: 1,
+    borderStyle: "dashed",
   },
-  importTitle: {
+  iconWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 16,
+  },
+  actionTextContainer: {
+    flex: 1,
+  },
+  actionTitle: {
     color: theme.COLORS.text,
     fontSize: theme.FONT_SIZE.heading,
-    fontWeight: "700",
+    fontWeight: "800",
+    marginBottom: 4,
   },
-  importSubtitle: {
+  actionSubtitle: {
     color: theme.COLORS.subtext,
-    fontSize: theme.FONT_SIZE.body,
-    marginTop: 4,
+    fontSize: theme.FONT_SIZE.small,
+    fontWeight: "500",
+  },
+  infoBox: {
+    flexDirection: "row",
+    backgroundColor: "rgba(0, 229, 255, 0.05)",
+    padding: 16,
+    borderRadius: 16,
+    marginTop: 10,
+    alignItems: "center",
+  },
+  infoText: {
+    color: theme.COLORS.subtext,
+    fontSize: theme.FONT_SIZE.xsmall,
+    flex: 1,
+    lineHeight: 18,
   },
   previewContainer: {
     width: "100%",
   },
+  previewHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  previewTitle: {
+    color: theme.COLORS.text,
+    fontSize: theme.FONT_SIZE.body,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  removeBadge: {
+    flexDirection: "row",
+    backgroundColor: theme.COLORS.error,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    alignItems: "center",
+    gap: 4,
+  },
+  removeBadgeText: {
+    color: theme.COLORS.white,
+    fontSize: 12,
+    fontWeight: "700",
+  },
   fileDetails: {
     width: "100%",
   },
-  removeButton: {
-    flexDirection: "row",
+  loaderContainer: {
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 16,
-    padding: 8,
+    marginTop: 40,
   },
-  removeText: {
-    color: theme.COLORS.error,
-    marginLeft: 8,
-    fontWeight: "600",
+  loaderText: {
+    color: theme.COLORS.subtext,
+    marginTop: 12,
     fontSize: theme.FONT_SIZE.small,
   },
-  loader: {
-    marginTop: 24,
-  },
   footer: {
-    marginBottom: theme.SPACING.xlarge,
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    padding: theme.SPACING.medium,
+    paddingBottom: theme.SPACING.xlarge,
+    backgroundColor: theme.COLORS.background,
   },
 });
