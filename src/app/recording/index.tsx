@@ -17,6 +17,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   ScrollView,
   StyleSheet,
   Text,
@@ -43,8 +44,11 @@ export default function RecordingScreen() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [denoiserReady, setDenoiserReady] = useState(false);
 
-  const [originalPcmFile, setOriginalPcmFile] = useState<fs.File | null>(null);
-  const [denoisedPcmFile, setDenoisedPcmFile] = useState<fs.File | null>(null);
+  // We use refs for files to ensure the callback has immediate access to them
+  // without waiting for a re-render or being trapped in a stale closure.
+  const originalPcmFileRef = useRef<fs.File | null>(null);
+  const denoisedPcmFileRef = useRef<fs.File | null>(null);
+  
   const [finalOriginalWav, setFinalOriginalWav] = useState<fs.File | null>(null);
   const [finalDenoisedWav, setFinalDenoisedWav] = useState<fs.File | null>(null);
 
@@ -53,6 +57,7 @@ export default function RecordingScreen() {
 
   const denoiserRef = useRef<DeepFilterNet | null>(null);
   const isStoppingRef = useRef(false);
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     const initDenoiser = async () => {
@@ -73,8 +78,30 @@ export default function RecordingScreen() {
 
     return () => {
       if (isRecording) stopAudioRecording();
+      denoiserRef.current?.release();
     };
   }, []);
+
+  useEffect(() => {
+    if (isRecording && !isPaused) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.5,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [isRecording, isPaused]);
 
   const handleAudioStream = async (event: AudioDataEvent) => {
     if (isPaused || !denoiserRef.current || isStoppingRef.current) return;
@@ -84,24 +111,20 @@ export default function RecordingScreen() {
 
     try {
       // 1. Save original PCM
-      if (originalPcmFile) {
-        await writePCMChunk(originalPcmFile, float32Data, true);
+      const origFile = originalPcmFileRef.current;
+      if (origFile) {
+        await writePCMChunk(origFile, float32Data, true);
       }
 
       // 2. Denoise and save
-      if (denoisedPcmFile) {
+      const denFile = denoisedPcmFileRef.current;
+      if (denFile) {
         setIsProcessing(true);
         const denoiser = denoiserRef.current;
-
-        // Ensure denoiser is setup for streaming if it wasn't
-        // Note: setupStreaming resets states, so we should only call it once per recording session
-        // or handle it carefully. The original code called setupStreaming(0) in processChunk.
-        // We'll call it once when starting.
 
         const denoisedOutput = new Float32Array(float32Data.length);
         for (let i = 0; i < float32Data.length; i += HOP_SIZE) {
           const frame = float32Data.subarray(i, i + HOP_SIZE);
-          // If the last frame is shorter than HOP_SIZE, we might need padding
           if (frame.length < HOP_SIZE) {
             const paddedFrame = new Float32Array(HOP_SIZE);
             paddedFrame.set(frame);
@@ -112,7 +135,7 @@ export default function RecordingScreen() {
             denoisedOutput.set(outFrame, i);
           }
         }
-        await writePCMChunk(denoisedPcmFile, denoisedOutput, true);
+        await writePCMChunk(denFile, denoisedOutput, true);
         setIsProcessing(false);
       }
     } catch (err) {
@@ -127,10 +150,18 @@ export default function RecordingScreen() {
         return;
       }
 
-      const origPcm = new fs.File(fs.Paths.cache, `orig_${Date.now()}.pcm`);
-      const denPcm = new fs.File(fs.Paths.cache, `den_${Date.now()}.pcm`);
-      setOriginalPcmFile(origPcm);
-      setDenoisedPcmFile(denPcm);
+      // Initialize files
+      const timestamp = Date.now();
+      const origPcm = new fs.File(fs.Paths.cache, `orig_${timestamp}.pcm`);
+      const denPcm = new fs.File(fs.Paths.cache, `den_${timestamp}.pcm`);
+      
+      // We must create the files explicitly for expo-file-system File API if we want to write/append
+      await origPcm.create();
+      await denPcm.create();
+
+      originalPcmFileRef.current = origPcm;
+      denoisedPcmFileRef.current = denPcm;
+      
       setFinalOriginalWav(null);
       setFinalDenoisedWav(null);
       isStoppingRef.current = false;
@@ -162,11 +193,17 @@ export default function RecordingScreen() {
       isStoppingRef.current = true;
       const result = await stopAudioRecording();
 
-      if (originalPcmFile && denoisedPcmFile) {
-        // Use our PCMtoWav for consistency, or use the result.fileUri if it's correct
-        // Note: result.fileUri from audio-studio is a WAV file of the original audio.
-        const origWav = result ? new fs.File(result.fileUri) : await PCMtoWav(originalPcmFile, SAMPLE_RATE);
-        const denWav = await PCMtoWav(denoisedPcmFile, SAMPLE_RATE);
+      const origPcm = originalPcmFileRef.current;
+      const denPcm = denoisedPcmFileRef.current;
+
+      if (origPcm && denPcm) {
+        // Ensure files exist before wrapping
+        if (!origPcm.exists || !denPcm.exists) {
+          throw new Error("PCM files missing after recording.");
+        }
+
+        const origWav = result && result.fileUri ? new fs.File(result.fileUri) : await PCMtoWav(origPcm, SAMPLE_RATE);
+        const denWav = await PCMtoWav(denPcm, SAMPLE_RATE);
 
         setFinalOriginalWav(origWav);
         setFinalDenoisedWav(denWav);
@@ -177,6 +214,8 @@ export default function RecordingScreen() {
       setIsErrorModalVisible(true);
     } finally {
       isStoppingRef.current = false;
+      originalPcmFileRef.current = null;
+      denoisedPcmFileRef.current = null;
     }
   };
 
@@ -201,14 +240,17 @@ export default function RecordingScreen() {
         <View style={styles.timerContainer}>
           <Text style={styles.timerText}>{formatTime(durationMs)}</Text>
           {isRecording && !isPaused && (
-            <View style={styles.recordingDot} />
+            <View style={styles.recordingIndicator}>
+              <Animated.View style={[styles.pulseCircle, { transform: [{ scale: pulseAnim }] }]} />
+              <View style={styles.recordingDot} />
+            </View>
           )}
         </View>
 
         {!finalOriginalWav ? (
           <View style={styles.controlsContainer}>
             <Text style={styles.statusText}>
-              {!isRecording ? "Ready to record" : isPaused ? "Recording paused" : "Recording..."}
+              {!isRecording ? "Ready to record" : isPaused ? "Recording paused" : "Denoising in Real-time"}
             </Text>
 
             {!isRecording ? (
@@ -256,9 +298,11 @@ export default function RecordingScreen() {
               </TouchableOpacity>
             </View>
 
-            <View style={[styles.resultCard, { borderColor: theme.COLORS.success, borderWidth: 1, marginTop: 20 }]}>
+            <View style={[styles.resultCard, { borderColor: theme.COLORS.success, borderWidth: 1, marginTop: 24 }]}>
               <View style={styles.resultHeader}>
-                <Feather name="zap" size={20} color={theme.COLORS.success} />
+                <View style={styles.zapIcon}>
+                  <Feather name="zap" size={16} color={theme.COLORS.background} />
+                </View>
                 <Text style={[styles.resultTitle, { color: theme.COLORS.success }]}>Denoised Audio</Text>
               </View>
               <AudioPlayer uri={finalDenoisedWav!.uri} name="Denoised recording" />
@@ -321,6 +365,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginTop: 60,
     marginBottom: 20,
+    height: 100,
   },
   timerText: {
     fontSize: 72,
@@ -329,20 +374,34 @@ const styles = StyleSheet.create({
     fontVariant: ["tabular-nums"],
     letterSpacing: -2,
   },
+  recordingIndicator: {
+    marginLeft: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 24,
+    height: 24,
+  },
+  pulseCircle: {
+    position: 'absolute',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: theme.COLORS.error,
+    opacity: 0.3,
+  },
   recordingDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
     backgroundColor: theme.COLORS.error,
-    marginLeft: 15,
   },
   statusText: {
     color: theme.COLORS.subtext,
     fontSize: theme.FONT_SIZE.body,
     marginBottom: 40,
-    fontWeight: "500",
+    fontWeight: "600",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 2,
   },
   controlsContainer: {
     alignItems: "center",
@@ -367,7 +426,7 @@ const styles = StyleSheet.create({
   },
   buttonLabel: {
     color: theme.COLORS.subtext,
-    marginTop: 20,
+    marginTop: 24,
     fontSize: theme.FONT_SIZE.body,
     fontWeight: "700",
   },
@@ -415,39 +474,57 @@ const styles = StyleSheet.create({
   },
   resultCard: {
     backgroundColor: theme.COLORS.surface,
-    borderRadius: 24,
-    padding: 20,
+    borderRadius: 28,
+    padding: 24,
     borderWidth: 1,
     borderColor: theme.COLORS.border,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
   resultHeader: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    marginBottom: 16,
+    gap: 12,
+    marginBottom: 20,
   },
   resultTitle: {
     fontSize: theme.FONT_SIZE.small,
     fontWeight: "800",
     color: theme.COLORS.subtext,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 1.5,
+  },
+  zapIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: theme.COLORS.success,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   saveSubButton: {
-    marginTop: 20,
-    height: 50,
-    borderRadius: 15,
+    marginTop: 24,
+    height: 54,
+    borderRadius: 18,
     flexDirection: 'row',
-    gap: 10
+    gap: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   newRecordButton: {
-    marginTop: 40,
+    marginTop: 48,
     backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: theme.COLORS.primary,
-    height: 56,
-    borderRadius: 16,
+    height: 60,
+    borderRadius: 20,
     flexDirection: 'row',
-    gap: 10
+    gap: 12,
   }
 });

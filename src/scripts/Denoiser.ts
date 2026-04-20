@@ -115,6 +115,18 @@ export class DeepFilterNet {
         return outFrameRaw;
     }
 
+    public async release(): Promise<void> {
+        if (this.session) {
+            try {
+                await this.session.release();
+                this.session = null;
+                this.streamStates = null;
+            } catch (e) {
+                console.error("Failed to release InferenceSession:", e);
+            }
+        }
+    }
+
     public resetStates(): void {
         this.streamStates = null;
     }

@@ -37,18 +37,30 @@ class MediaProcessor(private val context: Context) {
         }
     }
 
+    private fun getSafePath(path: String): String {
+        return try {
+            val uri = getSafeUri(path)
+            if (uri.scheme == "file") {
+                uri.path ?: path
+            } else {
+                path
+            }
+        } catch (e: Exception) {
+            path
+        }
+    }
+
     private fun setDataSource(extractor: MediaExtractor, path: String) {
         val uri = getSafeUri(path)
         if (uri.scheme == "content") {
             context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
                 extractor.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-            } ?: throw Exception("Failed to open content URI: $path")
-        } else {
-            val file = File(uri.path ?: path)
-            if (!file.exists()) throw Exception("File does not exist: ${file.absolutePath}")
-            FileInputStream(file).use { fis ->
-                extractor.setDataSource(fis.fd)
             }
+                    ?: throw Exception("Failed to open content URI: $path")
+        } else {
+            val file = File(uri)
+            if (!file.exists()) throw Exception("File does not exist: ${file.absolutePath}")
+            FileInputStream(file).use { fis -> extractor.setDataSource(fis.fd) }
         }
     }
 
@@ -57,88 +69,82 @@ class MediaProcessor(private val context: Context) {
         if (uri.scheme == "content") {
             context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
                 retriever.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-            } ?: throw Exception("Failed to open content URI: $path")
-        } else {
-            val file = File(uri.path ?: path)
-            if (!file.exists()) throw Exception("File does not exist: ${file.absolutePath}")
-            FileInputStream(file).use { fis ->
-                retriever.setDataSource(fis.fd)
             }
+                    ?: throw Exception("Failed to open content URI: $path")
+        } else {
+            val file = File(uri)
+            if (!file.exists()) throw Exception("File does not exist: ${file.absolutePath}")
+            FileInputStream(file).use { fis -> retriever.setDataSource(fis.fd) }
         }
     }
 
     // (1) Audio Extraction & (3) Bitrate Re-encoding
     // Litr handles the demuxing and decoding/encoding pipeline internally.
-    suspend fun transcodeAudio(inputPath: String, outputPath: String, targetBitrate: Int? = null): String =
-            suspendCancellableCoroutine { continuation ->
-                val requestId = "transcode_${System.currentTimeMillis()}"
+    suspend fun transcodeAudio(
+            inputPath: String,
+            outputPath: String,
+            targetBitrate: Int? = null
+    ): String = suspendCancellableCoroutine { continuation ->
+        val requestId = "transcode_${System.currentTimeMillis()}"
 
-                val optionsBuilder =
-                        TransformationOptions.Builder()
-                                .setGranularity(MediaTransformer.GRANULARITY_DEFAULT)
+        val optionsBuilder =
+                TransformationOptions.Builder().setGranularity(MediaTransformer.GRANULARITY_DEFAULT)
 
-                val listener =
-                        object : TransformationListener {
-                            override fun onStarted(id: String) {}
-                            override fun onProgress(id: String, progress: Float) {}
-                            override fun onCompleted(
-                                    id: String,
-                                    stats: List<TrackTransformationInfo>?
-                            ) {
-                                continuation.resume(outputPath)
-                            }
-                            override fun onCancelled(
-                                    id: String,
-                                    stats: List<TrackTransformationInfo>?
-                            ) {
-                                continuation.resumeWithException(
-                                        Exception("Transformation cancelled")
-                                )
-                            }
-                            override fun onError(
-                                    id: String,
-                                    cause: Throwable?,
-                                    stats: List<TrackTransformationInfo>?
-                            ) {
-                                val message = cause?.message ?: "Unknown Litr Error"
-                                continuation.resumeWithException(
-                                        Exception("Transcode failed ($inputPath): $message", cause)
-                                )
-                            }
-                        }
-
-                // Get source sample rate to avoid pitch shift
-                val extractor = MediaExtractor()
-                var sourceSampleRate = 48000
-                try {
-                    setDataSource(extractor, inputPath)
-                    val audioTrack = findTrackIndex(extractor, "audio/")
-                    if (audioTrack != -1) {
-                        val format = extractor.getTrackFormat(audioTrack)
-                        if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
-                            sourceSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
-                        }
+        val listener =
+                object : TransformationListener {
+                    override fun onStarted(id: String) {}
+                    override fun onProgress(id: String, progress: Float) {}
+                    override fun onCompleted(id: String, stats: List<TrackTransformationInfo>?) {
+                        continuation.resume(outputPath)
                     }
-                } catch (e: Exception) {
-                    // Fallback to 48000
-                } finally {
-                    extractor.release()
+                    override fun onCancelled(id: String, stats: List<TrackTransformationInfo>?) {
+                        continuation.resumeWithException(Exception("Transformation cancelled"))
+                    }
+                    override fun onError(
+                            id: String,
+                            cause: Throwable?,
+                            stats: List<TrackTransformationInfo>?
+                    ) {
+                        val message = cause?.message ?: "Unknown Litr Error"
+                        continuation.resumeWithException(
+                                Exception("Transcode failed ($inputPath): $message", cause)
+                        )
+                    }
                 }
 
-                // For extraction + re-encoding, we isolate the audio track
-                // If targetBitrate is set, Litr will re-encode. Otherwise, it pass-throughs.
-                mediaTransformer.transform(
-                        requestId,
-                        getSafeUri(inputPath),
-                        outputPath,
-                        null, // Video format (null to drop video)
-                        if (targetBitrate != null) createAudioFormat(targetBitrate, sourceSampleRate) else null,
-                        listener,
-                        optionsBuilder.build()
-                )
-
-                continuation.invokeOnCancellation { mediaTransformer.cancel(requestId) }
+        // Get source sample rate to avoid pitch shift
+        val extractor = MediaExtractor()
+        var sourceSampleRate = 48000
+        try {
+            setDataSource(extractor, inputPath)
+            val audioTrack = findTrackIndex(extractor, "audio/")
+            if (audioTrack != -1) {
+                val format = extractor.getTrackFormat(audioTrack)
+                if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                    sourceSampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                }
             }
+        } catch (e: Exception) {
+            // Fallback to 48000
+        } finally {
+            extractor.release()
+        }
+
+        // For extraction + re-encoding, we isolate the audio track
+        // If targetBitrate is set, Litr will re-encode. Otherwise, it pass-throughs.
+        mediaTransformer.transform(
+                requestId,
+                getSafeUri(inputPath),
+                getSafeUri(outputPath),
+                null, // Video format (null to drop video)
+                if (targetBitrate != null) createAudioFormat(targetBitrate, sourceSampleRate)
+                else null,
+                listener,
+                optionsBuilder.build()
+        )
+
+        continuation.invokeOnCancellation { mediaTransformer.cancel(requestId) }
+    }
 
     // (5) Audio-Video Muxing
     // Combines video from videoPath and audio from audioPath
@@ -151,7 +157,11 @@ class MediaProcessor(private val context: Context) {
 
                 try {
                     // Setup muxer
-                    muxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+                    muxer =
+                            MediaMuxer(
+                                    getSafeUri(outputPath),
+                                    MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
+                            )
 
                     // Setup video extractor
                     videoExtractor = MediaExtractor()
@@ -174,7 +184,10 @@ class MediaProcessor(private val context: Context) {
                         val retriever = MediaMetadataRetriever()
                         try {
                             setDataSource(retriever, videoPath)
-                            val rotationStr = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)
+                            val rotationStr =
+                                    retriever.extractMetadata(
+                                            MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
+                                    )
                             rotation = rotationStr?.toInt() ?: 0
                         } catch (e: Exception) {
                             // Ignore
@@ -189,7 +202,9 @@ class MediaProcessor(private val context: Context) {
                     try {
                         setDataSource(audioExtractor, audioPath)
                     } catch (e: Exception) {
-                        throw Exception("Failed to open audio source: $audioPath. ${e.message ?: e.toString()}")
+                        throw Exception(
+                                "Failed to open audio source: $audioPath. ${e.message ?: e.toString()}"
+                        )
                     }
                     val audioTrack = findTrackIndex(audioExtractor, "audio/")
                     if (audioTrack == -1) throw Exception("No audio track found in $audioPath")
@@ -200,16 +215,18 @@ class MediaProcessor(private val context: Context) {
                     isMuxerStarted = true
 
                     // Determine max buffer size required by either track
-                    val maxVideoSize = if (videoFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                        videoFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
-                    } else {
-                        1 * 1024 * 1024 // 1MB fallback
-                    }
-                    val maxAudioSize = if (audioFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
-                        audioFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
-                    } else {
-                        256 * 1024 // 256KB fallback
-                    }
+                    val maxVideoSize =
+                            if (videoFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                                videoFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                            } else {
+                                1 * 1024 * 1024 // 1MB fallback
+                            }
+                    val maxAudioSize =
+                            if (audioFormat.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+                                audioFormat.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE)
+                            } else {
+                                256 * 1024 // 256KB fallback
+                            }
                     val bufferSize = Math.max(maxVideoSize, maxAudioSize)
                     val buffer = ByteBuffer.allocate(bufferSize)
                     val bufferInfo = MediaCodec.BufferInfo()
@@ -307,14 +324,16 @@ class MediaProcessor(private val context: Context) {
                     if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
                         sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                     }
-                    
+
                     try {
                         codec = MediaCodec.createDecoderByType(mime)
                     } catch (e: Exception) {
-                        throw Exception("No decoder found for MIME type $mime ($inputPath): ${e.message}")
+                        throw Exception(
+                                "No decoder found for MIME type $mime ($inputPath): ${e.message}"
+                        )
                     }
 
-                    fos = FileOutputStream(outputPath)
+                    fos = FileOutputStream(getSafeUri(outputPath))
 
                     codec.configure(format, null, null, 0)
                     codec.start()
@@ -357,26 +376,30 @@ class MediaProcessor(private val context: Context) {
                             outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> if (isEOS) break
                             outIndex >= 0 -> {
                                 val outBuffer = codec.getOutputBuffer(outIndex)!!
-                                
+
                                 // Downmix to mono if multi-channel (Interleaved 16-bit PCM assumed)
                                 if (channels > 1 && info.size > 0) {
                                     outBuffer.position(info.offset)
                                     outBuffer.limit(info.offset + info.size)
-                                    
+
                                     val shortBuffer = outBuffer.asShortBuffer()
                                     val numFrames = shortBuffer.remaining() / channels
-                                    val monoBuffer = ByteBuffer.allocate(numFrames * 2)
-                                    monoBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
-                                    
-                                    for (f in 0 until numFrames) {
-                                        var sum = 0
-                                        for (c in 0 until channels) {
-                                            sum += shortBuffer.get()
+                                    if (numFrames > 0) {
+                                        val monoBuffer = ByteBuffer.allocate(numFrames * 2)
+                                        monoBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+
+                                        for (f in 0 until numFrames) {
+                                            var sum = 0
+                                            for (c in 0 until channels) {
+                                                if (shortBuffer.hasRemaining()) {
+                                                    sum += shortBuffer.get()
+                                                }
+                                            }
+                                            val monoSample = (sum / channels).toShort()
+                                            monoBuffer.putShort(monoSample)
                                         }
-                                        val monoSample = (sum / channels).toShort()
-                                        monoBuffer.putShort(monoSample)
+                                        fos.write(monoBuffer.array())
                                     }
-                                    fos.write(monoBuffer.array())
                                 } else if (info.size > 0) {
                                     val chunk = ByteArray(info.size)
                                     outBuffer.position(info.offset)
@@ -401,7 +424,11 @@ class MediaProcessor(private val context: Context) {
                     }
                     codec?.release()
                     extractor?.release()
-                    fos?.close()
+                    try {
+                        fos?.close()
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
                 }
                 mapOf("path" to outputPath, "sampleRate" to sampleRate)
             }
@@ -416,13 +443,18 @@ class MediaProcessor(private val context: Context) {
             bitDepth: Int = 16
     ) =
             withContext(Dispatchers.IO) {
-                val pcmFile = File(pcmPath)
+                val sanitizedPcmPath = getSafePath(pcmPath)
+                val sanitizedWavPath = getSafePath(wavPath)
+                val pcmFile = File(sanitizedPcmPath)
+                if (!pcmFile.exists()) {
+                    throw Exception("PCM input file not found: $sanitizedPcmPath")
+                }
                 val pcmDataLength = pcmFile.length()
                 val totalDataLength = pcmDataLength + 36
                 val byteRate = (sampleRate * channels * bitDepth) / 8
 
                 FileInputStream(pcmFile).use { fis ->
-                    FileOutputStream(wavPath).use { fos ->
+                    FileOutputStream(sanitizedWavPath).use { fos ->
                         writeWavHeader(
                                 fos,
                                 pcmDataLength,
