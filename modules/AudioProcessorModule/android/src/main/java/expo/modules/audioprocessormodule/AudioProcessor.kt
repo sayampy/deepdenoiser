@@ -1,19 +1,22 @@
 package expo.modules.audioprocessormodule
 
 import android.content.Context
+import android.content.res.AssetFileDescriptor
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import com.linkedin.android.litr.MediaTransformer
 import com.linkedin.android.litr.TransformationListener
 import com.linkedin.android.litr.TransformationOptions
 import com.linkedin.android.litr.analytics.TrackTransformationInfo
 import java.io.File
 import java.io.FileInputStream
-import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.nio.ByteBuffer
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -52,13 +55,13 @@ class MediaProcessor(private val context: Context) {
 
     private fun setDataSource(extractor: MediaExtractor, path: String) {
         val uri = getSafeUri(path)
-        if (uri.scheme == "content") {
+        if (uri.scheme == "content" || uri.scheme == "file") {
             context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
                 extractor.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
             }
-                    ?: throw Exception("Failed to open content URI: $path")
+                    ?: throw Exception("Failed to open data source for URI: $path")
         } else {
-            val file = File(uri)
+            val file = File(getSafePath(path))
             if (!file.exists()) throw Exception("File does not exist: ${file.absolutePath}")
             FileInputStream(file).use { fis -> extractor.setDataSource(fis.fd) }
         }
@@ -66,13 +69,13 @@ class MediaProcessor(private val context: Context) {
 
     private fun setDataSource(retriever: MediaMetadataRetriever, path: String) {
         val uri = getSafeUri(path)
-        if (uri.scheme == "content") {
+        if (uri.scheme == "content" || uri.scheme == "file") {
             context.contentResolver.openAssetFileDescriptor(uri, "r")?.use { afd ->
                 retriever.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
             }
-                    ?: throw Exception("Failed to open content URI: $path")
+                    ?: throw Exception("Failed to open data source for URI: $path")
         } else {
-            val file = File(uri)
+            val file = File(getSafePath(path))
             if (!file.exists()) throw Exception("File does not exist: ${file.absolutePath}")
             FileInputStream(file).use { fis -> retriever.setDataSource(fis.fd) }
         }
@@ -154,14 +157,15 @@ class MediaProcessor(private val context: Context) {
                 var videoExtractor: MediaExtractor? = null
                 var audioExtractor: MediaExtractor? = null
                 var isMuxerStarted = false
+                var pfd: ParcelFileDescriptor? = null
 
                 try {
                     // Setup muxer
-                    muxer =
-                            MediaMuxer(
-                                    getSafeUri(outputPath),
-                                    MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4
-                            )
+                    val outputUri = getSafeUri(outputPath)
+                    pfd = context.contentResolver.openFileDescriptor(outputUri, "rwt")
+                            ?: throw Exception("Failed to open output file descriptor: $outputPath")
+                    
+                    muxer = MediaMuxer(pfd.fileDescriptor, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
 
                     // Setup video extractor
                     videoExtractor = MediaExtractor()
@@ -281,6 +285,11 @@ class MediaProcessor(private val context: Context) {
                     muxer?.release()
                     videoExtractor?.release()
                     audioExtractor?.release()
+                    try {
+                        pfd?.close()
+                    } catch (e: Exception) {
+                        // Ignore
+                    }
                 }
                 outputPath
             }
@@ -291,7 +300,7 @@ class MediaProcessor(private val context: Context) {
             withContext(Dispatchers.IO) {
                 var extractor: MediaExtractor? = null
                 var codec: MediaCodec? = null
-                var fos: FileOutputStream? = null
+                var outputStream: OutputStream? = null
                 var isCodecStarted = false
                 var sampleRate = 48000
 
@@ -308,7 +317,8 @@ class MediaProcessor(private val context: Context) {
 
                     for (i in 0 until extractor.trackCount) {
                         val f = extractor.getTrackFormat(i)
-                        if (f.getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true) {
+                        val mime = f.getString(MediaFormat.KEY_MIME)
+                        if (mime?.startsWith("audio/") == true) {
                             audioTrackIndex = i
                             format = f
                             break
@@ -319,7 +329,9 @@ class MediaProcessor(private val context: Context) {
                             throw Exception("No audio track found in $inputPath")
 
                     extractor.selectTrack(audioTrackIndex)
-                    val mime = format.getString(MediaFormat.KEY_MIME)!!
+                    val mime = format.getString(MediaFormat.KEY_MIME)
+                            ?: throw Exception("MIME type missing for audio track in $inputPath")
+                    
                     val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                     if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
                         sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
@@ -333,7 +345,9 @@ class MediaProcessor(private val context: Context) {
                         )
                     }
 
-                    fos = FileOutputStream(getSafeUri(outputPath))
+                    val outputUri = getSafeUri(outputPath)
+                    outputStream = context.contentResolver.openOutputStream(outputUri)
+                            ?: throw Exception("Failed to open output stream: $outputPath")
 
                     codec.configure(format, null, null, 0)
                     codec.start()
@@ -398,14 +412,14 @@ class MediaProcessor(private val context: Context) {
                                             val monoSample = (sum / channels).toShort()
                                             monoBuffer.putShort(monoSample)
                                         }
-                                        fos.write(monoBuffer.array())
+                                        outputStream.write(monoBuffer.array())
                                     }
                                 } else if (info.size > 0) {
                                     val chunk = ByteArray(info.size)
                                     outBuffer.position(info.offset)
                                     outBuffer.limit(info.offset + info.size)
                                     outBuffer.get(chunk)
-                                    fos.write(chunk)
+                                    outputStream.write(chunk)
                                 }
 
                                 codec.releaseOutputBuffer(outIndex, false)
@@ -425,7 +439,7 @@ class MediaProcessor(private val context: Context) {
                     codec?.release()
                     extractor?.release()
                     try {
-                        fos?.close()
+                        outputStream?.close()
                     } catch (e: Exception) {
                         // Ignore
                     }
@@ -443,20 +457,33 @@ class MediaProcessor(private val context: Context) {
             bitDepth: Int = 16
     ) =
             withContext(Dispatchers.IO) {
-                val sanitizedPcmPath = getSafePath(pcmPath)
-                val sanitizedWavPath = getSafePath(wavPath)
-                val pcmFile = File(sanitizedPcmPath)
-                if (!pcmFile.exists()) {
-                    throw Exception("PCM input file not found: $sanitizedPcmPath")
+                val pcmUri = getSafeUri(pcmPath)
+                val wavUri = getSafeUri(wavPath)
+                
+                var pcmDataLength: Long = 0
+                context.contentResolver.openAssetFileDescriptor(pcmUri, "r")?.use { afd ->
+                    pcmDataLength = afd.length
+                } ?: throw Exception("Failed to open PCM input file: $pcmPath")
+                
+                if (pcmDataLength == AssetFileDescriptor.UNKNOWN_LENGTH) {
+                    // Fallback: manually calculate length if AFDs don't report it (rare for local files)
+                    context.contentResolver.openInputStream(pcmUri)?.use { isStream ->
+                        pcmDataLength = 0
+                        val skipBuffer = ByteArray(8192)
+                        var read: Int
+                        while (isStream.read(skipBuffer).also { read = it } != -1) {
+                            pcmDataLength += read
+                        }
+                    } ?: throw Exception("Failed to calculate PCM data length: $pcmPath")
                 }
-                val pcmDataLength = pcmFile.length()
+
                 val totalDataLength = pcmDataLength + 36
                 val byteRate = (sampleRate * channels * bitDepth) / 8
 
-                FileInputStream(pcmFile).use { fis ->
-                    FileOutputStream(sanitizedWavPath).use { fos ->
+                context.contentResolver.openInputStream(pcmUri)?.use { inputStream ->
+                    context.contentResolver.openOutputStream(wavUri)?.use { outputStream ->
                         writeWavHeader(
-                                fos,
+                                outputStream,
                                 pcmDataLength,
                                 totalDataLength,
                                 sampleRate,
@@ -466,16 +493,17 @@ class MediaProcessor(private val context: Context) {
                         )
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
-                        while (fis.read(buffer).also { bytesRead = it } != -1) {
-                            fos.write(buffer, 0, bytesRead)
+                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                            outputStream.write(buffer, 0, bytesRead)
                         }
-                    }
-                }
+                    } ?: throw Exception("Failed to open WAV output stream: $wavPath")
+                } ?: throw Exception("Failed to open PCM input stream: $pcmPath")
+                
                 wavPath
             }
 
     private fun writeWavHeader(
-            fos: FileOutputStream,
+            os: OutputStream,
             pcmDataLength: Long,
             totalDataLength: Long,
             sampleRate: Int,
@@ -500,12 +528,12 @@ class MediaProcessor(private val context: Context) {
         header[13] = 'm'.code.toByte()
         header[14] = 't'.code.toByte()
         header[15] = ' '.code.toByte()
-        header[16] = 16
+        header[16] = 16 // Subchunk1Size (16 for PCM)
         header[17] = 0
         header[18] = 0
-        header[19] = 0 // 16 for PCM
-        header[20] = 1
-        header[21] = 0 // AudioFormat 1 = PCM
+        header[19] = 0
+        header[20] = 1 // AudioFormat 1 = PCM
+        header[21] = 0
         header[22] = channels.toByte()
         header[23] = 0
         header[24] = (sampleRate and 0xff).toByte()
@@ -528,7 +556,7 @@ class MediaProcessor(private val context: Context) {
         header[41] = ((pcmDataLength shr 8) and 0xffL).toByte()
         header[42] = ((pcmDataLength shr 16) and 0xffL).toByte()
         header[43] = ((pcmDataLength shr 24) and 0xffL).toByte()
-        fos.write(header, 0, 44)
+        os.write(header, 0, 44)
     }
 
     private fun findTrackIndex(extractor: MediaExtractor, mimeTypePrefix: String): Int {
