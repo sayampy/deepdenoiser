@@ -1,14 +1,39 @@
 <p align="center">
-<img src="./assets/images/android-icon-background.png" width=100/>
+  <img src="./assets/images/android-icon-background.png" alt="DeepDenoiser logo" width="120" />
+</p>
+<h1 align="center">DeepDenoiser</h1>
+<p align="center">
+  <a href="https://github.com/sayampy/deepdenoiser/releases">
+    <img src="https://img.shields.io/github/v/release/sayampy/deepdenoiser?label=version" alt="Version">
+  </a>
+  <img src="https://img.shields.io/github/downloads/sayampy/deepdenoiser/total" alt="Downloads">
+  <a href="LICENSE">
+    <img src="https://img.shields.io/github/license/sayampy/deepdenoiser" alt="License">
+  </a>
+  <a href="https://www.android.com/">
+    <img src="https://img.shields.io/badge/Platform-Android-green" alt="Platform">
+  </a>
+</p>
+<p align="center">
+  Offline AI audio denoiser for audio and video. Private, on-device, and fast.
 </p>
 
-# DeepDenoiser
-[![Version](https://img.shields.io/github/v/release/sayampy/deepdenoiser?label=version)](https://github.com/sayampy/deepdenoiser/releases)
-![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/sayampy/deepdenoiser/total)
-[![License](https://img.shields.io/github/license/sayampy/deepdenoiser)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Android-green)](https://www.android.com/)
----
-[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/T6T61O5FRY)
+<h2 align="center">Download From:</h2>
+<p align="middle">
+  <a href="https://play.google.com/store/apps/details?id=com.sayampy.deepdenoiser">
+    <img src="./fastlane/metadata/android/en-US/images/en.svg" alt="Get it on Google Play" height="30" />
+  </a>
+  <a href="https://github.com/sayampy/deepdenoiser">
+    <img src="https://img.shields.io/badge/Github-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"/>
+  </a>
+</p>
+<h2 align="center">Support This Project</h2>
+<p align="middle">
+  <a href="https://ko-fi.com/sayampy">
+    <img src="https://img.shields.io/badge/Support-Ko--fi-F16061?style=for-the-badge&logo=kofi&logoColor=white" alt="Ko-fi" />
+  </a>
+  <a href="https://github.com/sponsors/sayampy"><img src="https://img.shields.io/badge/Github%20Sponsors-ff69b4?style=for-the-badge&logo=github" alt="GitHub Sponsors" /></a>
+</p>
 
 **DeepDenoiser** is a powerful, open-source mobile application designed to remove background noise from your audio and video files instantly.
 
