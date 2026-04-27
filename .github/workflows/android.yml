@@ -1,0 +1,83 @@
+name: Android Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "Build type"
+        required: true
+        default: "debug"
+        type: choice
+        options:
+          - debug
+          - release-apk
+          - release-aab
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: Install deps
+        run: |
+          npm ci
+          npm install
+
+      - name: Install Expo
+        run: npm install -g eas-cli
+
+      - name: Prebuild
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "17"
+
+      # - name: Decode keystore
+      #   if: ${{ github.event.inputs.build_type != 'debug' }}
+      #   run: |
+      #     echo "$KEYSTORE_BASE64" | base64 -d > android/app/upload-keystore.jks
+      #   env:
+      #     KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
+      - name: Build
+        run: |
+          cd android
+          if [ "${{ github.event.inputs.build_type }}" = "debug" ]; then
+            eas build -p android --profile development --local
+          elif [ "${{ github.event.inputs.build_type }}" = "release-apk" ]; then
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file=upload-keystore.jks \
+              -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+              -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+              -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+          else
+            ./gradlew bundleRelease \
+              -Pandroid.injected.signing.store.file=upload-keystore.jks \
+              -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+              -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+              -Pandroid.injected.signing.key.password=$KEY_PASSWORD
+          fi
+        env:
+          EXPO_TOKEN: ${{ secrets.EAS_TOKEN }}
+          # KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          # KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          # KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: |
+            android/app/build/outputs/**/*.apk
+            android/app/build/outputs/**/*.aab
