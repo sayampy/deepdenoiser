@@ -48,7 +48,7 @@ export default function RecordingScreen() {
   // without waiting for a re-render or being trapped in a stale closure.
   const originalPcmFileRef = useRef<fs.File | null>(null);
   const denoisedPcmFileRef = useRef<fs.File | null>(null);
-  
+
   const [finalOriginalWav, setFinalOriginalWav] = useState<fs.File | null>(null);
   const [finalDenoisedWav, setFinalDenoisedWav] = useState<fs.File | null>(null);
 
@@ -154,14 +154,14 @@ export default function RecordingScreen() {
       const timestamp = Date.now();
       const origPcm = new fs.File(fs.Paths.cache, `orig_${timestamp}.pcm`);
       const denPcm = new fs.File(fs.Paths.cache, `den_${timestamp}.pcm`);
-      
+
       // We must create the files explicitly for expo-file-system File API if we want to write/append
       await origPcm.create();
       await denPcm.create();
 
       originalPcmFileRef.current = origPcm;
       denoisedPcmFileRef.current = denPcm;
-      
+
       setFinalOriginalWav(null);
       setFinalDenoisedWav(null);
       isStoppingRef.current = false;
@@ -233,7 +233,7 @@ export default function RecordingScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isRecording}>
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
         </TouchableOpacity>
-        <Text style={theme.Styles.title}>Voice Recorder</Text>
+        <Text style={styles.headerTitle}>Voice Recorder</Text>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
@@ -345,6 +345,11 @@ const styles = StyleSheet.create({
     padding: theme.SPACING.medium,
     justifyContent: "center",
     height: 60,
+  },
+  headerTitle: {
+    color: theme.COLORS.text,
+    fontSize: theme.FONT_SIZE.heading,
+    fontWeight: "800",
   },
   backButton: {
     position: "absolute",
