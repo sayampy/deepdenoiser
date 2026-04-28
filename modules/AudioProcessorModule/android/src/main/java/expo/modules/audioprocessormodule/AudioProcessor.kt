@@ -332,7 +332,7 @@ class MediaProcessor(private val context: Context) {
                     val mime = format.getString(MediaFormat.KEY_MIME)
                             ?: throw Exception("MIME type missing for audio track in $inputPath")
                     
-                    val channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
                     if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
                         sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                     }
@@ -388,6 +388,15 @@ class MediaProcessor(private val context: Context) {
                         val outIndex = codec.dequeueOutputBuffer(info, timeoutUs)
                         when {
                             outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> if (isEOS) break
+                            outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
+                                val newFormat = codec.outputFormat
+                                if (newFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
+                                    sampleRate = newFormat.getInteger(MediaFormat.KEY_SAMPLE_RATE)
+                                }
+                                if (newFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
+                                    channels = newFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                                }
+                            }
                             outIndex >= 0 -> {
                                 val outBuffer = codec.getOutputBuffer(outIndex)!!
 

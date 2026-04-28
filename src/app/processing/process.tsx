@@ -125,7 +125,7 @@ export default function ProcessScreen() {
             if (abs > maxPeak) maxPeak = abs;
           }
           analyzedSamples += inputSamples;
-          setProgress(Math.min(Math.round((analyzedSamples / totalSamples) * 50), 50));
+          setProgress(Math.min(Math.round((analyzedSamples / totalSamples) * 100), 100));
         });
 
         const targetPeak = Math.pow(10, normalize.maxPeakDb / 20);
@@ -142,7 +142,7 @@ export default function ProcessScreen() {
       setProgressText("Removing noise...");
       setProgress(0);
       const model_startTime = Date.now();
-      
+
       const targetRate = 48000;
       const hopSize = 512;
       const fftSize = 960;
@@ -236,7 +236,7 @@ export default function ProcessScreen() {
       } else {
         setDenoisedFile(finalWavFile);
       }
-      
+
       const duration = (Date.now() - startTime) / 1000;
       setProcessingTime(duration);
 
@@ -276,7 +276,7 @@ export default function ProcessScreen() {
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.navigate('/(tabs)')}
           disabled={denoising}
         >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
@@ -335,7 +335,7 @@ export default function ProcessScreen() {
                 <Text style={styles.timeText}>{timeHandler(processingTime)}</Text>
               </View>
             </View>
-            
+
             <View style={styles.playerWrapper}>
               {isFileTypeVideo ? (
                 <VideoPlayer uri={denoisedFile.uri} name={denoisedFile.name} />
@@ -343,7 +343,7 @@ export default function ProcessScreen() {
                 <AudioPlayer uri={denoisedFile.uri} name={denoisedFile.name} />
               )}
             </View>
-            
+
             <View style={styles.resultActions}>
               <TouchableOpacity
                 style={styles.saveBtn}
@@ -384,14 +384,14 @@ export default function ProcessScreen() {
           <View style={styles.postProcessActions}>
             <TouchableOpacity
               style={styles.resetBtn}
-              onPress={() => router.replace("/(tabs)")}
+              onPress={() => { setDenoisedFile(null); handleDenoise(); }}
             >
-              <Feather name="home" size={20} color={theme.COLORS.primary} style={{ marginRight: 10 }} />
-              <Text style={[theme.Styles.buttonText, { color: theme.COLORS.primary }]}>Back Home</Text>
+              <Feather name="refresh-cw" size={20} color={theme.COLORS.primary} style={{ marginRight: 10 }} />
+              <Text style={[theme.Styles.buttonText, { color: theme.COLORS.primary }]}>Try Again</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[theme.Styles.button, styles.mainActionBtn, { flex: 1.5 }]}
+              style={[theme.Styles.button, styles.mainActionBtn, { flex: 1.2 }]}
               onPress={() => router.replace("/")}
             >
               <Feather name="plus" size={20} color={theme.COLORS.background} style={{ marginRight: 10 }} />
@@ -460,7 +460,7 @@ const styles = StyleSheet.create({
     marginTop: 20,
     padding: 20,
     borderColor: "rgba(0, 229, 255, 0.3)",
-    backgroundColor: "rgba(0, 229, 255, 0.02)",
+    backgroundColor: theme.COLORS.surface, // "rgba(0, 229, 255, 0.02)",
   },
   progressHeader: {
     flexDirection: "row",
@@ -585,7 +585,7 @@ const styles = StyleSheet.create({
   },
   postProcessActions: {
     flexDirection: "row",
-    gap: 12,
+    gap: 10,
   },
   resetBtn: {
     flex: 1,

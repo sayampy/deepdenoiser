@@ -16,6 +16,7 @@ import {
   GestureHandlerRootView,
 } from "react-native-gesture-handler";
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
@@ -28,7 +29,7 @@ interface AudioPlayerProps {
 const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   const player = useAudioPlayer(uri);
   const status = useAudioPlayerStatus(player);
-  const progressBarWidth = Dimensions.get("window").width * 0.5;
+  const trackWidth = useSharedValue(0);
   const progress = useSharedValue(0);
   const isSeeking = useSharedValue(false);
 
@@ -49,19 +50,20 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
     .onBegin(() => {
       isSeeking.value = true;
     })
-    .onChange((event: any) => {
-      const newProgress =
-        (progress.value * progressBarWidth + event.changeX) / progressBarWidth;
-      progress.value = Math.max(0, Math.min(1, newProgress));
+    .onChange((event) => {
+      if (trackWidth.value <= 0) return;
+      const change = event.changeX / trackWidth.value;
+      progress.value = Math.max(0, Math.min(1, progress.value + change));
     })
     .onFinalize(() => {
       isSeeking.value = false;
-      if (player && status.duration) {
-        const newPosition = progress.value * status.duration;
-        player.seekTo(newPosition);
-      }
-    })
-    .runOnJS(true);
+      const finalProgress = progress.value;
+      runOnJS(() => {
+        if (player && status.duration) {
+          player.seekTo(finalProgress * status.duration);
+        }
+      })();
+    });
 
   useEffect(() => {
     if (!isSeeking.value && status.duration > 0) {
@@ -96,11 +98,14 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
     return `${minutes}:${s < 10 ? "0" : ""}${s}`;
   };
 
-  const animatedProgressStyle = useAnimatedStyle(() => {
-    return {
-      width: `${progress.value * 100}%`,
-    };
-  });
+  const animatedProgressStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+  }));
+
+  const animatedKnobStyle = useAnimatedStyle(() => ({
+    left: `${progress.value * 100}%`,
+    transform: [{ scale: isSeeking.value ? 1.2 : 1 }]
+  }));
 
   return (
     <View style={styles.container}>
@@ -122,19 +127,14 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
           </View>
 
           <GestureDetector gesture={pan}>
-            <View style={styles.trackContainer}>
+            <View 
+              style={styles.trackContainer}
+              onLayout={(e) => { trackWidth.value = e.nativeEvent.layout.width; }}
+            >
               <View style={styles.track}>
                 <Animated.View style={[styles.progressFill, animatedProgressStyle]} />
               </View>
-              <Animated.View 
-                style={[
-                  styles.knob, 
-                  { left: `${progress.value * 100}%` },
-                  useAnimatedStyle(() => ({
-                    transform: [{ scale: isSeeking.value ? 1.2 : 1 }]
-                  }))
-                ]} 
-              />
+              <Animated.View style={[styles.knob, animatedKnobStyle]} />
             </View>
           </GestureDetector>
         </View>

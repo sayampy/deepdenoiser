@@ -1,9 +1,11 @@
 import UpdateModal from "@/src/components/UpdateModal";
 import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
-import { initAnalytics } from "@/src/scripts/analytics";
+import { initAnalytics, trackAppEvent } from "@/src/scripts/analytics";
 import { Feather } from "@expo/vector-icons";
+import * as Audio from "expo-audio";
 import { useFonts } from "expo-font";
 import * as MediaLibrary from "expo-media-library";
+import { createPermissionHook } from "expo-modules-core";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { StatusBar } from "expo-status-bar";
@@ -23,21 +25,26 @@ import {
 // Keep the splash screen visible while we fetch resources
 SplashScreen.preventAutoHideAsync();
 
+const useMicrophonePermissions = createPermissionHook({
+  getMethod: Audio.getRecordingPermissionsAsync,
+  requestMethod: Audio.requestRecordingPermissionsAsync,
+});
+
 export default function RootLayout() {
   const [appIsReady, setAppIsReady] = useState(false);
-  const [permissionResponse, requestPermission] = MediaLibrary.usePermissions();
+  const [mediaPermissionResponse, requestMediaPermission] = MediaLibrary.usePermissions();
+  const [micPermissionResponse, requestMicPermission] = useMicrophonePermissions();
 
   const [fontsLoaded, fontError] = useFonts({
     ...Feather.font,
   });
-  // useEffect(() => { initAnalytics(); trackAppEvent("app_open"); }, [])
   useEffect(() => {
     async function prepare() {
       try {
         // Pre-load fonts or other resources here
         // The useFonts hook handles the font loading, but we wait for it
         await initAnalytics();
-        // await trackAppEvent("app_open");
+        await trackAppEvent("app_open");
       } catch (e) {
         console.warn(e);
       } finally {
@@ -56,7 +63,7 @@ export default function RootLayout() {
   }
 
   // Handle Permissions
-  if (!permissionResponse) {
+  if (!mediaPermissionResponse || !micPermissionResponse) {
     // Permission response is still loading
     return (
       <View style={[Styles.container, styles.centered]}>
@@ -65,7 +72,18 @@ export default function RootLayout() {
     );
   }
 
-  if (!permissionResponse.granted) {
+  const allPermissionsGranted = mediaPermissionResponse.granted && micPermissionResponse.granted;
+
+  if (!allPermissionsGranted) {
+    const handleRequestPermissions = async () => {
+      if (!mediaPermissionResponse.granted) {
+        await requestMediaPermission();
+      }
+      if (!micPermissionResponse.granted) {
+        await requestMicPermission();
+      }
+    };
+
     return (
       <View style={[Styles.container, styles.centered]}>
         <Feather
@@ -77,10 +95,10 @@ export default function RootLayout() {
         <Text style={styles.permissionTitle}>Permissions Required</Text>
         <Text style={styles.permissionSubtitle}>
           DeepDenoiser needs access to your media library to import and save
-          audio files.
+          audio files, and microphone access for voice recording and real-time denoising.
         </Text>
-        <TouchableOpacity style={Styles.button} onPress={requestPermission}>
-          <Text style={Styles.buttonText}>Grant Permission</Text>
+        <TouchableOpacity style={Styles.button} onPress={handleRequestPermissions}>
+          <Text style={Styles.buttonText}>Grant Permissions</Text>
         </TouchableOpacity>
       </View>
     );
