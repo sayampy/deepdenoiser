@@ -172,7 +172,6 @@ export default function RecordingScreen() {
       const origPcm = new fs.File(fs.Paths.cache, `orig_${timestamp}.pcm`);
       const denPcm = new fs.File(fs.Paths.cache, `den_${timestamp}.pcm`);
 
-      // We must create the files explicitly for expo-file-system File API if we want to write/append
       await origPcm.create();
       await denPcm.create();
 
