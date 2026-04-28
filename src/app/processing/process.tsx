@@ -125,7 +125,7 @@ export default function ProcessScreen() {
             if (abs > maxPeak) maxPeak = abs;
           }
           analyzedSamples += inputSamples;
-          setProgress(Math.min(Math.round((analyzedSamples / totalSamples) * 50), 50));
+          setProgress(Math.min(Math.round((analyzedSamples / totalSamples) * 100), 100));
         });
 
         const targetPeak = Math.pow(10, normalize.maxPeakDb / 20);
@@ -276,7 +276,7 @@ export default function ProcessScreen() {
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.back()}
+          onPress={() => router.navigate('/(tabs)')}
           disabled={denoising}
         >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />

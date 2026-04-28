@@ -56,6 +56,8 @@ export default function RecordingScreen() {
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
 
   const denoiserRef = useRef<DeepFilterNet | null>(null);
+  const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
+  const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const isStoppingRef = useRef(false);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -109,38 +111,52 @@ export default function RecordingScreen() {
     const float32Data = event.data as Float32Array;
     if (!float32Data || float32Data.length === 0) return;
 
-    try {
-      // 1. Save original PCM
-      const origFile = originalPcmFileRef.current;
-      if (origFile) {
-        await writePCMChunk(origFile, float32Data, true);
-      }
-
-      // 2. Denoise and save
-      const denFile = denoisedPcmFileRef.current;
-      if (denFile) {
-        setIsProcessing(true);
+    // Use a processing queue to ensure audio chunks are handled sequentially
+    processingQueueRef.current = processingQueueRef.current.then(async () => {
+      try {
         const denoiser = denoiserRef.current;
+        if (!denoiser) return;
 
-        const denoisedOutput = new Float32Array(float32Data.length);
-        for (let i = 0; i < float32Data.length; i += HOP_SIZE) {
-          const frame = float32Data.subarray(i, i + HOP_SIZE);
-          if (frame.length < HOP_SIZE) {
-            const paddedFrame = new Float32Array(HOP_SIZE);
-            paddedFrame.set(frame);
-            const outFrame = await denoiser.processFrame(paddedFrame);
-            denoisedOutput.set(outFrame.subarray(0, frame.length), i);
-          } else {
-            const outFrame = await denoiser.processFrame(frame);
-            denoisedOutput.set(outFrame, i);
-          }
+        // 1. Save original PCM
+        const origFile = originalPcmFileRef.current;
+        if (origFile) {
+          await writePCMChunk(origFile, float32Data, true);
         }
-        await writePCMChunk(denFile, denoisedOutput, true);
-        setIsProcessing(false);
+
+        // 2. Denoise and save
+        const denFile = denoisedPcmFileRef.current;
+        if (denFile) {
+          setIsProcessing(true);
+
+          // Combine with previous leftovers
+          const combined = new Float32Array(audioBufferRef.current.length + float32Data.length);
+          combined.set(audioBufferRef.current);
+          combined.set(float32Data, audioBufferRef.current.length);
+
+          const numFrames = Math.floor(combined.length / HOP_SIZE);
+          const processableLength = numFrames * HOP_SIZE;
+          const leftovers = combined.subarray(processableLength);
+
+          if (numFrames > 0) {
+            const processData = combined.subarray(0, processableLength);
+            const denoisedOutput = new Float32Array(processableLength);
+
+            for (let i = 0; i < processableLength; i += HOP_SIZE) {
+              const frame = processData.subarray(i, i + HOP_SIZE);
+              const outFrame = await denoiser.processFrame(frame);
+              denoisedOutput.set(outFrame, i);
+            }
+            await writePCMChunk(denFile, denoisedOutput, true);
+          }
+
+          // Store leftovers for next chunk
+          audioBufferRef.current = new Float32Array(leftovers);
+          setIsProcessing(false);
+        }
+      } catch (err) {
+        console.error("Error in audio stream processing:", err);
       }
-    } catch (err) {
-      console.error("Error in audio stream processing:", err);
-    }
+    });
   };
 
   const startRecording = async () => {
@@ -165,6 +181,8 @@ export default function RecordingScreen() {
       setFinalOriginalWav(null);
       setFinalDenoisedWav(null);
       isStoppingRef.current = false;
+      audioBufferRef.current = new Float32Array(0);
+      processingQueueRef.current = Promise.resolve();
 
       // Reset denoiser states for new recording
       denoiserRef.current?.setupStreaming(0);
@@ -193,10 +211,23 @@ export default function RecordingScreen() {
       isStoppingRef.current = true;
       const result = await stopAudioRecording();
 
+      // Wait for all background processing to finish
+      await processingQueueRef.current;
+
       const origPcm = originalPcmFileRef.current;
       const denPcm = denoisedPcmFileRef.current;
 
       if (origPcm && denPcm) {
+        // Handle any remaining samples in the buffer
+        if (audioBufferRef.current.length > 0 && denoiserRef.current) {
+          const leftovers = audioBufferRef.current;
+          const paddedFrame = new Float32Array(HOP_SIZE);
+          paddedFrame.set(leftovers);
+          const outFrame = await denoiserRef.current.processFrame(paddedFrame);
+          await writePCMChunk(denPcm, outFrame.subarray(0, leftovers.length), true);
+          audioBufferRef.current = new Float32Array(0);
+        }
+
         // Ensure files exist before wrapping
         if (!origPcm.exists || !denPcm.exists) {
           throw new Error("PCM files missing after recording.");
