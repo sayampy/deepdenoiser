@@ -76,5 +76,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: android-${{ inputs.build_type }}
-          path: ./*.{apk,aab}
+          path: |
+            ~/**/*.apk
+            ~/**/*.aab
           if-no-files-found: error
