@@ -3,6 +3,10 @@ name: Android Build
 on:
   workflow_dispatch:
     inputs:
+      branch:
+        description: "Branch to build (defaults to current)"
+        required: false
+        type: string
       build_type:
         description: Build type
         required: true
@@ -20,6 +24,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.branch || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v6
