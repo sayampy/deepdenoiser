@@ -1,6 +1,6 @@
 import UpdateModal from "@/src/components/UpdateModal";
 import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
-import { initAnalytics } from "@/src/scripts/analytics";
+import { initAnalytics, trackAppEvent } from "@/src/scripts/analytics";
 import { Feather } from "@expo/vector-icons";
 import { useFonts } from "expo-font";
 import * as MediaLibrary from "expo-media-library";
@@ -30,14 +30,13 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     ...Feather.font,
   });
-  // useEffect(() => { initAnalytics(); trackAppEvent("app_open"); }, [])
   useEffect(() => {
     async function prepare() {
       try {
         // Pre-load fonts or other resources here
         // The useFonts hook handles the font loading, but we wait for it
         await initAnalytics();
-        // await trackAppEvent("app_open");
+        await trackAppEvent("app_open");
       } catch (e) {
         console.warn(e);
       } finally {

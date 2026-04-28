@@ -1,6 +1,7 @@
 import AudioPlayer from "@/src/components/audioPlayer";
 import ErrorModal from "@/src/components/ErrorModal";
 import * as theme from "@/src/constants/theme";
+import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
 import { PCMtoWav, saveToDevice, writePCMChunk } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
@@ -165,7 +166,7 @@ export default function RecordingScreen() {
         Alert.alert("Wait", "Denoiser is still initializing...");
         return;
       }
-
+      trackAppEvent("start_recording");
       // Initialize files
       const timestamp = Date.now();
       const origPcm = new fs.File(fs.Paths.cache, `orig_${timestamp}.pcm`);
@@ -199,9 +200,10 @@ export default function RecordingScreen() {
       };
 
       await startAudioRecording(config);
-    } catch (err) {
-      console.error("Failed to start recording:", err);
-      setError(err instanceof Error ? err : new Error(String(err)));
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      trackAppError(err, { context: "startRecording" });
+      setError(err);
       setIsErrorModalVisible(true);
     }
   };
@@ -239,9 +241,10 @@ export default function RecordingScreen() {
         setFinalOriginalWav(origWav);
         setFinalDenoisedWav(denWav);
       }
-    } catch (err) {
-      console.error("Failed to stop recording:", err);
-      setError(err instanceof Error ? err : new Error(String(err)));
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      trackAppError(err, { context: "startRecording" });
+      setError(err);
       setIsErrorModalVisible(true);
     } finally {
       isStoppingRef.current = false;
@@ -268,15 +271,18 @@ export default function RecordingScreen() {
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
-        <View style={styles.timerContainer}>
-          <Text style={styles.timerText}>{formatTime(durationMs)}</Text>
-          {isRecording && !isPaused && (
-            <View style={styles.recordingIndicator}>
-              <Animated.View style={[styles.pulseCircle, { transform: [{ scale: pulseAnim }] }]} />
-              <View style={styles.recordingDot} />
-            </View>
-          )}
-        </View>
+        {!finalOriginalWav && (
+          <View style={styles.timerContainer}>
+
+            <Text style={styles.timerText}>{formatTime(durationMs)}</Text>
+            {isRecording && !isPaused && (
+              <View style={styles.recordingIndicator}>
+                <Animated.View style={[styles.pulseCircle, { transform: [{ scale: pulseAnim }] }]} />
+                <View style={styles.recordingDot} />
+              </View>
+            )}
+          </View>
+        )}
 
         {!finalOriginalWav ? (
           <View style={styles.controlsContainer}>
