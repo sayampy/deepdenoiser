@@ -52,7 +52,7 @@ export default function RecordingScreen() {
 
   const [finalOriginalWav, setFinalOriginalWav] = useState<fs.File | null>(null);
   const [finalDenoisedWav, setFinalDenoisedWav] = useState<fs.File | null>(null);
-
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
 
@@ -127,8 +127,6 @@ export default function RecordingScreen() {
         // 2. Denoise and save
         const denFile = denoisedPcmFileRef.current;
         if (denFile) {
-          setIsProcessing(true);
-
           // Combine with previous leftovers
           const combined = new Float32Array(audioBufferRef.current.length + float32Data.length);
           combined.set(audioBufferRef.current);
@@ -152,7 +150,6 @@ export default function RecordingScreen() {
 
           // Store leftovers for next chunk
           audioBufferRef.current = new Float32Array(leftovers);
-          setIsProcessing(false);
         }
       } catch (err) {
         console.error("Error in audio stream processing:", err);
@@ -209,6 +206,7 @@ export default function RecordingScreen() {
 
   const stopRecording = async () => {
     try {
+      setIsFinalizing(true);
       isStoppingRef.current = true;
       const result = await stopAudioRecording();
 
@@ -242,10 +240,11 @@ export default function RecordingScreen() {
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      trackAppError(err, { context: "startRecording" });
+      trackAppError(err, { context: "stopRecording" });
       setError(err);
       setIsErrorModalVisible(true);
     } finally {
+      setIsFinalizing(false);
       isStoppingRef.current = false;
       originalPcmFileRef.current = null;
       denoisedPcmFileRef.current = null;
@@ -270,7 +269,7 @@ export default function RecordingScreen() {
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
-        {!finalOriginalWav && (
+        {!finalOriginalWav && !isFinalizing && (
           <View style={styles.timerContainer}>
 
             <Text style={styles.timerText}>{formatTime(durationMs)}</Text>
@@ -283,7 +282,12 @@ export default function RecordingScreen() {
           </View>
         )}
 
-        {!finalOriginalWav ? (
+        {isFinalizing ? (
+          <View style={styles.finalizingContainer}>
+            <ActivityIndicator size="large" color={theme.COLORS.primary} />
+            <Text style={styles.statusText}>Finalizing Audio...</Text>
+          </View>
+        ) : !finalOriginalWav ? (
           <View style={styles.controlsContainer}>
             <Text style={styles.statusText}>
               {!isRecording ? "Ready to record" : isPaused ? "Recording paused" : "Denoising in Real-time"}
@@ -310,10 +314,6 @@ export default function RecordingScreen() {
                     <Feather name="square" size={32} color={theme.COLORS.white} />
                   </View>
                 </TouchableOpacity>
-
-                <View style={styles.processingWrapper}>
-                  {isProcessing && <ActivityIndicator size="small" color={theme.COLORS.primary} />}
-                </View>
               </View>
             )}
           </View>
@@ -449,6 +449,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: "100%",
   },
+  finalizingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 100,
+    gap: 20,
+  },
   recordButton: {
     alignItems: "center",
   },
@@ -502,12 +508,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.COLORS.error,
     alignItems: "center",
     justifyContent: "center",
-  },
-  processingWrapper: {
-    width: 64,
-    height: 64,
-    alignItems: 'center',
-    justifyContent: 'center'
   },
   resultsContainer: {
     width: "100%",

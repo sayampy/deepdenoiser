@@ -38,6 +38,7 @@
         {
           "android": {
             "buildArchs": ["arm64-v8a"],
+            "ndkVersion": "27.0.12077973",
             "enableBundleCompression": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResoursesInReleaseBuilds": true,
