@@ -73,10 +73,11 @@ jobs:
           eas build --platform android --profile "$PROFILE" --local
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: android-${{ inputs.build_type }}
           path: |
             ~/**/*.apk
             ~/**/*.aab
+          archive: false
           if-no-files-found: error

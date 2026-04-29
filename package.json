@@ -2,7 +2,7 @@
   "name": "deepdenoiser",
   "main": "expo-router/entry",
   "version": "1.4.1",
-  "onnxruntimeExtensionsEnabled": "true",
+  "onnxruntimeExtensionsEnabled": "false",
   "scripts": {
     "start": "bunx expo start",
     "reset-project": "node ./scripts/reset-project.js",
@@ -47,7 +47,7 @@
     "react-native": "0.83.6",
     "react-native-gesture-handler": "~2.30.0",
     "react-native-reanimated": "4.2.1",
-    "react-native-safe-area-context": "~5.6.2",
+    "react-native-safe-area-context": "^5.7.0",
     "react-native-screens": "~4.23.0",
     "react-native-web": "~0.21.2",
     "react-native-worklets": "0.7.4"
