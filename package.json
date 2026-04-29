@@ -22,7 +22,7 @@
     "@react-navigation/elements": "^2.8.1",
     "@react-navigation/native": "^7.1.8",
     "@siteed/audio-studio": "^3.0.3",
-    "expo": "~55.0.17",
+    "expo": "~55.0.18",
     "expo-asset": "~55.0.16",
     "expo-audio": "~55.0.14",
     "expo-build-properties": "~55.0.13",
