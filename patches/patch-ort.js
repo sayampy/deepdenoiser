@@ -44,7 +44,7 @@ function patchCMakeLists() {
         return;
     }
     let content = fs.readFileSync(cmakeListsPath, 'utf8');
-    const linkerOption = 'target_link_options(onnxruntimejsi PRIVATE "-Wl,-z,max-page-size=16384" "-Wl,-z,common-page-size=16384")';
+    const linkerOption = 'target_link_options(onnxruntimejsi\nPRIVATE\n "-Wl,-z,max-page-size=16384"\n"-Wl,-z,common-page-size=16384"\n)';
     
     if (!content.includes('max-page-size=16384')) {
         console.log('Patching CMakeLists.txt...');

@@ -30,12 +30,12 @@
     },
     "plugins": [
       "./plugins/DisableDependencyInfo",
-      [
-        "./plugins/withFlexiblePgSize",
-        {
-          "gradleFile": "node_modules/onnxruntime-react-native/android/build.gradle"
-        }
-      ],
+      // [
+      //   "./plugins/withFlexiblePgSize",
+      //   {
+      //     "gradleFile": "node_modules/onnxruntime-react-native/android/build.gradle"
+      //   }
+      // ],
       "./plugins/withOnnxruntime",
       // "onnxruntime-react-native",
       "expo-router",
