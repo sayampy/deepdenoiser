@@ -33,7 +33,7 @@
       [
         "./plugins/withFlexiblePgSize",
         {
-          "gradleFile": "node_modules/onnxruntime-react-native/android/app/build.gradle"
+          "gradleFile": "node_modules/onnxruntime-react-native/android/build.gradle"
         }
       ],
       "./plugins/withOnnxruntime",
