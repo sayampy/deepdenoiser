@@ -13,18 +13,9 @@ index 2f814e8..191ae18 100644
 +  "-Wl,-z,common-page-size=16384"
 +)
 diff --git a/node_modules/onnxruntime-react-native/android/build.gradle b/node_modules/onnxruntime-react-native/android/build.gradle
-index 41b4359..daaf8a8 100644
+index 41b4359..031ebe4 100644
 --- a/node_modules/onnxruntime-react-native/android/build.gradle
 +++ b/node_modules/onnxruntime-react-native/android/build.gradle
-@@ -7,7 +7,7 @@ buildscript {
-   }
- 
-   dependencies {
--    classpath 'com.android.tools.build:gradle:7.4.2'
-+    classpath 'com.android.tools.build:gradle'
-     // noinspection DifferentKotlinGradleVersion
-   }
- }
 @@ -85,6 +85,7 @@ android {
          if (REACT_NATIVE_MINOR_VERSION >= 71) {
            // fabricjni required c++_shared
