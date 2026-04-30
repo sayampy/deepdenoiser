@@ -21,13 +21,15 @@
     "production": {
       "autoIncrement": false,
       "android": {
-        "buildType": "apk"
+        "buildType": "apk",
+        "ndk": "28.1.13356709"
       }
     },
     "playstore": {
       "autoIncrement": true,
       "android": {
-        "buildType": "app-bundle"
+        "buildType": "app-bundle",
+        "ndk": "28.1.13356709"
       }
     }
   },

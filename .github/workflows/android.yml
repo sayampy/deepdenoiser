@@ -39,6 +39,11 @@ jobs:
           java-version: 17
           cache: gradle
 
+      - name: Setup NDK
+        uses: nttld/setup-ndk@v1.6
+        with:
+          ndk-version: r28b
+
       - name: Install dependencies
         run: bun install
 
