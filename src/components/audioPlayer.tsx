@@ -33,36 +33,39 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   const progress = useSharedValue(0);
   const isSeeking = useSharedValue(false);
 
+  const handleSeek = useCallback((value: number) => {
+    if (player && status.duration > 0) {
+      player.seekTo(value * status.duration);
+    }
+  }, [player, status.duration]);
+
   useFocusEffect(useCallback(() => {
     return () => {
       try {
-        if (player && player?.playing) {
-          player?.pause();
-          player?.release();
+        if (player && status.playing) {
+          player.pause();
         };
       } catch (error) {
         console.warn(error);
       }
     };
-  }, [player]));
+  }, [player, status.playing]));
 
   const pan = Gesture.Pan()
-    .onBegin(() => {
+    .onBegin((event) => {
       isSeeking.value = true;
+      if (trackWidth.value > 0) {
+        progress.value = Math.max(0, Math.min(1, event.x / trackWidth.value));
+      }
     })
     .onChange((event) => {
-      if (trackWidth.value <= 0) return;
-      const change = event.changeX / trackWidth.value;
-      progress.value = Math.max(0, Math.min(1, progress.value + change));
+      if (trackWidth.value > 0) {
+        progress.value = Math.max(0, Math.min(1, event.x / trackWidth.value));
+      }
     })
     .onFinalize(() => {
       isSeeking.value = false;
-      const finalProgress = progress.value;
-      runOnJS(() => {
-        if (player && status.duration) {
-          player.seekTo(finalProgress * status.duration);
-        }
-      })();
+      runOnJS(handleSeek)(progress.value);
     });
 
   useEffect(() => {
@@ -92,6 +95,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   };
 
   const formatTime = (seconds: number) => {
+    if (isNaN(seconds) || seconds < 0) return "0:00";
     const totalSeconds = Math.floor(seconds);
     const minutes = Math.floor(totalSeconds / 60);
     const s = totalSeconds % 60;
@@ -106,6 +110,8 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
     left: `${progress.value * 100}%`,
     transform: [{ scale: isSeeking.value ? 1.2 : 1 }]
   }));
+
+  const displayName = decodeURIComponent(name);
 
   return (
     <View style={styles.container}>
@@ -145,7 +151,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
       <View style={styles.fileNameContainer}>
         <Feather name="music" size={14} color={theme.COLORS.primary} style={{ marginRight: 8 }} />
         <Text style={styles.fileName} numberOfLines={1}>
-          {name.replaceAll('%20', ' ')}
+          {displayName}
         </Text>
       </View>
     </View>
