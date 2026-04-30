@@ -5275,7 +5275,7 @@
     "licenseUrl": "https://github.com/colinhacks/zod/raw/master/LICENSE",
     "parents": "deepdenoiser"
   },
-  "com.linkedin.android.litr:litr:1.5.6": {
+  "com.linkedin.android.litr:litr:1.5.7": {
     "licenses": "BSD-2-Clause",
     "repository": "https://github.com/linkedin/LiTr",
     "licenseUrl": "https://github.com/linkedin/LiTr/raw/main/LICENSE",

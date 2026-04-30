@@ -1,8 +1,30 @@
+diff --git a/node_modules/onnxruntime-react-native/android/CMakeLists.txt b/node_modules/onnxruntime-react-native/android/CMakeLists.txt
+index 2f814e8..191ae18 100644
+--- a/node_modules/onnxruntime-react-native/android/CMakeLists.txt
++++ b/node_modules/onnxruntime-react-native/android/CMakeLists.txt
+@@ -97,3 +97,9 @@ target_link_libraries(
+   ${log-lib} # <-- Logcat logger
+   android # <-- Android JNI core
+ )
++
++target_link_options(
++  onnxruntimejsi PRIVATE
++  "-Wl,-z,max-page-size=16384"
++  "-Wl,-z,common-page-size=16384"
++)
 diff --git a/node_modules/onnxruntime-react-native/android/build.gradle b/node_modules/onnxruntime-react-native/android/build.gradle
-index 41b4359..f967e9e 100644
+index 41b4359..031ebe4 100644
 --- a/node_modules/onnxruntime-react-native/android/build.gradle
 +++ b/node_modules/onnxruntime-react-native/android/build.gradle
-@@ -247,7 +247,7 @@ dependencies {
+@@ -85,6 +85,7 @@ android {
+         if (REACT_NATIVE_MINOR_VERSION >= 71) {
+           // fabricjni required c++_shared
+           arguments "-DANDROID_STL=c++_shared",
++            "-DANDROID_SUPPORT_FLEXIBLE_PAGE_SIZES=ON",
+             "-DNODE_MODULES_DIR=${nodeModules}",
+             "-DORT_EXTENSIONS_ENABLED=${ortExtensionsEnabled}",
+             "-DREACT_NATIVE_VERSION=${REACT_NATIVE_VERSION}",
+@@ -247,7 +248,7 @@ dependencies {
      extractLibs "com.microsoft.onnxruntime:onnxruntime-android:latest.integration@aar"
    }
  

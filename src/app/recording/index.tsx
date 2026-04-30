@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -52,7 +53,7 @@ export default function RecordingScreen() {
 
   const [finalOriginalWav, setFinalOriginalWav] = useState<fs.File | null>(null);
   const [finalDenoisedWav, setFinalDenoisedWav] = useState<fs.File | null>(null);
-
+  const [isFinalizing, setIsFinalizing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
 
@@ -127,8 +128,6 @@ export default function RecordingScreen() {
         // 2. Denoise and save
         const denFile = denoisedPcmFileRef.current;
         if (denFile) {
-          setIsProcessing(true);
-
           // Combine with previous leftovers
           const combined = new Float32Array(audioBufferRef.current.length + float32Data.length);
           combined.set(audioBufferRef.current);
@@ -152,7 +151,6 @@ export default function RecordingScreen() {
 
           // Store leftovers for next chunk
           audioBufferRef.current = new Float32Array(leftovers);
-          setIsProcessing(false);
         }
       } catch (err) {
         console.error("Error in audio stream processing:", err);
@@ -209,6 +207,7 @@ export default function RecordingScreen() {
 
   const stopRecording = async () => {
     try {
+      setIsFinalizing(true);
       isStoppingRef.current = true;
       const result = await stopAudioRecording();
 
@@ -242,10 +241,11 @@ export default function RecordingScreen() {
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      trackAppError(err, { context: "startRecording" });
+      trackAppError(err, { context: "stopRecording" });
       setError(err);
       setIsErrorModalVisible(true);
     } finally {
+      setIsFinalizing(false);
       isStoppingRef.current = false;
       originalPcmFileRef.current = null;
       denoisedPcmFileRef.current = null;
@@ -263,14 +263,22 @@ export default function RecordingScreen() {
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isRecording}>
+        <Pressable 
+          onPress={() => router.back()} 
+          style={({ pressed }) => [
+            styles.backButton,
+            { opacity: pressed ? 0.7 : 1 }
+          ]} 
+          disabled={isRecording}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.1)', borderless: true, radius: 24 }}
+        >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={styles.headerTitle}>Voice Recorder</Text>
       </View>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
-        {!finalOriginalWav && (
+        {!finalOriginalWav && !isFinalizing && (
           <View style={styles.timerContainer}>
 
             <Text style={styles.timerText}>{formatTime(durationMs)}</Text>
@@ -283,37 +291,56 @@ export default function RecordingScreen() {
           </View>
         )}
 
-        {!finalOriginalWav ? (
+        {isFinalizing ? (
+          <View style={styles.finalizingContainer}>
+            <ActivityIndicator size="large" color={theme.COLORS.primary} />
+            <Text style={styles.statusText}>Finalizing Audio...</Text>
+          </View>
+        ) : !finalOriginalWav ? (
           <View style={styles.controlsContainer}>
             <Text style={styles.statusText}>
               {!isRecording ? "Ready to record" : isPaused ? "Recording paused" : "Denoising in Real-time"}
             </Text>
 
             {!isRecording ? (
-              <TouchableOpacity style={styles.recordButton} onPress={startRecording}>
+              <Pressable 
+                style={({ pressed }) => [
+                  styles.recordButton,
+                  { opacity: pressed ? 0.9 : 1 }
+                ]} 
+                onPress={startRecording}
+                android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 70 }}
+              >
                 <View style={styles.recordButtonInner}>
                   <Feather name="mic" size={40} color={theme.COLORS.white} />
                 </View>
                 <Text style={styles.buttonLabel}>Tap to Start</Text>
-              </TouchableOpacity>
+              </Pressable>
             ) : (
               <View style={styles.activeControls}>
-                <TouchableOpacity
-                  style={[styles.controlCircle, { backgroundColor: "rgba(255, 255, 255, 0.1)" }]}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.controlCircle, 
+                    { backgroundColor: "rgba(255, 255, 255, 0.1)", opacity: pressed ? 0.7 : 1 }
+                  ]}
                   onPress={isPaused ? resumeRecording : pauseRecording}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 32 }}
                 >
                   <Feather name={isPaused ? "play" : "pause"} size={28} color={theme.COLORS.text} />
-                </TouchableOpacity>
+                </Pressable>
 
-                <TouchableOpacity style={styles.stopButton} onPress={stopRecording}>
+                <Pressable 
+                  style={({ pressed }) => [
+                    styles.stopButton,
+                    { opacity: pressed ? 0.8 : 1 }
+                  ]} 
+                  onPress={stopRecording}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 50 }}
+                >
                   <View style={styles.stopButtonInner}>
                     <Feather name="square" size={32} color={theme.COLORS.white} />
                   </View>
-                </TouchableOpacity>
-
-                <View style={styles.processingWrapper}>
-                  {isProcessing && <ActivityIndicator size="small" color={theme.COLORS.primary} />}
-                </View>
+                </Pressable>
               </View>
             )}
           </View>
@@ -449,6 +476,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: "100%",
   },
+  finalizingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 100,
+    gap: 20,
+  },
   recordButton: {
     alignItems: "center",
   },
@@ -502,12 +535,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.COLORS.error,
     alignItems: "center",
     justifyContent: "center",
-  },
-  processingWrapper: {
-    width: 64,
-    height: 64,
-    alignItems: 'center',
-    justifyContent: 'center'
   },
   resultsContainer: {
     width: "100%",
