@@ -29,6 +29,7 @@
       ]
     },
     "plugins": [
+      "./plugins/withNdkVersion",
       "./plugins/DisableDependencyInfo",
       // [
       //   "./plugins/withFlexiblePgSize",
