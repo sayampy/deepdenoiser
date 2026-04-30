@@ -13,7 +13,8 @@
     "build:prod": "eas build -p android --profile production",
     "build:store": "eas build -p android --profile playstore",
     "build:dev": "eas build -p android --profile development",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "preinstall": "node patches/patch-ort.js"
   },
   "dependencies": {
     "@aptabase/react-native": "^0.4.0",

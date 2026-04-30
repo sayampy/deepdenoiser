@@ -5,9 +5,9 @@ import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import React, { useCallback, useEffect } from "react";
 import {
   Dimensions,
+  Pressable,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from "react-native";
 import {
@@ -116,7 +116,14 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   return (
     <View style={styles.container}>
       <GestureHandlerRootView style={styles.audioControls}>
-        <TouchableOpacity style={styles.playButton} onPress={handlePlayPause}>
+        <Pressable 
+          style={({ pressed }) => [
+            styles.playButton,
+            { opacity: pressed ? 0.7 : 1 }
+          ]} 
+          onPress={handlePlayPause}
+          android_ripple={{ color: 'rgba(0, 0, 0, 0.1)', borderless: true, radius: 24 }}
+        >
           <View style={styles.iconCircle}>
             <Feather
               name={status.playing ? "pause" : "play"}
@@ -124,7 +131,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
               color={theme.COLORS.background}
             />
           </View>
-        </TouchableOpacity>
+        </Pressable>
 
         <View style={styles.sliderSection}>
           <View style={styles.timeLabels}>

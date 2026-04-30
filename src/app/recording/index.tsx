@@ -19,6 +19,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -262,9 +263,17 @@ export default function RecordingScreen() {
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backButton} disabled={isRecording}>
+        <Pressable 
+          onPress={() => router.back()} 
+          style={({ pressed }) => [
+            styles.backButton,
+            { opacity: pressed ? 0.7 : 1 }
+          ]} 
+          disabled={isRecording}
+          android_ripple={{ color: 'rgba(255, 255, 255, 0.1)', borderless: true, radius: 24 }}
+        >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
-        </TouchableOpacity>
+        </Pressable>
         <Text style={styles.headerTitle}>Voice Recorder</Text>
       </View>
 
@@ -294,26 +303,44 @@ export default function RecordingScreen() {
             </Text>
 
             {!isRecording ? (
-              <TouchableOpacity style={styles.recordButton} onPress={startRecording}>
+              <Pressable 
+                style={({ pressed }) => [
+                  styles.recordButton,
+                  { opacity: pressed ? 0.9 : 1 }
+                ]} 
+                onPress={startRecording}
+                android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 70 }}
+              >
                 <View style={styles.recordButtonInner}>
                   <Feather name="mic" size={40} color={theme.COLORS.white} />
                 </View>
                 <Text style={styles.buttonLabel}>Tap to Start</Text>
-              </TouchableOpacity>
+              </Pressable>
             ) : (
               <View style={styles.activeControls}>
-                <TouchableOpacity
-                  style={[styles.controlCircle, { backgroundColor: "rgba(255, 255, 255, 0.1)" }]}
+                <Pressable
+                  style={({ pressed }) => [
+                    styles.controlCircle, 
+                    { backgroundColor: "rgba(255, 255, 255, 0.1)", opacity: pressed ? 0.7 : 1 }
+                  ]}
                   onPress={isPaused ? resumeRecording : pauseRecording}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 32 }}
                 >
                   <Feather name={isPaused ? "play" : "pause"} size={28} color={theme.COLORS.text} />
-                </TouchableOpacity>
+                </Pressable>
 
-                <TouchableOpacity style={styles.stopButton} onPress={stopRecording}>
+                <Pressable 
+                  style={({ pressed }) => [
+                    styles.stopButton,
+                    { opacity: pressed ? 0.8 : 1 }
+                  ]} 
+                  onPress={stopRecording}
+                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 50 }}
+                >
                   <View style={styles.stopButtonInner}>
                     <Feather name="square" size={32} color={theme.COLORS.white} />
                   </View>
-                </TouchableOpacity>
+                </Pressable>
               </View>
             )}
           </View>
