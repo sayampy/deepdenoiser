@@ -56,6 +56,7 @@ https://github.com/user-attachments/assets/29f147db-ff8b-486a-877d-1d765922ed5c
 
 - **🔇 Advanced Noise Suppression**: Eliminates background hiss, hums, and environmental noise using deep learning.
 - **🎥 Audio & Video Support**: Process both voice recordings and video clips seamlessly.
+- **🎤 Live Suppression**: Capture voice recordings directly within the app with integrated, real-time noise removal.
 - **🔒 Privacy First**: All processing happens locally on your device using ONNX Runtime. No data is ever uploaded to the cloud.
 - **🚀 High Performance**: Built with custom Native Modules (Kotlin) for efficient media transcoding and I/O.
 - **📱 Modern Design**: Clean, simple interface built with React Native & Expo.
