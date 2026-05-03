@@ -23,7 +23,7 @@
   <a href="https://play.google.com/store/apps/details?id=com.sayampy.deepdenoiser">
     <img src="./fastlane/metadata/android/en-US/images/en.svg" alt="Get it on Google Play" height="30" />
   </a>
-  <a href="https://github.com/sayampy/deepdenoiser">
+  <a href="https://github.com/sayampy/deepdenoiser/releases">
     <img src="https://img.shields.io/badge/Github-181717?style=for-the-badge&logo=github&logoColor=white" alt="GitHub"/>
   </a>
 </p>
