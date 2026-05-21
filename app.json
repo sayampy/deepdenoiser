@@ -4,7 +4,9 @@
     "icon": "./assets/images/icon.png",
     "scheme": "deepdenoiser",
     "userInterfaceStyle": "dark",
-    "platforms": ["android"],
+    "platforms": [
+      "android"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sayampy.deepdenoiser"
@@ -38,13 +40,16 @@
       //   }
       // ],
       "./plugins/withOnnxruntime",
+      // "./plugins/withDisableLintAar",
       // "onnxruntime-react-native",
       "expo-router",
       [
         "expo-build-properties",
         {
           "android": {
-            "buildArchs": ["arm64-v8a"],
+            "buildArchs": [
+              "arm64-v8a"
+            ],
             "ndkVersion": "28.1.13356709",
             "enableBundleCompression": true,
             "enableMinifyInReleaseBuilds": true,
@@ -75,7 +80,10 @@
         "expo-media-library",
         {
           "isAccessMediaLocationEnabled": true,
-          "granularPermissions": ["audio", "video"]
+          "granularPermissions": [
+            "audio",
+            "video"
+          ]
         }
       ],
       "expo-asset",
@@ -92,7 +100,10 @@
         {
           "android": {
             "enabled": true,
-            "singleShareMimeTypes": ["video/*", "audio/*"]
+            "singleShareMimeTypes": [
+              "video/*",
+              "audio/*"
+            ]
           }
         }
       ]

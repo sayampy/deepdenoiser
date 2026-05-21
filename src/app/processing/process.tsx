@@ -118,18 +118,27 @@ export default function ProcessScreen() {
       if (normalize.toggle) {
         setProgressText("Analyzing loudness...");
         let maxPeak = 0;
+        let sumSquares = 0;
         let analyzedSamples = 0;
         await readPCMChunks(pcmFile, 1024 * 1024, async (chunk, inputSamples) => {
           for (let i = 0; i < chunk.length; i++) {
-            const abs = Math.abs(chunk[i]);
+            const val = chunk[i];
+            sumSquares += val * val;
+            const abs = Math.abs(val);
             if (abs > maxPeak) maxPeak = abs;
           }
           analyzedSamples += inputSamples;
           setProgress(Math.min(Math.round((analyzedSamples / totalSamples) * 100), 100));
         });
 
+        const currentRms = Math.sqrt(sumSquares / totalSamples);
+        const targetRms = Math.pow(10, normalize.targetRMS / 20);
         const targetPeak = Math.pow(10, normalize.maxPeakDb / 20);
-        globalGain = targetPeak / (maxPeak || 1e-8);
+
+        const rmsGain = currentRms > 1e-8 ? targetRms / currentRms : 1.0;
+        const peakGain = maxPeak > 1e-8 ? targetPeak / maxPeak : 1.0;
+
+        globalGain = Math.min(rmsGain, peakGain);
         if (globalGain > 5.0) globalGain = 5.0;
       }
 

@@ -22,7 +22,7 @@ interface AdvanceSettingsProps {
   onNormalizeChange: (value: any) => void;
 }
 
-const ALSTEPS = [0, 5, 10, 15, 20, 25];
+const ALSTEPS = [0, 5, 10, 15, 20, 30, 40];
 
 export default function AdvanceSettings({
   attenLimDb,
@@ -82,7 +82,7 @@ export default function AdvanceSettings({
             <View style={styles.settingLabelRow}>
               <View style={theme.Styles.row}>
                 <Text style={styles.settingLabel}>Loudness Normalization</Text>
-                <InfoBubble text={`Automatically adjust audio volume to a consistent level before processing.\nHelps improve AI results on quiet recordings.\nDo not Use when the speech is within normal hearing range.`}>
+                <InfoBubble text={`Boosts quiet audio so the AI can denoise it effectively.\nUse when recordings are too quiet or have inconsistent volume.\nSkip if speech is already at a comfortable listening level.`}>
                   <Feather name="help-circle" size={18} color={theme.COLORS.subtext} />
                 </InfoBubble>
               </View>
@@ -105,7 +105,7 @@ export default function AdvanceSettings({
                 min={-20}
                 max={-10}
                 decimalPlaces={0}
-                info={"Target average loudness level. -14dB is standard for mobile apps.\nLower values means more dynamic natural audio"}
+                info={`Target loudness of the output.\n-14dB = recommended default.\n-20dB = quieter, more dynamic range.\n-10dB = louder, less headroom.`}
               />
               <CustomSlider
                 label="Peak Limit"
@@ -114,7 +114,7 @@ export default function AdvanceSettings({
                 min={-10}
                 max={0}
                 decimalPlaces={0}
-                info={"Maximum allowed peak level to prevent clipping. -1.0dB is safe.\nlower means more clipping"}
+                info={`Hard ceiling for the loudest peak.\n-1.0dB = safe default, prevents clipping.\n-10dB = conservative, lots of headroom.\n0dB = maximum loudness, risk of distortion.`}
               />
             </View>
           )}
@@ -126,9 +126,9 @@ export default function AdvanceSettings({
             value={attenLimDb}
             onValueChange={onAttenLimDbChange}
             min={0}
-            max={25}
+            max={40}
             steps={ALSTEPS}
-            info={`Higher values preserve more background noise.\n0dB means maximum noise reduction.`}
+            info={`Limits how aggressively the AI removes noise.\n0dB = most aggressive (quietest background).\n40dB = preserves nearly all ambient sound.\nStart at 0dB and increase if audio sounds too processed.`}
           />
         </View>
       )}

@@ -439,7 +439,7 @@ const styles = StyleSheet.create({
   scrollContent: {
     alignItems: 'center',
     paddingBottom: 100,
-    paddingHorizontal: theme.SPACING.medium,
+    // paddingHorizontal: theme.SPACING.medium,
   },
   timerContainer: {
     flexDirection: "row",

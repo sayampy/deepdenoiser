@@ -11,7 +11,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "build:prod": "eas build -p android --profile production --local",
-    "build:store": "eas build -p android --profile playstore",
+    "build:store": "eas build -p android --profile playstore --local",
     "build:dev": "eas build -p android --profile development --local",
     "postinstall": "patch-package"
   },
