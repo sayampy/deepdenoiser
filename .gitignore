@@ -48,5 +48,8 @@ app-example
 .aiexclude
 .geminiignore
 GEMINI.md
+AGENTS.md
+.ignore
+repomix-output.md
 /.agents
 skills-lock.json

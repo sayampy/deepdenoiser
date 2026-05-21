@@ -38,24 +38,25 @@ export default function RootLayout() {
   const [fontsLoaded, fontError] = useFonts({
     ...Feather.font,
   });
+
+  // Analytics — run once on mount
   useEffect(() => {
-    async function prepare() {
+    (async () => {
       try {
-        // Pre-load fonts or other resources here
-        // The useFonts hook handles the font loading, but we wait for it
         await initAnalytics();
         await trackAppEvent("app_open");
       } catch (e) {
         console.warn(e);
-      } finally {
-        if (fontsLoaded || fontError) {
-          setAppIsReady(true);
-          await SplashScreen.hideAsync();
-        }
       }
-    }
+    })();
+  }, []);
 
-    prepare();
+  // Splash — hide when fonts are ready
+  useEffect(() => {
+    if (fontsLoaded || fontError) {
+      setAppIsReady(true);
+      SplashScreen.hideAsync();
+    }
   }, [fontsLoaded, fontError]);
 
   if (!appIsReady && !fontError) {

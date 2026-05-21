@@ -115,7 +115,7 @@ export default function ProcessScreen() {
       const totalSamples = pcmFile.size / 2;
 
       let globalGain = 1.0;
-      if (normalize?.toggle) {
+      if (normalize.toggle) {
         setProgressText("Analyzing loudness...");
         let maxPeak = 0;
         let analyzedSamples = 0;
@@ -158,7 +158,7 @@ export default function ProcessScreen() {
       const samplesPerChunk = sampleRate * 5; // 5s chunks for better responsiveness
 
       await readPCMChunks(pcmFile, samplesPerChunk, async (chunk, inputSamples) => {
-        if (normalize?.toggle) {
+        if (normalize.toggle) {
           for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
         }
 
@@ -194,7 +194,7 @@ export default function ProcessScreen() {
         const p = Math.min(Math.round((processedInputSamples / totalSamples) * 100), 100);
         setProgress(p);
 
-        if (p > 0) {
+        if (p > 0 && Number.isFinite(p)) {
           const elapsed = (Date.now() - model_startTime) / 1000;
           const remaining = (elapsed / (p / 100)) - elapsed;
           if (remaining > 0 && Number.isFinite(remaining)) {
@@ -227,7 +227,7 @@ export default function ProcessScreen() {
         .replaceAll(/\s+/g, ' ');
 
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
-      renameFile(finalWavFile, `${baseName}_denoised.wav`)
+      renameFile(finalWavFile, `${baseName}_denoised.wav`);
       if (isFileTypeVideo) {
         setProgressText("Merging audio with video...");
         const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);

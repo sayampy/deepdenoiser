@@ -61,7 +61,11 @@ export default function RecordingScreen() {
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const isStoppingRef = useRef(false);
+  const isPausedRef = useRef(isPaused);
+  const animRef = useRef<Animated.CompositeAnimation | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
 
   useEffect(() => {
     const initDenoiser = async () => {
@@ -81,14 +85,17 @@ export default function RecordingScreen() {
     initDenoiser();
 
     return () => {
-      if (isRecording) stopAudioRecording();
-      denoiserRef.current?.release();
+      (async () => {
+        if (isRecording) await stopAudioRecording();
+        await denoiserRef.current?.release();
+      })();
     };
   }, []);
 
   useEffect(() => {
+    animRef.current?.stop();
     if (isRecording && !isPaused) {
-      Animated.loop(
+      const anim = Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, {
             toValue: 1.5,
@@ -101,19 +108,23 @@ export default function RecordingScreen() {
             useNativeDriver: true,
           }),
         ])
-      ).start();
+      );
+      animRef.current = anim;
+      anim.start();
     } else {
       pulseAnim.setValue(1);
     }
+    return () => animRef.current?.stop();
   }, [isRecording, isPaused]);
 
   const handleAudioStream = async (event: AudioDataEvent) => {
-    if (isPaused || !denoiserRef.current || isStoppingRef.current) return;
+    if (isPausedRef.current || !denoiserRef.current || isStoppingRef.current) return;
 
-    const float32Data = event.data as Float32Array;
-    if (!float32Data || float32Data.length === 0) return;
+    // Copy buffer immediately — the source may reuse the underlying ArrayBuffer
+    const eventData = event.data as Float32Array;
+    if (!eventData || eventData.length === 0) return;
+    const float32Data = new Float32Array(eventData);
 
-    // Use a processing queue to ensure audio chunks are handled sequentially
     processingQueueRef.current = processingQueueRef.current.then(async () => {
       try {
         const denoiser = denoiserRef.current;
@@ -155,6 +166,9 @@ export default function RecordingScreen() {
       } catch (err) {
         console.error("Error in audio stream processing:", err);
       }
+    }).catch((err) => {
+      console.error("Fatal error in processing queue (chain poisoned):", err);
+      processingQueueRef.current = Promise.resolve();
     });
   };
 

@@ -36,7 +36,9 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
   const handleToggle = async (key: keyof AppSettings, value: boolean) => {
     const updated = await updateSettings({ [key]: value });
     setSettings(updated);
-    Aptabase.dispose();
+    if (key === "analytics" && !value) {
+      Aptabase.dispose();
+    }
   };
 
   if (!settings) return null;

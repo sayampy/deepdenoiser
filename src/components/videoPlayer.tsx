@@ -1,7 +1,7 @@
 import * as theme from "@/src/constants/theme";
 import { useFocusEffect } from "@react-navigation/native";
 import { useVideoPlayer, VideoView } from "expo-video";
-import React, { useCallback } from "react";
+import React, { useCallback, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -15,20 +15,22 @@ interface VideoPlayerProps {
 }
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
+  const cleanupRef = useRef(false);
 
   const player = useVideoPlayer(uri, (player) => {
     player.loop = false;
     player.muted = false;
-    // player.showNowPlayingNotification = true;r
-    // player.play();
   });
   useFocusEffect(useCallback(() => {
+    cleanupRef.current = false;
     return () => {
+      if (cleanupRef.current) return;
+      cleanupRef.current = true;
       try {
-        if (player && player?.playing) {
-          player?.pause();
-          player?.release();
-        };
+        if (player) {
+          if (player.playing) player.pause();
+          player.release();
+        }
       } catch (error) {
         console.warn(error);
       }

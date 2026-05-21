@@ -4,7 +4,7 @@ module.exports = ({ config }) => {
     ...config,
     name: IS_DEV ? "DeepDenoiser (Dev)" : "DeepDenoiser",
     slug: "deepdenoiser",
-    version: '1.4.1',
+    version: '1.4.2',
     android: {
       ...config.android,
       package: IS_DEV

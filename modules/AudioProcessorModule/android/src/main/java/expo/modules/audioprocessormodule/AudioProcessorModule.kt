@@ -5,13 +5,17 @@ import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 
 class AudioProcessorModule : Module() {
-    // Dedicate a scope to prevent stalling the main thread during heavy I/O
-    private val moduleScope = CoroutineScope(Dispatchers.Default)
+    private val moduleScope = CoroutineScope(Dispatchers.IO)
 
     override fun definition() = ModuleDefinition {
         Name("AudioProcessorModule")
+
+        OnDestroy {
+            moduleScope.cancel()
+        }
 
         AsyncFunction("extractAndTranscodeAudio") {
                 input: String,

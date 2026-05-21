@@ -209,11 +209,10 @@ export async function writePCMChunk(
 
   const bytes = new Uint8Array(pcmChunk.buffer);
   let binaryString = "";
-  // Process in chunks to avoid stack overflow with String.fromCharCode(...spread)
   const step = 8192;
   for (let k = 0; k < bytes.length; k += step) {
-    const chunk = bytes.subarray(k, Math.min(k + step, bytes.length));
-    binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+    const end = Math.min(k + step, bytes.length);
+    for (let i = k; i < end; i++) binaryString += String.fromCharCode(bytes[i]);
   }
   const base64 = btoa(binaryString);
 
@@ -241,11 +240,10 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
 
     const bytes = new Uint8Array(pcmChunk.buffer);
     let binaryString = "";
-    // Process in chunks to avoid stack overflow with String.fromCharCode
     const step = 8192;
     for (let k = 0; k < bytes.length; k += step) {
-      const chunk = bytes.subarray(k, Math.min(k + step, bytes.length));
-      binaryString += String.fromCharCode.apply(null, Array.from(chunk));
+      const end = Math.min(k + step, bytes.length);
+      for (let i = k; i < end; i++) binaryString += String.fromCharCode(bytes[i]);
     }
     const base64 = btoa(binaryString);
 
@@ -260,7 +258,7 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
 export async function saveToDevice(file: fs.File) {
   try {
     const asset = await MediaLibrary.createAssetAsync(file.uri);
-    const album = await MediaLibrary.getAlbumAsync("AudioDenoiser");
+    const album = await MediaLibrary.getAlbumAsync("DeepDenoiser");
     if (album) {
       await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
     } else {
@@ -268,7 +266,7 @@ export async function saveToDevice(file: fs.File) {
     }
     trackAppEvent("save_file");
   } catch (e) {
-    // Error logged in catch block or ignored if preferred
+    console.error("Failed to save file to device:", e);
   }
 }
 export async function mergeAudioVideo(

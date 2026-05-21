@@ -240,8 +240,13 @@ class MediaProcessor(private val context: Context) {
 
                     var videoEOS = false
                     var audioEOS = false
+                    var muxIterations = 0
+                    val maxMuxIterations = 1_000_000
 
                     while (!videoEOS || !audioEOS) {
+                        if (++muxIterations > maxMuxIterations) {
+                            throw Exception("muxAudioVideo exceeded max iterations ($maxMuxIterations)")
+                        }
                         val writeVideo =
                                 !videoEOS &&
                                         (audioEOS ||
@@ -258,7 +263,7 @@ class MediaProcessor(private val context: Context) {
                                 bufferInfo.presentationTimeUs = videoExtractor.sampleTime
                                 bufferInfo.flags = videoExtractor.sampleFlags
                                 muxer.writeSampleData(videoMuxerTrack, buffer, bufferInfo)
-                                videoExtractor.advance()
+                                if (!videoExtractor.advance()) videoEOS = true
                             }
                         } else if (!audioEOS) {
                             val sampleSize = audioExtractor.readSampleData(buffer, 0)
@@ -270,7 +275,7 @@ class MediaProcessor(private val context: Context) {
                                 bufferInfo.presentationTimeUs = audioExtractor.sampleTime
                                 bufferInfo.flags = audioExtractor.sampleFlags
                                 muxer.writeSampleData(audioMuxerTrack, buffer, bufferInfo)
-                                audioExtractor.advance()
+                                if (!audioExtractor.advance()) audioEOS = true
                             }
                         }
                     }
@@ -333,6 +338,7 @@ class MediaProcessor(private val context: Context) {
                             ?: throw Exception("MIME type missing for audio track in $inputPath")
                     
                     var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                    if (channels <= 0) channels = 1
                     if (format.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
                         sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
                     }
@@ -357,11 +363,17 @@ class MediaProcessor(private val context: Context) {
                     var isEOS = false
                     val timeoutUs = 10000L
 
+                    var iterationCount = 0
+                    val maxIterations = 1_000_000
                     while (true) {
+                        if (++iterationCount > maxIterations) {
+                            throw Exception("decodeToPCM exceeded max iterations ($maxIterations)")
+                        }
                         if (!isEOS) {
                             val inIndex = codec.dequeueInputBuffer(timeoutUs)
                             if (inIndex >= 0) {
-                                val buffer = codec.getInputBuffer(inIndex)!!
+                                val buffer = codec.getInputBuffer(inIndex)
+                                    ?: throw Exception("Input buffer null for index $inIndex")
                                 val sampleSize = extractor.readSampleData(buffer, 0)
                                 if (sampleSize < 0) {
                                     codec.queueInputBuffer(
@@ -387,7 +399,32 @@ class MediaProcessor(private val context: Context) {
 
                         val outIndex = codec.dequeueOutputBuffer(info, timeoutUs)
                         when {
-                            outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> if (isEOS) break
+                            outIndex == MediaCodec.INFO_TRY_AGAIN_LATER -> {
+                                if (isEOS) {
+                                    var tryAgainCount = 0
+                                    while (tryAgainCount < 5) {
+                                        val drainIndex = codec.dequeueOutputBuffer(info, 20000L)
+                                        if (drainIndex == MediaCodec.INFO_TRY_AGAIN_LATER) {
+                                            tryAgainCount++
+                                            continue
+                                        }
+                                        if (drainIndex >= 0) {
+                                            val drainBuffer = codec.getOutputBuffer(drainIndex)
+                                                ?: throw Exception("Output buffer null for index $drainIndex")
+                                            drainBuffer.position(info.offset)
+                                            drainBuffer.limit(info.offset + info.size)
+                                            if (channels > 1 && info.size > 0) {
+                                                writeDownmixedMono(drainBuffer, info, channels, outputStream!!)
+                                            } else if (info.size > 0) {
+                                                writeMonoChunk(drainBuffer, info, outputStream!!)
+                                            }
+                                            codec.releaseOutputBuffer(drainIndex, false)
+                                        }
+                                        break
+                                    }
+                                    break
+                                }
+                            }
                             outIndex == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                                 val newFormat = codec.outputFormat
                                 if (newFormat.containsKey(MediaFormat.KEY_SAMPLE_RATE)) {
@@ -395,40 +432,17 @@ class MediaProcessor(private val context: Context) {
                                 }
                                 if (newFormat.containsKey(MediaFormat.KEY_CHANNEL_COUNT)) {
                                     channels = newFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
+                                    if (channels <= 0) channels = 1
                                 }
                             }
                             outIndex >= 0 -> {
-                                val outBuffer = codec.getOutputBuffer(outIndex)!!
+                                val outBuffer = codec.getOutputBuffer(outIndex)
+                                    ?: throw Exception("Output buffer null for index $outIndex")
 
-                                // Downmix to mono if multi-channel (Interleaved 16-bit PCM assumed)
                                 if (channels > 1 && info.size > 0) {
-                                    outBuffer.position(info.offset)
-                                    outBuffer.limit(info.offset + info.size)
-
-                                    val shortBuffer = outBuffer.asShortBuffer()
-                                    val numFrames = shortBuffer.remaining() / channels
-                                    if (numFrames > 0) {
-                                        val monoBuffer = ByteBuffer.allocate(numFrames * 2)
-                                        monoBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
-
-                                        for (f in 0 until numFrames) {
-                                            var sum = 0
-                                            for (c in 0 until channels) {
-                                                if (shortBuffer.hasRemaining()) {
-                                                    sum += shortBuffer.get()
-                                                }
-                                            }
-                                            val monoSample = (sum / channels).toShort()
-                                            monoBuffer.putShort(monoSample)
-                                        }
-                                        outputStream.write(monoBuffer.array())
-                                    }
+                                    writeDownmixedMono(outBuffer, info, channels, outputStream!!)
                                 } else if (info.size > 0) {
-                                    val chunk = ByteArray(info.size)
-                                    outBuffer.position(info.offset)
-                                    outBuffer.limit(info.offset + info.size)
-                                    outBuffer.get(chunk)
-                                    outputStream.write(chunk)
+                                    writeMonoChunk(outBuffer, info, outputStream!!)
                                 }
 
                                 codec.releaseOutputBuffer(outIndex, false)
@@ -566,6 +580,44 @@ class MediaProcessor(private val context: Context) {
         header[42] = ((pcmDataLength shr 16) and 0xffL).toByte()
         header[43] = ((pcmDataLength shr 24) and 0xffL).toByte()
         os.write(header, 0, 44)
+    }
+
+    private fun writeDownmixedMono(
+            buffer: ByteBuffer,
+            info: MediaCodec.BufferInfo,
+            channels: Int,
+            outputStream: OutputStream
+    ) {
+        buffer.position(info.offset)
+        buffer.limit(info.offset + info.size)
+        val shortBuffer = buffer.asShortBuffer()
+        val numFrames = shortBuffer.remaining() / channels
+        if (numFrames > 0) {
+            val monoBuffer = ByteBuffer.allocate(numFrames * 2)
+            monoBuffer.order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            for (f in 0 until numFrames) {
+                var sum = 0
+                for (c in 0 until channels) {
+                    if (shortBuffer.hasRemaining()) {
+                        sum += shortBuffer.get()
+                    }
+                }
+                monoBuffer.putShort((sum / channels).toShort())
+            }
+            outputStream.write(monoBuffer.array())
+        }
+    }
+
+    private fun writeMonoChunk(
+            buffer: ByteBuffer,
+            info: MediaCodec.BufferInfo,
+            outputStream: OutputStream
+    ) {
+        val chunk = ByteArray(info.size)
+        buffer.position(info.offset)
+        buffer.limit(info.offset + info.size)
+        buffer.get(chunk)
+        outputStream.write(chunk)
     }
 
     private fun findTrackIndex(extractor: MediaExtractor, mimeTypePrefix: String): Int {

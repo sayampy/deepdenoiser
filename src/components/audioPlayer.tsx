@@ -2,7 +2,7 @@ import * as theme from "@/src/constants/theme";
 import Feather from "@expo/vector-icons/Feather";
 import { useFocusEffect } from "@react-navigation/native";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
-import React, { useCallback, useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import {
   Dimensions,
   Pressable,
@@ -32,6 +32,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   const trackWidth = useSharedValue(0);
   const progress = useSharedValue(0);
   const isSeeking = useSharedValue(false);
+  const isSeekingRef = useRef(false);
 
   const handleSeek = useCallback((value: number) => {
     if (player && status.duration > 0) {
@@ -39,12 +40,14 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
     }
   }, [player, status.duration]);
 
+  const syncSeekingToRef = (val: boolean) => { isSeekingRef.current = val; };
+
   useFocusEffect(useCallback(() => {
     return () => {
       try {
         if (player && status.playing) {
           player.pause();
-        };
+        }
       } catch (error) {
         console.warn(error);
       }
@@ -54,6 +57,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   const pan = Gesture.Pan()
     .onBegin((event) => {
       isSeeking.value = true;
+      runOnJS(syncSeekingToRef)(true);
       if (trackWidth.value > 0) {
         progress.value = Math.max(0, Math.min(1, event.x / trackWidth.value));
       }
@@ -65,14 +69,15 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
     })
     .onFinalize(() => {
       isSeeking.value = false;
+      runOnJS(syncSeekingToRef)(false);
       runOnJS(handleSeek)(progress.value);
     });
 
   useEffect(() => {
-    if (!isSeeking.value && status.duration > 0) {
+    if (!isSeekingRef.current && status.duration > 0) {
       progress.value = status.currentTime / status.duration;
     }
-  }, [status.currentTime, status.duration, isSeeking.value]);
+  }, [status.currentTime, status.duration]);
 
   useEffect(() => {
     if (status.currentTime >= status.duration && status.duration > 0 && !status.playing) {
