@@ -6,7 +6,7 @@
   <a href="https://github.com/sayampy/deepdenoiser/releases">
     <img src="https://img.shields.io/github/v/release/sayampy/deepdenoiser?label=version" alt="Version">
   </a>
-  <img src="https://img.shields.io/github/downloads/sayampy/deepdenoiser/total" alt="Downloads">
+  <img alt="GitHub Downloads (all assets, all releases)" src="https://img.shields.io/github/downloads/sayampy/deepdenoiser/total">
   <a href="LICENSE">
     <img src="https://img.shields.io/github/license/sayampy/deepdenoiser" alt="License">
   </a>
