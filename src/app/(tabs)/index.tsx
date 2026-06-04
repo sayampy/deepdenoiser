@@ -81,7 +81,7 @@ export default function HomeScreen() {
       pathname: "/processing/process",
       params: {
         fileuri: tempFile.uri,
-        filename: tempFile.name,
+        filename: encodeURIComponent(tempFile.name),
       },
     });
   };

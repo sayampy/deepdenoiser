@@ -22,8 +22,8 @@ export default function ShareHandler() {
           router.replace({
             pathname: "/processing/process",
             params: {
-              fileuri: payload.contentUri,
-              filename: (payload.originalName || "shared_file")
+              fileuri: encodeURIComponent(payload.contentUri),
+              filename: encodeURIComponent(payload.originalName || "shared_file")
             },
           });
 

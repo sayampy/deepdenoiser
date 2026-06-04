@@ -53,7 +53,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
 
       <View style={styles.footer}>
         <View style={styles.infoContainer}>
-          <Text style={styles.title} numberOfLines={1}>{name.replaceAll('%20', ' ')}</Text>
+          <Text style={styles.title} numberOfLines={1}>{decodeURIComponent(name)}</Text>
 
         </View>
       </View>

@@ -33,7 +33,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function ProcessScreen() {
   const router = useRouter();
-  const { fileuri, filename } = useLocalSearchParams<{ fileuri: string, filename: string }>();
+  const { fileuri: rawFileUri, filename: rawFilename } = useLocalSearchParams<{ fileuri: string, filename: string }>();
+  const fileuri = decodeURIComponent(rawFileUri || "");
+  const filename = decodeURIComponent(rawFilename || "");
 
   const [originalFile, setOriginalFile] = useState<fs.File | null>(null);
   const [isFileTypeVideo, setIsFileTypeVideo] = useState(false);
@@ -232,8 +234,7 @@ export default function ProcessScreen() {
         .split('.')
         .slice(0, -1)
         .join('.')
-        .replaceAll(/[!<>:"/\\|?*[\]#%：？\x00-\x1F]/g, '_')
-        .replaceAll(/\s+/g, ' ');
+        .replaceAll(/[/\x00]/g, '_');
 
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
       renameFile(finalWavFile, `${baseName}_denoised.wav`);
