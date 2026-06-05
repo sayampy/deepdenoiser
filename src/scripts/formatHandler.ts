@@ -1,6 +1,7 @@
 import {
   decodeToPCM,
   extractAndTranscodeAudio,
+  extractWavAudio,
   mixAudioVideo,
   pcmToWav as nativePcmToWav
 } from "@/modules/AudioProcessorModule";
@@ -45,7 +46,20 @@ export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; s
     );
     return { file: outputFile, sampleRate: result.sampleRate };
   } catch (error) {
-    console.error("Failed to decode to PCM.", error);
+    // MediaExtractor can fail to parse WAV files on some devices.
+    // Fall back to direct RIFF/WAVE parsing for .wav files.
+    if (/\.wav(\?|#|$)/i.test(file.uri)) {
+      try {
+        console.warn("MediaExtractor failed on WAV, trying direct extraction:", file.uri);
+        const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
+        const result = await extractWavAudio(file.uri, outputFile.uri);
+        return { file: outputFile, sampleRate: result.sampleRate };
+      } catch (wavError) {
+        throw new Error(
+          `PCM decoding failed: ${wavError instanceof Error ? wavError.message : String(wavError)}`,
+        );
+      }
+    }
     throw new Error(
       `PCM decoding failed: ${error instanceof Error ? error.message : String(error)}`,
     );

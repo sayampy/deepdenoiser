@@ -13,11 +13,14 @@ import com.linkedin.android.litr.MediaTransformer
 import com.linkedin.android.litr.TransformationListener
 import com.linkedin.android.litr.TransformationOptions
 import com.linkedin.android.litr.analytics.TrackTransformationInfo
+import java.io.BufferedInputStream
+import java.io.EOFException
 import java.io.File
 import java.io.FileInputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
@@ -634,5 +637,188 @@ class MediaProcessor(private val context: Context) {
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1)
         format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
         return format
+    }
+
+    // (6) Direct WAV PCM extraction (bypassed MediaExtractor)
+    // Reads a RIFF/WAVE file directly, extracts PCM, downmixes to mono 16-bit.
+    suspend fun extractWavAudio(inputPath: String, outputPath: String): Map<String, Any> =
+        withContext(Dispatchers.IO) {
+            val inputUri = getSafeUri(inputPath)
+            val outputUri = getSafeUri(outputPath)
+
+            var sampleRate = 48000
+            var channels = 1
+            var bitDepth = 16
+            var audioFormat = 1
+            var foundFmt = false
+            var foundData = false
+
+            context.contentResolver.openInputStream(inputUri)?.use { rawStream ->
+                BufferedInputStream(rawStream).use { stream ->
+
+                    val riffHeader = ByteArray(12)
+                    readFully(stream, riffHeader)
+                    if (String(riffHeader, 0, 4, Charsets.US_ASCII) != "RIFF" ||
+                        String(riffHeader, 8, 4, Charsets.US_ASCII) != "WAVE") {
+                        throw Exception("Not a valid WAV file: $inputPath")
+                    }
+
+                    context.contentResolver.openOutputStream(outputUri)?.use { outputStream ->
+                        val chunkId = ByteArray(4)
+                        val chunkSizeBytes = ByteArray(4)
+
+                        while (true) {
+                            try {
+                                readFully(stream, chunkId)
+                                readFully(stream, chunkSizeBytes)
+                            } catch (e: EOFException) {
+                                break
+                            }
+
+                            val id = String(chunkId, 0, 4, Charsets.US_ASCII)
+                            val size = readInt32LE(chunkSizeBytes, 0)
+                            val paddedSize = size + (size % 2)
+
+                            when (id) {
+                                "fmt " -> {
+                                    val readFmtSize = minOf(size, 16)
+                                    val fmtRaw = ByteArray(readFmtSize)
+                                    readFully(stream, fmtRaw)
+
+                                    val fmtData = if (readFmtSize < 16) {
+                                        ByteArray(16).also {
+                                            System.arraycopy(fmtRaw, 0, it, 0, readFmtSize)
+                                        }
+                                    } else fmtRaw
+
+                                    audioFormat = readInt16LE(fmtData, 0)
+                                    channels = readInt16LE(fmtData, 2).coerceAtLeast(1)
+                                    sampleRate = readInt32LE(fmtData, 4)
+                                    bitDepth = readInt16LE(fmtData, 14).coerceAtLeast(8)
+                                    foundFmt = true
+
+                                    val skipBytes = paddedSize - readFmtSize
+                                    if (skipBytes > 0) skipExact(stream, skipBytes.toLong())
+                                }
+                                "data" -> {
+                                    if (!foundFmt) {
+                                        throw Exception("Invalid WAV: data before fmt in $inputPath")
+                                    }
+                                    foundData = true
+
+                                    val bytesPerSample = (bitDepth / 8).coerceAtLeast(1)
+                                    val frameSize = channels * bytesPerSample
+                                    val buffer = ByteArray(8192)
+                                    var remaining = size.toLong() and 0xFFFFFFFFL
+
+                                    while (remaining > 0) {
+                                        val toRead =
+                                            minOf(buffer.size.toLong(), (remaining / frameSize) * frameSize)
+                                                .toInt()
+                                        if (toRead == 0) break
+
+                                        var totalRead = 0
+                                        while (totalRead < toRead) {
+                                            val n = stream.read(buffer, totalRead, toRead - totalRead)
+                                            if (n == -1) throw EOFException("Unexpected end of WAV data in $inputPath")
+                                            totalRead += n
+                                        }
+
+                                        val frames = totalRead / frameSize
+                                        processPcmFrames(
+                                            buffer, frames, frameSize, channels, bytesPerSample,
+                                            bitDepth, audioFormat, outputStream, inputPath
+                                        )
+                                        remaining -= (frames * frameSize).toLong()
+                                    }
+
+                                    if (size % 2 != 0) stream.read()
+                                }
+                                else -> {
+                                    if (paddedSize > 0) skipExact(stream, paddedSize.toLong())
+                                }
+                            }
+                        }
+
+                        if (!foundData) throw Exception("No audio data chunk found in $inputPath")
+                    } ?: throw Exception("Failed to open PCM output: $outputPath")
+                }
+            } ?: throw Exception("Failed to open WAV input: $inputPath")
+
+            mapOf("path" to outputPath, "sampleRate" to sampleRate)
+        }
+
+    private fun processPcmFrames(
+        buffer: ByteArray,
+        frames: Int,
+        frameSize: Int,
+        channels: Int,
+        bytesPerSample: Int,
+        bitDepth: Int,
+        audioFormat: Int,
+        outputStream: OutputStream,
+        inputPath: String
+    ) {
+        for (f in 0 until frames) {
+            val offset = f * frameSize
+            var sum = 0L
+            for (c in 0 until channels) {
+                val sampleOffset = offset + c * bytesPerSample
+                val sample = when {
+                    bitDepth <= 8 -> (buffer[sampleOffset].toInt() and 0xFF) - 128L
+                    bitDepth <= 16 -> readInt16LE(buffer, sampleOffset).toLong()
+                    bitDepth <= 24 -> {
+                        val v = (buffer[sampleOffset].toInt() and 0xFF) or
+                                ((buffer[sampleOffset + 1].toInt() and 0xFF) shl 8) or
+                                ((buffer[sampleOffset + 2].toInt() and 0xFF) shl 16)
+                        (if (v and 0x800000 != 0) v or 0xFF000000.toInt() else v).toLong() shr 8
+                    }
+                    bitDepth == 32 && audioFormat == 3 -> {
+                        val fv = ByteBuffer.wrap(buffer, sampleOffset, 4)
+                            .order(ByteOrder.LITTLE_ENDIAN).getFloat()
+                        (fv.coerceIn(-1f, 1f) * 32767f).toLong()
+                    }
+                    bitDepth >= 32 -> readInt32LE(buffer, sampleOffset).toLong() shr 16
+                    else -> throw Exception("Unsupported bit depth: $bitDepth in $inputPath")
+                }
+                sum += sample
+            }
+
+            val mono = (sum / channels)
+                .coerceIn(Short.MIN_VALUE.toLong(), Short.MAX_VALUE.toLong())
+                .toShort()
+            outputStream.write(mono.toInt() and 0xFF)
+            outputStream.write((mono.toInt() shr 8) and 0xFF)
+        }
+    }
+
+    private fun readFully(stream: InputStream, buffer: ByteArray) {
+        var offset = 0
+        while (offset < buffer.size) {
+            val read = stream.read(buffer, offset, buffer.size - offset)
+            if (read == -1) throw EOFException("Unexpected end of stream")
+            offset += read
+        }
+    }
+
+    private fun skipExact(stream: InputStream, count: Long) {
+        var remaining = count
+        while (remaining > 0) {
+            val skipped = stream.skip(remaining)
+            if (skipped <= 0) throw EOFException("Unexpected end of stream during skip")
+            remaining -= skipped
+        }
+    }
+
+    private fun readInt16LE(buffer: ByteArray, offset: Int): Int {
+        return (buffer[offset].toInt() and 0xFF) or
+                ((buffer[offset + 1].toInt() and 0xFF) shl 8)
+    }
+
+    private fun readInt32LE(buffer: ByteArray, offset: Int): Int {
+        return (buffer[offset].toInt() and 0xFF) or
+                ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
+                ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
+                ((buffer[offset + 3].toInt() and 0xFF) shl 24)
     }
 }

@@ -19,6 +19,10 @@ declare class AudioProcessorModule extends NativeModule<AudioProcessorModuleEven
     channels: number,
     bitDepth: number,
   ): Promise<string>;
+  extractWavAudio(
+    inputUri: string,
+    outputUri: string,
+  ): Promise<{ path: string; sampleRate: number }>;
   mixAudioVideo(
     videoUri: string,
     audioUri: string,

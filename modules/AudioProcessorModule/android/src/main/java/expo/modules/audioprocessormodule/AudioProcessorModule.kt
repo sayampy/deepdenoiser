@@ -79,6 +79,25 @@ class AudioProcessorModule : Module() {
             }
         }
 
+        AsyncFunction("extractWavAudio") {
+                input: String,
+                output: String,
+                promise: expo.modules.kotlin.Promise ->
+            moduleScope.launch {
+                try {
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
+                    val result = processor.extractWavAudio(input, output)
+                    promise.resolve(result)
+                } catch (e: Exception) {
+                    promise.reject("ERR_WAV_EXTRACT", e.message ?: e.toString(), e)
+                }
+            }
+        }
+
         AsyncFunction("mixAudioVideo") {
                 videoPath: String,
                 audioPath: String,
