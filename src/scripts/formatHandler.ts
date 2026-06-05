@@ -257,18 +257,23 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
 
   return outputFile;
 }
-export async function saveToDevice(file: fs.File) {
+export async function saveToDevice(file: fs.File): Promise<boolean> {
+  const { status } = await MediaLibrary.requestPermissionsAsync();
+  if (status !== 'granted') return false;
+
   try {
     const asset = await MediaLibrary.createAssetAsync(file.uri);
     const album = await MediaLibrary.getAlbumAsync("DeepDenoiser");
     if (album) {
-      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      await MediaLibrary.addAssetsToAlbumAsync([asset], album);
     } else {
-      await MediaLibrary.createAlbumAsync("DeepDenoiser", asset, false);
+      await MediaLibrary.createAlbumAsync("DeepDenoiser", asset);
     }
     trackAppEvent("save_file");
+    return true;
   } catch (e) {
     console.error("Failed to save file to device:", e);
+    return false;
   }
 }
 export async function mergeAudioVideo(

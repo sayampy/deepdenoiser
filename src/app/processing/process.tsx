@@ -355,7 +355,12 @@ export default function ProcessScreen() {
               <TouchableOpacity
                 style={styles.saveBtn}
                 onPress={async () => {
-                  if (denoisedFile) await saveToDevice(denoisedFile);
+                  if (!denoisedFile) return;
+                  const saved = await saveToDevice(denoisedFile);
+                  if (!saved) {
+                    setError(new Error("Media library access is required to save files. Grant storage permission in Settings."));
+                    setIsErrorModalVisible(true);
+                  }
                 }}
               >
                 <Feather name="download" size={18} color={theme.COLORS.background} />
