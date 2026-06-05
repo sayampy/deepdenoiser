@@ -8,11 +8,13 @@ import * as fs from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { trackAppEvent } from "./analytics";
 
+const ILLEGAL_FS_CHARS = /[^a-zA-Z0-9._-]/g;
+
 export async function toWav(file: fs.File): Promise<fs.File> {
   try {
     // We transcode to high-bitrate AAC first to handle resampling/downmixing via Litr
     // if the source is not already compatible.
-    const transcodedAudio = new fs.File(fs.Paths.cache, `transcoded_${Date.now()}.m4a`);
+    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.m4a`);
     await extractAndTranscodeAudio(
       file.uri,
       transcodedAudio.uri,
@@ -36,7 +38,7 @@ export async function toWav(file: fs.File): Promise<fs.File> {
 
 export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; sampleRate: number }> {
   try {
-    const outputFile = new fs.File(fs.Paths.cache, `decoded_${Date.now()}.pcm`);
+    const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
     const result = await decodeToPCM(
       file.uri,
       outputFile.uri,
@@ -54,7 +56,7 @@ export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promi
   try {
     const outputFile = new fs.File(
       fs.Paths.cache,
-      `Denoised_${Date.now()}.wav`,
+      `denoised_${Date.now()}.wav`,
     );
 
     // Use native pcmToWav to avoid loading entire file into memory as base64
@@ -275,7 +277,7 @@ export async function mergeAudioVideo(
 ): Promise<fs.File> {
   try {
     // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
-    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_transcoded.m4a`);
+    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.m4a`);
     await extractAndTranscodeAudio(
       audio.uri,
       transcodedAudio.uri.replace('file://', ''),
@@ -296,11 +298,18 @@ export async function mergeAudioVideo(
     );
   }
 }
+export function sanitizeFileName(name: string): string {
+  return name
+    .replaceAll(ILLEGAL_FS_CHARS, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .trim() || 'denoised';
+}
+
 export function renameFile(file: fs.File, newName: string): fs.File {
-    const check_file = new fs.File(fs.Paths.cache, encodeURIComponent(newName));
-    if (check_file.exists) {
-      check_file.delete();
-    }
-    file.rename(newName);
+    const safeName = sanitizeFileName(newName);
+    const checkPath = new fs.File(fs.Paths.cache, encodeURIComponent(safeName));
+    if (checkPath.exists) checkPath.delete();
+    file.rename(safeName);
     return file;
 }

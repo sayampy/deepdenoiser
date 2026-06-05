@@ -12,6 +12,7 @@ import {
   PCMtoWav,
   readPCMChunks,
   renameFile,
+  sanitizeFileName,
   saveToDevice,
   writePCMChunk,
 } from "@/src/scripts/formatHandler";
@@ -159,7 +160,7 @@ export default function ProcessScreen() {
       const fftSize = 960;
       denoiser.setupStreaming(attenLimDb);
 
-      const denoisedPcmFile = new fs.File(fs.Paths.cache, `processed_${Date.now()}.pcm`);
+      const denoisedPcmFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
       if (denoisedPcmFile.exists) denoisedPcmFile.delete();
 
       let inputBuffer = new Float32Array(fftSize);
@@ -230,18 +231,14 @@ export default function ProcessScreen() {
 
       setEta(null);
       setProgressText("Finalizing media...");
-      const baseName = filename
-        .split('.')
-        .slice(0, -1)
-        .join('.')
-        .replaceAll(/[/\x00]/g, '_');
 
+      const originalBase = filename.split('.').slice(0, -1).join('.');
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
-      renameFile(finalWavFile, `${baseName}_denoised.wav`);
+      renameFile(finalWavFile, `${sanitizeFileName(originalBase)}_denoised.wav`);
       if (isFileTypeVideo) {
         setProgressText("Merging audio with video...");
         const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);
-        renameFile(finalVideoFile, `${baseName}_denoised.mp4`);
+        renameFile(finalVideoFile, `${sanitizeFileName(originalBase)}_denoised.mp4`);
         setDenoisedFile(finalVideoFile);
       } else {
         setDenoisedFile(finalWavFile);

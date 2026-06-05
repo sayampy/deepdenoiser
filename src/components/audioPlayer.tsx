@@ -116,7 +116,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
     transform: [{ scale: isSeeking.value ? 1.2 : 1 }]
   }));
 
-  const displayName = decodeURIComponent(name);
+  const displayName = name;
 
   return (
     <View style={styles.container}>
