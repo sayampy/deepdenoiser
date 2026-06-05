@@ -257,17 +257,17 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
 
   return outputFile;
 }
-export async function saveToDevice(file: fs.File): Promise<boolean> {
+export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): Promise<boolean> {
   const { status } = await MediaLibrary.requestPermissionsAsync();
   if (status !== 'granted') return false;
 
   try {
-    const asset = await MediaLibrary.createAssetAsync(file.uri);
-    const album = await MediaLibrary.getAlbumAsync("DeepDenoiser");
+    const album = await MediaLibrary.getAlbumAsync(albumName);
     if (album) {
-      await MediaLibrary.addAssetsToAlbumAsync([asset], album);
+      await MediaLibrary.createAssetAsync(file.uri, album.id);
     } else {
-      await MediaLibrary.createAlbumAsync("DeepDenoiser", asset);
+      // const asset = await MediaLibrary.createAssetAsync(file.uri);
+      await MediaLibrary.createAlbumAsync(albumName, undefined, false, file.uri);
     }
     trackAppEvent("save_file");
     return true;
@@ -312,9 +312,9 @@ export function sanitizeFileName(name: string): string {
 }
 
 export function renameFile(file: fs.File, newName: string): fs.File {
-    const safeName = sanitizeFileName(newName);
-    const checkPath = new fs.File(fs.Paths.cache, encodeURIComponent(safeName));
-    if (checkPath.exists) checkPath.delete();
-    file.rename(safeName);
-    return file;
+  const safeName = sanitizeFileName(newName);
+  const checkPath = new fs.File(fs.Paths.cache, encodeURIComponent(safeName));
+  if (checkPath.exists) checkPath.delete();
+  file.rename(safeName);
+  return file;
 }

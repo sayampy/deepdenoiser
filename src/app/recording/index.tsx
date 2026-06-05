@@ -371,6 +371,7 @@ export default function RecordingScreen() {
                 file={finalOriginalWav}
                 label="Save Original"
                 savedLabel="Saved"
+                albumName="DeepDenoiser/Recordings"
                 style={[theme.Styles.button, styles.saveSubButton]}
                 onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
               />
@@ -388,6 +389,7 @@ export default function RecordingScreen() {
                 file={finalDenoisedWav}
                 label="Save Denoised"
                 savedLabel="Saved"
+                albumName="DeepDenoiser/Recordings"
                 style={[theme.Styles.button, styles.saveSubButton, { backgroundColor: theme.COLORS.success }]}
                 savedBg={theme.COLORS.success}
                 onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
