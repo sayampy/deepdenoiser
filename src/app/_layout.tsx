@@ -1,6 +1,5 @@
 import UpdateModal from "@/src/components/UpdateModal";
 import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
-import { initAnalytics, trackAppEvent } from "@/src/scripts/analytics";
 import { Feather } from "@expo/vector-icons";
 import * as Audio from "expo-audio";
 import { useFonts } from "expo-font";
@@ -39,17 +38,17 @@ export default function RootLayout() {
     ...Feather.font,
   });
 
-  // Analytics — run once on mount
-  useEffect(() => {
-    (async () => {
-      try {
-        await initAnalytics();
-        await trackAppEvent("app_open");
-      } catch (e) {
-        console.warn(e);
-      }
-    })();
-  }, []);
+  // // Analytics — run once on mount
+  // useEffect(() => {
+  //   (async () => {
+  //     try {
+  //       await initAnalytics();
+  //       // await trackAppEvent("app_open");
+  //     } catch (e) {
+  //       console.warn(e);
+  //     }
+  //   })();
+  // }, []);
 
   // Splash — hide when fonts are ready
   useEffect(() => {

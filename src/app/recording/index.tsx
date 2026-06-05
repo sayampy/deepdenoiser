@@ -1,6 +1,8 @@
 import AudioPlayer from "@/src/components/audioPlayer";
 import ErrorModal from "@/src/components/ErrorModal";
 import SaveButton from "@/src/components/SaveButton";
+import ShareBtn from "@/src/components/shareBtn";
+import CustomSlider from "@/src/components/customSlider";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
@@ -31,6 +33,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const SAMPLE_RATE = 48000;
 const HOP_SIZE = 512;
+const ALSTEPS = [0, 5, 10, 15, 20, 30, 40];
 
 export default function RecordingScreen() {
   const router = useRouter();
@@ -57,6 +60,7 @@ export default function RecordingScreen() {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+  const [attenLimDb, setAttenLimDb] = useState(0);
 
   const denoiserRef = useRef<DeepFilterNet | null>(null);
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
@@ -198,7 +202,7 @@ export default function RecordingScreen() {
       processingQueueRef.current = Promise.resolve();
 
       // Reset denoiser states for new recording
-      denoiserRef.current?.setupStreaming(0);
+      denoiserRef.current?.setupStreaming(attenLimDb);
 
       const config: RecordingConfig = {
         sampleRate: SAMPLE_RATE,
@@ -318,6 +322,20 @@ export default function RecordingScreen() {
             </Text>
 
             {!isRecording ? (
+              <View style={styles.sliderContainer}>
+                <CustomSlider
+                  label="Attenuation Limit"
+                  value={attenLimDb}
+                  onValueChange={setAttenLimDb}
+                  min={0}
+                  max={40}
+                  steps={ALSTEPS}
+                  info={`Limits how aggressively the AI removes noise.\n0dB = most aggressive (quietest background).\n40dB = preserves nearly all ambient sound.\nStart at 0dB and increase if audio sounds too processed.`}
+                />
+              </View>
+            ) : null}
+
+            {!isRecording ? (
               <Pressable 
                 style={({ pressed }) => [
                   styles.recordButton,
@@ -367,14 +385,17 @@ export default function RecordingScreen() {
                 <Text style={styles.resultTitle}>Original Audio</Text>
               </View>
               <AudioPlayer uri={finalOriginalWav.uri} name="Original recording" />
-              <SaveButton
-                file={finalOriginalWav}
-                label="Save Original"
-                savedLabel="Saved"
-                albumName="DeepDenoiser/Recordings"
-                style={[theme.Styles.button, styles.saveSubButton]}
-                onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
-              />
+              <View style={styles.resultActions}>
+                <SaveButton
+                  file={finalOriginalWav}
+                  label="Save Original"
+                  savedLabel="Saved"
+                  albumName="DeepDenoiser/Recordings"
+                  style={[theme.Styles.button, styles.saveSubButton]}
+                  onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+                />
+                <ShareBtn uri={finalOriginalWav.uri} />
+              </View>
             </View>
 
             <View style={[styles.resultCard, { borderColor: theme.COLORS.success, borderWidth: 1, marginTop: 24 }]}>
@@ -385,15 +406,18 @@ export default function RecordingScreen() {
                 <Text style={[styles.resultTitle, { color: theme.COLORS.success }]}>Denoised Audio</Text>
               </View>
               <AudioPlayer uri={finalDenoisedWav!.uri} name="Denoised recording" />
-              <SaveButton
-                file={finalDenoisedWav}
-                label="Save Denoised"
-                savedLabel="Saved"
-                albumName="DeepDenoiser/Recordings"
-                style={[theme.Styles.button, styles.saveSubButton, { backgroundColor: theme.COLORS.success }]}
-                savedBg={theme.COLORS.success}
-                onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
-              />
+              <View style={styles.resultActions}>
+                <SaveButton
+                  file={finalDenoisedWav}
+                  label="Save Denoised"
+                  savedLabel="Saved"
+                  albumName="DeepDenoiser/Recordings"
+                  style={[theme.Styles.button, styles.saveSubButton, { backgroundColor: theme.COLORS.success }]}
+                  savedBg={theme.COLORS.success}
+                  onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+                />
+                <ShareBtn uri={finalDenoisedWav!.uri} />
+              </View>
             </View>
 
             <TouchableOpacity
@@ -500,6 +524,11 @@ const styles = StyleSheet.create({
     marginTop: 100,
     gap: 20,
   },
+  sliderContainer: {
+    width: "100%",
+    paddingHorizontal: theme.SPACING.medium,
+    marginBottom: 40,
+  },
   recordButton: {
     alignItems: "center",
   },
@@ -583,6 +612,13 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1.5,
   },
+  resultActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 24,
+    gap: 12,
+  },
   zapIcon: {
     width: 24,
     height: 24,
@@ -592,7 +628,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   saveSubButton: {
-    marginTop: 24,
+    flex: 1,
     height: 54,
     borderRadius: 18,
     flexDirection: 'row',
