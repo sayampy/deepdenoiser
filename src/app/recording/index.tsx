@@ -1,9 +1,10 @@
 import AudioPlayer from "@/src/components/audioPlayer";
 import ErrorModal from "@/src/components/ErrorModal";
+import SaveButton from "@/src/components/SaveButton";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
-import { PCMtoWav, saveToDevice, writePCMChunk } from "@/src/scripts/formatHandler";
+import { PCMtoWav, writePCMChunk } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
 import {
   AudioDataEvent,
@@ -366,13 +367,13 @@ export default function RecordingScreen() {
                 <Text style={styles.resultTitle}>Original Audio</Text>
               </View>
               <AudioPlayer uri={finalOriginalWav.uri} name="Original recording" />
-              <TouchableOpacity
+              <SaveButton
+                file={finalOriginalWav}
+                label="Save Original"
+                savedLabel="Saved"
                 style={[theme.Styles.button, styles.saveSubButton]}
-                onPress={() => saveToDevice(finalOriginalWav)}
-              >
-                <Feather name="download" size={18} color={theme.COLORS.background} />
-                <Text style={theme.Styles.buttonText}>Save Original</Text>
-              </TouchableOpacity>
+                onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+              />
             </View>
 
             <View style={[styles.resultCard, { borderColor: theme.COLORS.success, borderWidth: 1, marginTop: 24 }]}>
@@ -383,13 +384,14 @@ export default function RecordingScreen() {
                 <Text style={[styles.resultTitle, { color: theme.COLORS.success }]}>Denoised Audio</Text>
               </View>
               <AudioPlayer uri={finalDenoisedWav!.uri} name="Denoised recording" />
-              <TouchableOpacity
+              <SaveButton
+                file={finalDenoisedWav}
+                label="Save Denoised"
+                savedLabel="Saved"
                 style={[theme.Styles.button, styles.saveSubButton, { backgroundColor: theme.COLORS.success }]}
-                onPress={() => saveToDevice(finalDenoisedWav!)}
-              >
-                <Feather name="download" size={18} color={theme.COLORS.background} />
-                <Text style={theme.Styles.buttonText}>Save Denoised</Text>
-              </TouchableOpacity>
+                savedBg={theme.COLORS.success}
+                onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+              />
             </View>
 
             <TouchableOpacity

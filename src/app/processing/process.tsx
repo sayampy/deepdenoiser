@@ -1,6 +1,7 @@
 import AdvanceSettings from "@/src/components/advanceSettings";
 import AudioPlayer from "@/src/components/audioPlayer";
 import ErrorModal from "@/src/components/ErrorModal";
+import SaveButton from "@/src/components/SaveButton";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
@@ -13,7 +14,6 @@ import {
   readPCMChunks,
   renameFile,
   sanitizeFileName,
-  saveToDevice,
   writePCMChunk,
 } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
@@ -352,20 +352,12 @@ export default function ProcessScreen() {
             </View>
 
             <View style={styles.resultActions}>
-              <TouchableOpacity
+              <SaveButton
+                file={denoisedFile}
+                label="Save to Gallery"
                 style={styles.saveBtn}
-                onPress={async () => {
-                  if (!denoisedFile) return;
-                  const saved = await saveToDevice(denoisedFile);
-                  if (!saved) {
-                    setError(new Error("Media library access is required to save files. Grant storage permission in Settings."));
-                    setIsErrorModalVisible(true);
-                  }
-                }}
-              >
-                <Feather name="download" size={18} color={theme.COLORS.background} />
-                <Text style={styles.saveBtnText}>Save to Gallery</Text>
-              </TouchableOpacity>
+                onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+              />
               <ShareBtn uri={denoisedFile?.uri || ""} />
             </View>
           </View>
@@ -556,19 +548,10 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     backgroundColor: theme.COLORS.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 16,
     flex: 1,
-    gap: 10,
-  },
-  saveBtnText: {
-    color: theme.COLORS.background,
-    fontWeight: "800",
-    fontSize: 14,
   },
   timeStats: {
     flexDirection: "row",
