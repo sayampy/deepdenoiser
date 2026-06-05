@@ -1,11 +1,18 @@
 import AdvanceSettings from "@/src/components/advanceSettings";
 import AudioPlayer from "@/src/components/audioPlayer";
+import DonationModal from "@/src/components/DonationModal";
+import DonationReminderModal from "@/src/components/DonationReminderModal";
 import ErrorModal from "@/src/components/ErrorModal";
 import SaveButton from "@/src/components/SaveButton";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
+import {
+  incrementDenoiseCount,
+  markDonationPromptShown,
+  shouldShowDonationReminder,
+} from "@/src/scripts/settings";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
 import {
   decodeToPCMFile,
@@ -61,6 +68,8 @@ export default function ProcessScreen() {
 
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+  const [isDonationReminderVisible, setIsDonationReminderVisible] = useState(false);
+  const [isDonationModalVisible, setIsDonationModalVisible] = useState(false);
 
   const timeHandler = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
@@ -268,6 +277,18 @@ export default function ProcessScreen() {
     }
   };
 
+  useEffect(() => {
+    if (!denoisedFile) return;
+    (async () => {
+      await incrementDenoiseCount();
+      const shouldShow = await shouldShowDonationReminder();
+      if (shouldShow) {
+        await markDonationPromptShown();
+        setIsDonationReminderVisible(true);
+      }
+    })();
+  }, [denoisedFile]);
+
   if (isLoading) {
     return (
       <SafeAreaView style={[theme.Styles.container, theme.Styles.centered]}>
@@ -404,6 +425,15 @@ export default function ProcessScreen() {
           </View>
         )}
       </View>
+      <DonationReminderModal
+        visible={isDonationReminderVisible}
+        onClose={() => setIsDonationReminderVisible(false)}
+        onOpenDonation={() => setIsDonationModalVisible(true)}
+      />
+      <DonationModal
+        visible={isDonationModalVisible}
+        onClose={() => setIsDonationModalVisible(false)}
+      />
       <ErrorModal visible={isErrorModalVisible} error={error} onClose={() => setIsErrorModalVisible(false)} />
     </SafeAreaView>
   );

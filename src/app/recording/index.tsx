@@ -1,10 +1,17 @@
 import AudioPlayer from "@/src/components/audioPlayer";
+import DonationModal from "@/src/components/DonationModal";
+import DonationReminderModal from "@/src/components/DonationReminderModal";
 import ErrorModal from "@/src/components/ErrorModal";
 import SaveButton from "@/src/components/SaveButton";
 import ShareBtn from "@/src/components/shareBtn";
 import CustomSlider from "@/src/components/customSlider";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
+import {
+  incrementDenoiseCount,
+  markDonationPromptShown,
+  shouldShowDonationReminder,
+} from "@/src/scripts/settings";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
 import { PCMtoWav, writePCMChunk } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
@@ -60,6 +67,8 @@ export default function RecordingScreen() {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+  const [isDonationReminderVisible, setIsDonationReminderVisible] = useState(false);
+  const [isDonationModalVisible, setIsDonationModalVisible] = useState(false);
   const [attenLimDb, setAttenLimDb] = useState(0);
 
   const denoiserRef = useRef<DeepFilterNet | null>(null);
@@ -278,6 +287,18 @@ export default function RecordingScreen() {
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
+  useEffect(() => {
+    if (!finalDenoisedWav) return;
+    (async () => {
+      await incrementDenoiseCount();
+      const shouldShow = await shouldShowDonationReminder();
+      if (shouldShow) {
+        await markDonationPromptShown();
+        setIsDonationReminderVisible(true);
+      }
+    })();
+  }, [finalDenoisedWav]);
+
   return (
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
@@ -434,6 +455,15 @@ export default function RecordingScreen() {
         )}
       </ScrollView>
 
+      <DonationReminderModal
+        visible={isDonationReminderVisible}
+        onClose={() => setIsDonationReminderVisible(false)}
+        onOpenDonation={() => setIsDonationModalVisible(true)}
+      />
+      <DonationModal
+        visible={isDonationModalVisible}
+        onClose={() => setIsDonationModalVisible(false)}
+      />
       <ErrorModal
         visible={isErrorModalVisible}
         error={error}
