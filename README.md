@@ -42,13 +42,12 @@ Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on yo
 ---
 
 <p align="center" float="left">
-  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/1.png" width="33%" />
-  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/2.png" width="33%" />
+  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/1.jpg" width="33%" />
+  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/2.jpg" width="33%" />
+  <img src="/fastlane/metadata/android/en-US/images/phoneScreenshots/3.jpg" width="33%" />
 </p>
 
-
 https://github.com/user-attachments/assets/29f147db-ff8b-486a-877d-1d765922ed5c
-
 
 ---
 
