@@ -75,11 +75,18 @@ export default function RecordingScreen() {
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const isStoppingRef = useRef(false);
+  const pausedDurationRef = useRef(0);
   const isPausedRef = useRef(isPaused);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+
+  useEffect(() => {
+    if (isPaused) {
+      pausedDurationRef.current = durationMs;
+    }
+  }, [isPaused, durationMs]);
 
   useEffect(() => {
     const initDenoiser = async () => {
@@ -321,7 +328,7 @@ export default function RecordingScreen() {
         {!finalOriginalWav && !isFinalizing && (
           <View style={styles.timerContainer}>
 
-            <Text style={styles.timerText}>{formatTime(durationMs)}</Text>
+            <Text style={styles.timerText}>{formatTime(isPaused ? pausedDurationRef.current : durationMs)}</Text>
             {isRecording && !isPaused && (
               <View style={styles.recordingIndicator}>
                 <Animated.View style={[styles.pulseCircle, { transform: [{ scale: pulseAnim }] }]} />
@@ -339,10 +346,10 @@ export default function RecordingScreen() {
         ) : !finalOriginalWav ? (
           <View style={styles.controlsContainer}>
             <Text style={styles.statusText}>
-              {!isRecording ? "Ready to record" : isPaused ? "Recording paused" : "Denoising in Real-time"}
+              {!isRecording && !isPaused ? "Ready to record" : isPaused ? "Recording paused" : "Denoising in Real-time"}
             </Text>
 
-            {!isRecording ? (
+            {!isRecording && !isPaused ? (
               <View style={styles.sliderContainer}>
                 <CustomSlider
                   label="Attenuation Limit"
@@ -356,7 +363,7 @@ export default function RecordingScreen() {
               </View>
             ) : null}
 
-            {!isRecording ? (
+            {!isRecording && !isPaused ? (
               <Pressable 
                 style={({ pressed }) => [
                   styles.recordButton,
