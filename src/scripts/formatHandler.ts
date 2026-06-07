@@ -1,6 +1,7 @@
 import {
   decodeToPCM,
   extractAndTranscodeAudio,
+  extractWavAudio,
   mixAudioVideo,
   pcmToWav as nativePcmToWav
 } from "@/modules/AudioProcessorModule";
@@ -8,11 +9,13 @@ import * as fs from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { trackAppEvent } from "./analytics";
 
+const ILLEGAL_FS_CHARS = /[^a-zA-Z0-9._-]/g;
+
 export async function toWav(file: fs.File): Promise<fs.File> {
   try {
     // We transcode to high-bitrate AAC first to handle resampling/downmixing via Litr
     // if the source is not already compatible.
-    const transcodedAudio = new fs.File(fs.Paths.cache, `transcoded_${Date.now()}.m4a`);
+    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.m4a`);
     await extractAndTranscodeAudio(
       file.uri,
       transcodedAudio.uri,
@@ -36,14 +39,27 @@ export async function toWav(file: fs.File): Promise<fs.File> {
 
 export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; sampleRate: number }> {
   try {
-    const outputFile = new fs.File(fs.Paths.cache, `decoded_${Date.now()}.pcm`);
+    const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
     const result = await decodeToPCM(
       file.uri,
       outputFile.uri,
     );
     return { file: outputFile, sampleRate: result.sampleRate };
   } catch (error) {
-    console.error("Failed to decode to PCM.", error);
+    // MediaExtractor can fail to parse WAV files on some devices.
+    // Fall back to direct RIFF/WAVE parsing for .wav files.
+    if (/\.wav(\?|#|$)/i.test(file.uri)) {
+      try {
+        console.warn("MediaExtractor failed on WAV, trying direct extraction:", file.uri);
+        const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
+        const result = await extractWavAudio(file.uri, outputFile.uri);
+        return { file: outputFile, sampleRate: result.sampleRate };
+      } catch (wavError) {
+        throw new Error(
+          `PCM decoding failed: ${wavError instanceof Error ? wavError.message : String(wavError)}`,
+        );
+      }
+    }
     throw new Error(
       `PCM decoding failed: ${error instanceof Error ? error.message : String(error)}`,
     );
@@ -54,7 +70,7 @@ export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promi
   try {
     const outputFile = new fs.File(
       fs.Paths.cache,
-      `Denoised_${Date.now()}.wav`,
+      `denoised_${Date.now()}.wav`,
     );
 
     // Use native pcmToWav to avoid loading entire file into memory as base64
@@ -255,18 +271,23 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
 
   return outputFile;
 }
-export async function saveToDevice(file: fs.File) {
+export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): Promise<boolean> {
+  const { status } = await MediaLibrary.requestPermissionsAsync();
+  if (status !== 'granted') return false;
+
   try {
-    const asset = await MediaLibrary.createAssetAsync(file.uri);
-    const album = await MediaLibrary.getAlbumAsync("DeepDenoiser");
+    const album = await MediaLibrary.getAlbumAsync(albumName);
     if (album) {
-      await MediaLibrary.addAssetsToAlbumAsync([asset], album, false);
+      await MediaLibrary.createAssetAsync(file.uri, album.id);
     } else {
-      await MediaLibrary.createAlbumAsync("DeepDenoiser", asset, false);
+      // const asset = await MediaLibrary.createAssetAsync(file.uri);
+      await MediaLibrary.createAlbumAsync(albumName, undefined, false, file.uri);
     }
     trackAppEvent("save_file");
+    return true;
   } catch (e) {
     console.error("Failed to save file to device:", e);
+    return false;
   }
 }
 export async function mergeAudioVideo(
@@ -275,7 +296,7 @@ export async function mergeAudioVideo(
 ): Promise<fs.File> {
   try {
     // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
-    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_transcoded.m4a`);
+    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.m4a`);
     await extractAndTranscodeAudio(
       audio.uri,
       transcodedAudio.uri.replace('file://', ''),
@@ -296,11 +317,18 @@ export async function mergeAudioVideo(
     );
   }
 }
+export function sanitizeFileName(name: string): string {
+  return name
+    .replaceAll(ILLEGAL_FS_CHARS, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .trim() || 'denoised';
+}
+
 export function renameFile(file: fs.File, newName: string): fs.File {
-  const check_file = new fs.File(fs.Paths.cache, newName);
-  if (check_file.exists) {
-    check_file.delete();
-  }
-  file.rename(newName);
+  const safeName = sanitizeFileName(newName);
+  const checkPath = new fs.File(fs.Paths.cache, encodeURIComponent(safeName));
+  if (checkPath.exists) checkPath.delete();
+  file.rename(safeName);
   return file;
 }

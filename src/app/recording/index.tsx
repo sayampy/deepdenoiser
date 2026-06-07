@@ -1,9 +1,19 @@
 import AudioPlayer from "@/src/components/audioPlayer";
+import DonationModal from "@/src/components/DonationModal";
+import DonationReminderModal from "@/src/components/DonationReminderModal";
 import ErrorModal from "@/src/components/ErrorModal";
+import SaveButton from "@/src/components/SaveButton";
+import ShareBtn from "@/src/components/shareBtn";
+import CustomSlider from "@/src/components/customSlider";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
+import {
+  incrementDenoiseCount,
+  markDonationPromptShown,
+  shouldShowDonationReminder,
+} from "@/src/scripts/settings";
 import { DeepFilterNet } from "@/src/scripts/Denoiser";
-import { PCMtoWav, saveToDevice, writePCMChunk } from "@/src/scripts/formatHandler";
+import { PCMtoWav, writePCMChunk } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
 import {
   AudioDataEvent,
@@ -30,6 +40,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const SAMPLE_RATE = 48000;
 const HOP_SIZE = 512;
+const ALSTEPS = [0, 5, 10, 15, 20, 30, 40];
 
 export default function RecordingScreen() {
   const router = useRouter();
@@ -56,16 +67,26 @@ export default function RecordingScreen() {
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+  const [isDonationReminderVisible, setIsDonationReminderVisible] = useState(false);
+  const [isDonationModalVisible, setIsDonationModalVisible] = useState(false);
+  const [attenLimDb, setAttenLimDb] = useState(0);
 
   const denoiserRef = useRef<DeepFilterNet | null>(null);
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const isStoppingRef = useRef(false);
+  const pausedDurationRef = useRef(0);
   const isPausedRef = useRef(isPaused);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+
+  useEffect(() => {
+    if (isPaused) {
+      pausedDurationRef.current = durationMs;
+    }
+  }, [isPaused, durationMs]);
 
   useEffect(() => {
     const initDenoiser = async () => {
@@ -197,7 +218,7 @@ export default function RecordingScreen() {
       processingQueueRef.current = Promise.resolve();
 
       // Reset denoiser states for new recording
-      denoiserRef.current?.setupStreaming(0);
+      denoiserRef.current?.setupStreaming(attenLimDb);
 
       const config: RecordingConfig = {
         sampleRate: SAMPLE_RATE,
@@ -273,6 +294,18 @@ export default function RecordingScreen() {
     return `${m}:${s < 10 ? "0" : ""}${s}`;
   };
 
+  useEffect(() => {
+    if (!finalDenoisedWav) return;
+    (async () => {
+      await incrementDenoiseCount();
+      const shouldShow = await shouldShowDonationReminder();
+      if (shouldShow) {
+        await markDonationPromptShown();
+        setIsDonationReminderVisible(true);
+      }
+    })();
+  }, [finalDenoisedWav]);
+
   return (
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
@@ -295,7 +328,7 @@ export default function RecordingScreen() {
         {!finalOriginalWav && !isFinalizing && (
           <View style={styles.timerContainer}>
 
-            <Text style={styles.timerText}>{formatTime(durationMs)}</Text>
+            <Text style={styles.timerText}>{formatTime(isPaused ? pausedDurationRef.current : durationMs)}</Text>
             {isRecording && !isPaused && (
               <View style={styles.recordingIndicator}>
                 <Animated.View style={[styles.pulseCircle, { transform: [{ scale: pulseAnim }] }]} />
@@ -313,10 +346,24 @@ export default function RecordingScreen() {
         ) : !finalOriginalWav ? (
           <View style={styles.controlsContainer}>
             <Text style={styles.statusText}>
-              {!isRecording ? "Ready to record" : isPaused ? "Recording paused" : "Denoising in Real-time"}
+              {!isRecording && !isPaused ? "Ready to record" : isPaused ? "Recording paused" : "Denoising in Real-time"}
             </Text>
 
-            {!isRecording ? (
+            {!isRecording && !isPaused ? (
+              <View style={styles.sliderContainer}>
+                <CustomSlider
+                  label="Attenuation Limit"
+                  value={attenLimDb}
+                  onValueChange={setAttenLimDb}
+                  min={0}
+                  max={40}
+                  steps={ALSTEPS}
+                  info={`Limits how aggressively the AI removes noise.\n0dB = most aggressive (quietest background).\n40dB = preserves nearly all ambient sound.\nStart at 0dB and increase if audio sounds too processed.`}
+                />
+              </View>
+            ) : null}
+
+            {!isRecording && !isPaused ? (
               <Pressable 
                 style={({ pressed }) => [
                   styles.recordButton,
@@ -366,13 +413,17 @@ export default function RecordingScreen() {
                 <Text style={styles.resultTitle}>Original Audio</Text>
               </View>
               <AudioPlayer uri={finalOriginalWav.uri} name="Original recording" />
-              <TouchableOpacity
-                style={[theme.Styles.button, styles.saveSubButton]}
-                onPress={() => saveToDevice(finalOriginalWav)}
-              >
-                <Feather name="download" size={18} color={theme.COLORS.background} />
-                <Text style={theme.Styles.buttonText}>Save Original</Text>
-              </TouchableOpacity>
+              <View style={styles.resultActions}>
+                <SaveButton
+                  file={finalOriginalWav}
+                  label="Save Original"
+                  savedLabel="Saved"
+                  albumName="DeepDenoiser/Recordings"
+                  style={[theme.Styles.button, styles.saveSubButton]}
+                  onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+                />
+                <ShareBtn uri={finalOriginalWav.uri} />
+              </View>
             </View>
 
             <View style={[styles.resultCard, { borderColor: theme.COLORS.success, borderWidth: 1, marginTop: 24 }]}>
@@ -383,13 +434,18 @@ export default function RecordingScreen() {
                 <Text style={[styles.resultTitle, { color: theme.COLORS.success }]}>Denoised Audio</Text>
               </View>
               <AudioPlayer uri={finalDenoisedWav!.uri} name="Denoised recording" />
-              <TouchableOpacity
-                style={[theme.Styles.button, styles.saveSubButton, { backgroundColor: theme.COLORS.success }]}
-                onPress={() => saveToDevice(finalDenoisedWav!)}
-              >
-                <Feather name="download" size={18} color={theme.COLORS.background} />
-                <Text style={theme.Styles.buttonText}>Save Denoised</Text>
-              </TouchableOpacity>
+              <View style={styles.resultActions}>
+                <SaveButton
+                  file={finalDenoisedWav}
+                  label="Save Denoised"
+                  savedLabel="Saved"
+                  albumName="DeepDenoiser/Recordings"
+                  style={[theme.Styles.button, styles.saveSubButton, { backgroundColor: theme.COLORS.success }]}
+                  savedBg={theme.COLORS.success}
+                  onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+                />
+                <ShareBtn uri={finalDenoisedWav!.uri} />
+              </View>
             </View>
 
             <TouchableOpacity
@@ -406,6 +462,15 @@ export default function RecordingScreen() {
         )}
       </ScrollView>
 
+      <DonationReminderModal
+        visible={isDonationReminderVisible}
+        onClose={() => setIsDonationReminderVisible(false)}
+        onOpenDonation={() => setIsDonationModalVisible(true)}
+      />
+      <DonationModal
+        visible={isDonationModalVisible}
+        onClose={() => setIsDonationModalVisible(false)}
+      />
       <ErrorModal
         visible={isErrorModalVisible}
         error={error}
@@ -496,6 +561,11 @@ const styles = StyleSheet.create({
     marginTop: 100,
     gap: 20,
   },
+  sliderContainer: {
+    width: "100%",
+    paddingHorizontal: theme.SPACING.medium,
+    marginBottom: 40,
+  },
   recordButton: {
     alignItems: "center",
   },
@@ -579,6 +649,13 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 1.5,
   },
+  resultActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 24,
+    gap: 12,
+  },
   zapIcon: {
     width: 24,
     height: 24,
@@ -588,7 +665,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   saveSubButton: {
-    marginTop: 24,
+    flex: 1,
     height: 54,
     borderRadius: 18,
     flexDirection: 'row',

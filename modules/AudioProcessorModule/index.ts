@@ -31,6 +31,13 @@ export async function decodeToPCM(
   return await AudioProcessorModule.decodeToPCM(inputUri, outputUri);
 }
 
+export async function extractWavAudio(
+  inputUri: string,
+  outputUri: string,
+): Promise<{ path: string; sampleRate: number }> {
+  return await AudioProcessorModule.extractWavAudio(inputUri, outputUri);
+}
+
 export async function pcmToWav(
   pcmUri: string,
   wavUri: string,

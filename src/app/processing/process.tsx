@@ -1,6 +1,9 @@
 import AdvanceSettings from "@/src/components/advanceSettings";
 import AudioPlayer from "@/src/components/audioPlayer";
+import DonationModal from "@/src/components/DonationModal";
+import DonationReminderModal from "@/src/components/DonationReminderModal";
 import ErrorModal from "@/src/components/ErrorModal";
+import SaveButton from "@/src/components/SaveButton";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
@@ -12,9 +15,14 @@ import {
   PCMtoWav,
   readPCMChunks,
   renameFile,
-  saveToDevice,
+  sanitizeFileName,
   writePCMChunk,
 } from "@/src/scripts/formatHandler";
+import {
+  incrementDenoiseCount,
+  markDonationPromptShown,
+  shouldShowDonationReminder,
+} from "@/src/scripts/settings";
 import Feather from "@expo/vector-icons/Feather";
 import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
@@ -29,11 +37,20 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 export default function ProcessScreen() {
+  const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { fileuri, filename } = useLocalSearchParams<{ fileuri: string, filename: string }>();
+  const { fileuri: rawFileUri, filename: rawFilename } = useLocalSearchParams<{
+    fileuri: string;
+    filename: string;
+  }>();
+  const fileuri = decodeURIComponent(rawFileUri || "");
+  const filename = decodeURIComponent(rawFilename || "");
 
   const [originalFile, setOriginalFile] = useState<fs.File | null>(null);
   const [isFileTypeVideo, setIsFileTypeVideo] = useState(false);
@@ -58,6 +75,9 @@ export default function ProcessScreen() {
 
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+  const [isDonationReminderVisible, setIsDonationReminderVisible] =
+    useState(false);
+  const [isDonationModalVisible, setIsDonationModalVisible] = useState(false);
 
   const timeHandler = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
@@ -80,7 +100,8 @@ export default function ProcessScreen() {
         setIsLoading(true);
         const inputFile = new fs.File(fileuri);
         setOriginalFile(inputFile);
-        const isVideo = !!inputFile.type?.startsWith("video") ||
+        const isVideo =
+          !!inputFile.type?.startsWith("video") ||
           filename.toLowerCase().endsWith(".mp4") ||
           filename.toLowerCase().endsWith(".mov") ||
           filename.toLowerCase().endsWith(".mkv") ||
@@ -120,16 +141,22 @@ export default function ProcessScreen() {
         let maxPeak = 0;
         let sumSquares = 0;
         let analyzedSamples = 0;
-        await readPCMChunks(pcmFile, 1024 * 1024, async (chunk, inputSamples) => {
-          for (let i = 0; i < chunk.length; i++) {
-            const val = chunk[i];
-            sumSquares += val * val;
-            const abs = Math.abs(val);
-            if (abs > maxPeak) maxPeak = abs;
-          }
-          analyzedSamples += inputSamples;
-          setProgress(Math.min(Math.round((analyzedSamples / totalSamples) * 100), 100));
-        });
+        await readPCMChunks(
+          pcmFile,
+          1024 * 1024,
+          async (chunk, inputSamples) => {
+            for (let i = 0; i < chunk.length; i++) {
+              const val = chunk[i];
+              sumSquares += val * val;
+              const abs = Math.abs(val);
+              if (abs > maxPeak) maxPeak = abs;
+            }
+            analyzedSamples += inputSamples;
+            setProgress(
+              Math.min(Math.round((analyzedSamples / totalSamples) * 100), 100),
+            );
+          },
+        );
 
         const currentRms = Math.sqrt(sumSquares / totalSamples);
         const targetRms = Math.pow(10, normalize.targetRMS / 20);
@@ -144,7 +171,9 @@ export default function ProcessScreen() {
 
       setProgressText("Optimizing AI model...");
       const denoiser = new DeepFilterNet();
-      const modelAsset = Asset.fromModule(require("@/assets/model/denoiser_model.ort"));
+      const modelAsset = Asset.fromModule(
+        require("@/assets/model/denoiser_model.ort"),
+      );
       await modelAsset.downloadAsync();
       await denoiser.loadModel(modelAsset.localUri!);
 
@@ -157,7 +186,10 @@ export default function ProcessScreen() {
       const fftSize = 960;
       denoiser.setupStreaming(attenLimDb);
 
-      const denoisedPcmFile = new fs.File(fs.Paths.cache, `processed_${Date.now()}.pcm`);
+      const denoisedPcmFile = new fs.File(
+        fs.Paths.cache,
+        `denoised_${Date.now()}.pcm`,
+      );
       if (denoisedPcmFile.exists) denoisedPcmFile.delete();
 
       let inputBuffer = new Float32Array(fftSize);
@@ -166,51 +198,63 @@ export default function ProcessScreen() {
       let outputSamplesSkipped = 0;
       const samplesPerChunk = sampleRate * 5; // 5s chunks for better responsiveness
 
-      await readPCMChunks(pcmFile, samplesPerChunk, async (chunk, inputSamples) => {
-        if (normalize.toggle) {
-          for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
-        }
-
-        const combined = new Float32Array(inputBuffer.length + chunk.length);
-        combined.set(inputBuffer);
-        combined.set(chunk, inputBuffer.length);
-
-        const numFrames = Math.floor(combined.length / hopSize);
-        const processLen = numFrames * hopSize;
-        const toProcess = combined.subarray(0, processLen);
-        inputBuffer = combined.slice(processLen);
-
-        const denoisedOutput = new Float32Array(processLen);
-        for (let i = 0; i < processLen; i += hopSize) {
-          const frame = toProcess.subarray(i, i + hopSize);
-          const outFrame = await denoiser.processFrame(frame);
-          denoisedOutput.set(outFrame, i);
-        }
-
-        let finalOutputChunk = denoisedOutput;
-        if (outputSamplesSkipped < fftSize) {
-          const skip = Math.min(fftSize - outputSamplesSkipped, finalOutputChunk.length);
-          finalOutputChunk = finalOutputChunk.subarray(skip);
-          outputSamplesSkipped += skip;
-        }
-
-        if (finalOutputChunk.length > 0) {
-          await writePCMChunk(denoisedPcmFile, finalOutputChunk, !firstWrite);
-          firstWrite = false;
-        }
-
-        processedInputSamples += inputSamples;
-        const p = Math.min(Math.round((processedInputSamples / totalSamples) * 100), 100);
-        setProgress(p);
-
-        if (p > 0 && Number.isFinite(p)) {
-          const elapsed = (Date.now() - model_startTime) / 1000;
-          const remaining = (elapsed / (p / 100)) - elapsed;
-          if (remaining > 0 && Number.isFinite(remaining)) {
-            setEta(`${timeHandler(Math.ceil(remaining))} left`);
+      await readPCMChunks(
+        pcmFile,
+        samplesPerChunk,
+        async (chunk, inputSamples) => {
+          if (normalize.toggle) {
+            for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
           }
-        }
-      }, sampleRate, targetRate);
+
+          const combined = new Float32Array(inputBuffer.length + chunk.length);
+          combined.set(inputBuffer);
+          combined.set(chunk, inputBuffer.length);
+
+          const numFrames = Math.floor(combined.length / hopSize);
+          const processLen = numFrames * hopSize;
+          const toProcess = combined.subarray(0, processLen);
+          inputBuffer = combined.slice(processLen);
+
+          const denoisedOutput = new Float32Array(processLen);
+          for (let i = 0; i < processLen; i += hopSize) {
+            const frame = toProcess.subarray(i, i + hopSize);
+            const outFrame = await denoiser.processFrame(frame);
+            denoisedOutput.set(outFrame, i);
+          }
+
+          let finalOutputChunk = denoisedOutput;
+          if (outputSamplesSkipped < fftSize) {
+            const skip = Math.min(
+              fftSize - outputSamplesSkipped,
+              finalOutputChunk.length,
+            );
+            finalOutputChunk = finalOutputChunk.subarray(skip);
+            outputSamplesSkipped += skip;
+          }
+
+          if (finalOutputChunk.length > 0) {
+            await writePCMChunk(denoisedPcmFile, finalOutputChunk, !firstWrite);
+            firstWrite = false;
+          }
+
+          processedInputSamples += inputSamples;
+          const p = Math.min(
+            Math.round((processedInputSamples / totalSamples) * 100),
+            100,
+          );
+          setProgress(p);
+
+          if (p > 0 && Number.isFinite(p)) {
+            const elapsed = (Date.now() - model_startTime) / 1000;
+            const remaining = elapsed / (p / 100) - elapsed;
+            if (remaining > 0 && Number.isFinite(remaining)) {
+              setEta(`${timeHandler(Math.ceil(remaining))} left`);
+            }
+          }
+        },
+        sampleRate,
+        targetRate,
+      );
 
       if (inputBuffer.length > 0) {
         const padded = new Float32Array(hopSize);
@@ -218,7 +262,10 @@ export default function ProcessScreen() {
         const outFrame = await denoiser.processFrame(padded);
         let finalFrame = outFrame.subarray(0, inputBuffer.length);
         if (outputSamplesSkipped < fftSize) {
-          const skip = Math.min(fftSize - outputSamplesSkipped, finalFrame.length);
+          const skip = Math.min(
+            fftSize - outputSamplesSkipped,
+            finalFrame.length,
+          );
           finalFrame = finalFrame.subarray(skip);
         }
         if (finalFrame.length > 0) {
@@ -228,19 +275,23 @@ export default function ProcessScreen() {
 
       setEta(null);
       setProgressText("Finalizing media...");
-      const baseName = filename
-        .split('.')
-        .slice(0, -1)
-        .join('.')
-        .replaceAll(/[!<>:"/\\|?*[\]#%：？\x00-\x1F]/g, '_')
-        .replaceAll(/\s+/g, ' ');
 
+      const originalBase = filename.split(".").slice(0, -1).join(".");
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
-      renameFile(finalWavFile, `${baseName}_denoised.wav`);
+      renameFile(
+        finalWavFile,
+        `${sanitizeFileName(originalBase)}_denoised.wav`,
+      );
       if (isFileTypeVideo) {
         setProgressText("Merging audio with video...");
-        const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);
-        renameFile(finalVideoFile, `${baseName}_denoised.mp4`);
+        const finalVideoFile = await mergeAudioVideo(
+          originalFile,
+          finalWavFile,
+        );
+        renameFile(
+          finalVideoFile,
+          `${sanitizeFileName(originalBase)}_denoised.mp4`,
+        );
         setDenoisedFile(finalVideoFile);
       } else {
         setDenoisedFile(finalWavFile);
@@ -256,7 +307,6 @@ export default function ProcessScreen() {
 
       if (pcmFile.exists) pcmFile.delete();
       if (denoisedPcmFile.exists) denoisedPcmFile.delete();
-
     } catch (error) {
       console.error("Error during denoising:", error);
       const err = error instanceof Error ? error : new Error(String(error));
@@ -270,6 +320,18 @@ export default function ProcessScreen() {
     }
   };
 
+  useEffect(() => {
+    if (!denoisedFile) return;
+    (async () => {
+      await incrementDenoiseCount();
+      const shouldShow = await shouldShowDonationReminder();
+      if (shouldShow) {
+        await markDonationPromptShown();
+        setIsDonationReminderVisible(true);
+      }
+    })();
+  }, [denoisedFile]);
+
   if (isLoading) {
     return (
       <SafeAreaView style={[theme.Styles.container, theme.Styles.centered]}>
@@ -280,33 +342,39 @@ export default function ProcessScreen() {
   }
 
   return (
+    // <SafeAreaView>
     <SafeAreaView style={theme.Styles.container}>
       <StatusBar style="light" />
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => router.navigate('/(tabs)')}
+          onPress={() => router.navigate("/(tabs)")}
           disabled={denoising}
         >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Denoise {isFileTypeVideo ? 'Video' : 'Audio'}</Text>
+        <Text style={styles.headerTitle}>
+          Denoise {isFileTypeVideo ? "Video" : "Audio"}
+        </Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 150 }}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 150 }}
+      >
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <Feather name="file" size={16} color={theme.COLORS.subtext} />
             <Text style={styles.sectionTitle}>Original File</Text>
           </View>
           <View style={styles.playerWrapper}>
-            {originalFile && (
-              isFileTypeVideo ? (
+            {originalFile &&
+              (isFileTypeVideo ? (
                 <VideoPlayer uri={originalFile.uri} name={filename} />
               ) : (
                 <AudioPlayer uri={originalFile.uri} name={filename} />
-              )
-            )}
+              ))}
           </View>
         </View>
 
@@ -325,7 +393,9 @@ export default function ProcessScreen() {
             </View>
             <View style={styles.progressBarWrapper}>
               <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
+                <View
+                  style={[styles.progressBarFill, { width: `${progress}%` }]}
+                />
               </View>
               <Text style={styles.progressPercent}>{progress}%</Text>
             </View>
@@ -341,7 +411,9 @@ export default function ProcessScreen() {
               </View>
               <View style={styles.timeStats}>
                 <Feather name="clock" size={14} color={theme.COLORS.subtext} />
-                <Text style={styles.timeText}>{timeHandler(processingTime)}</Text>
+                <Text style={styles.timeText}>
+                  {timeHandler(processingTime)}
+                </Text>
               </View>
             </View>
 
@@ -354,36 +426,44 @@ export default function ProcessScreen() {
             </View>
 
             <View style={styles.resultActions}>
-              <TouchableOpacity
+              <SaveButton
+                file={denoisedFile}
+                label="Save to Gallery"
                 style={styles.saveBtn}
-                onPress={async () => {
-                  if (denoisedFile) await saveToDevice(denoisedFile);
+                onError={(err) => {
+                  setError(err);
+                  setIsErrorModalVisible(true);
                 }}
-              >
-                <Feather name="download" size={18} color={theme.COLORS.background} />
-                <Text style={styles.saveBtnText}>Save to Gallery</Text>
-              </TouchableOpacity>
+              />
               <ShareBtn uri={denoisedFile?.uri || ""} />
             </View>
           </View>
         )}
       </ScrollView>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, { bottom: insets.bottom }]}>
         {!denoisedFile ? (
           <TouchableOpacity
             style={[
               theme.Styles.button,
               denoising && theme.Styles.disabledButton,
-              styles.mainActionBtn
+              styles.mainActionBtn,
             ]}
             onPress={handleDenoise}
             disabled={denoising}
           >
             {denoising ? (
-              <ActivityIndicator color={theme.COLORS.background} style={{ marginRight: 10 }} />
+              <ActivityIndicator
+                color={theme.COLORS.background}
+                style={{ marginRight: 10 }}
+              />
             ) : (
-              <Feather name="zap" size={20} color={theme.COLORS.background} style={{ marginRight: 10 }} />
+              <Feather
+                name="zap"
+                size={20}
+                color={theme.COLORS.background}
+                style={{ marginRight: 10 }}
+              />
             )}
             <Text style={theme.Styles.buttonText}>
               {denoising ? "Processing..." : "Start Deep Denoising"}
@@ -393,23 +473,57 @@ export default function ProcessScreen() {
           <View style={styles.postProcessActions}>
             <TouchableOpacity
               style={styles.resetBtn}
-              onPress={() => { setDenoisedFile(null); handleDenoise(); }}
+              onPress={() => {
+                setDenoisedFile(null);
+                handleDenoise();
+              }}
             >
-              <Feather name="refresh-cw" size={20} color={theme.COLORS.primary} style={{ marginRight: 10 }} />
-              <Text style={[theme.Styles.buttonText, { color: theme.COLORS.primary }]}>Try Again</Text>
+              <Feather
+                name="refresh-cw"
+                size={20}
+                color={theme.COLORS.primary}
+                style={{ marginRight: 10 }}
+              />
+              <Text
+                style={[
+                  theme.Styles.buttonText,
+                  { color: theme.COLORS.primary },
+                ]}
+              >
+                Try Again
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               style={[theme.Styles.button, styles.mainActionBtn, { flex: 1.2 }]}
               onPress={() => router.replace("/")}
             >
-              <Feather name="plus" size={20} color={theme.COLORS.background} style={{ marginRight: 10 }} />
+              <Feather
+                name="plus"
+                size={20}
+                color={theme.COLORS.background}
+                style={{ marginRight: 10 }}
+              />
               <Text style={theme.Styles.buttonText}>New File</Text>
             </TouchableOpacity>
           </View>
         )}
       </View>
-      <ErrorModal visible={isErrorModalVisible} error={error} onClose={() => setIsErrorModalVisible(false)} />
+      <DonationReminderModal
+        visible={isDonationReminderVisible}
+        onClose={() => setIsDonationReminderVisible(false)}
+        onOpenDonation={() => setIsDonationModalVisible(true)}
+      />
+      <DonationModal
+        visible={isDonationModalVisible}
+        onClose={() => setIsDonationModalVisible(false)}
+      />
+      <ErrorModal
+        visible={isErrorModalVisible}
+        error={error}
+        onClose={() => setIsErrorModalVisible(false)}
+      />
+      {/* </View> */}
     </SafeAreaView>
   );
 }
@@ -553,19 +667,10 @@ const styles = StyleSheet.create({
   },
   saveBtn: {
     backgroundColor: theme.COLORS.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
     paddingVertical: 14,
     paddingHorizontal: 20,
     borderRadius: 16,
     flex: 1,
-    gap: 10,
-  },
-  saveBtnText: {
-    color: theme.COLORS.background,
-    fontWeight: "800",
-    fontSize: 14,
   },
   timeStats: {
     flexDirection: "row",
@@ -579,7 +684,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     position: "absolute",
-    bottom: 0,
+    // bottom: insets.bottom,
     left: 0,
     right: 0,
     padding: theme.SPACING.medium,
@@ -606,5 +711,5 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     flexDirection: "row",
-  }
+  },
 });

@@ -80,8 +80,8 @@ export default function HomeScreen() {
     router.push({
       pathname: "/processing/process",
       params: {
-        fileuri: tempFile.uri,
-        filename: tempFile.name,
+        fileuri: encodeURIComponent(tempFile.uri),
+        filename: encodeURIComponent(tempFile.name),
       },
     });
   };
