@@ -35,9 +35,7 @@
   <a href="https://github.com/sponsors/sayampy"><img src="https://img.shields.io/badge/Github%20Sponsors-ff69b4?style=for-the-badge&logo=github" alt="GitHub Sponsors" /></a>
 </p>
 
-**DeepDenoiser** is a powerful, open-source mobile application designed to remove background noise from your audio and video files instantly.
-
-Powered by the state-of-the-art **DeepFilterNet3** model, it runs entirely on your device—ensuring your data remains private and your processing is lightning fast.
+**DeepDenoiser** removes background noise from audio and video files on your Android device. It runs entirely on-device using **DeepFilterNet3** — your files never leave your phone.
 
 ---
 
@@ -53,12 +51,11 @@ https://github.com/user-attachments/assets/29f147db-ff8b-486a-877d-1d765922ed5c
 
 ## ✨ Features
 
-- **🔇 Advanced Noise Suppression**: Eliminates background hiss, hums, and environmental noise using deep learning.
-- **🎥 Audio & Video Support**: Process both voice recordings and video clips seamlessly.
-- **🎤 Live Suppression**: Capture voice recordings directly within the app with integrated, real-time noise removal.
-- **🔒 Privacy First**: All processing happens locally on your device using ONNX Runtime. No data is ever uploaded to the cloud.
-- **🚀 High Performance**: Built with custom Native Modules (Kotlin) for efficient media transcoding and I/O.
-- **📱 Modern Design**: Clean, simple interface built with React Native & Expo.
+- **🔇 Noise suppression**: Removes background hiss, hums, and environmental noise using deep learning.
+- **🎥 Audio & video**: Process both voice recordings and video clips.
+- **🎤 Live recording**: Capture audio with built-in noise removal.
+- **🔒 Privacy-first**: All processing happens on your device. Nothing is uploaded.
+- **🚀 Native performance**: Custom Kotlin modules for efficient media transcoding and I/O.
 
 ## 🛠️ Tech Stack
 
@@ -95,6 +92,12 @@ https://github.com/user-attachments/assets/29f147db-ff8b-486a-877d-1d765922ed5c
    bunx expo run:android
    ```
 
+## 🤝 Contributing
+
+PRs and issues are welcome. This is a small project and I'd love help improving it.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
+
 ## 📄 License
 
-This project is licensed under the GPL-3.0 License - see the [LICENSE](LICENSE) file for details.
+GPL-3.0 — see [LICENSE](LICENSE).
