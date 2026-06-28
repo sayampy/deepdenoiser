@@ -101,3 +101,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for how to get started.
 ## 📄 License
 
 GPL-3.0 — see [LICENSE](LICENSE).
+
+## ❤️ Kind Donation ❤️
+- [Fallon Lawler](https://ko-fi.com/fallonlawler)
+Thanks a whole lot for your support😇 
