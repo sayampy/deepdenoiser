@@ -5,7 +5,10 @@ import ErrorModal from "@/src/components/ErrorModal";
 import SaveButton from "@/src/components/SaveButton";
 import ShareBtn from "@/src/components/shareBtn";
 import CustomSlider from "@/src/components/customSlider";
+import SilenceTrimSettingsBlock from "@/src/components/silenceTrimSettings";
 import * as theme from "@/src/constants/theme";
+import type { SilenceTrimSettings } from "@/src/scripts/silenceTrim";
+import { DEFAULT_SILENCE_TRIM } from "@/src/scripts/silenceTrim";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
 import {
   incrementDenoiseCount,
@@ -74,6 +77,9 @@ export default function RecordingScreen() {
   const [isDonationReminderVisible, setIsDonationReminderVisible] = useState(false);
   const [isDonationModalVisible, setIsDonationModalVisible] = useState(false);
   const [attenLimDb, setAttenLimDb] = useState(0);
+  const [silenceTrim, setSilenceTrim] = useState<SilenceTrimSettings>(
+    DEFAULT_SILENCE_TRIM,
+  );
 
   const denoiserRef = useRef<DeepFilterNet | null>(null);
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
@@ -344,8 +350,9 @@ export default function RecordingScreen() {
           throw new Error("PCM files missing after recording.");
         }
 
-        const origWav = result && result.fileUri ? new fs.File(result.fileUri) : await PCMtoWav(origPcm, SAMPLE_RATE);
-        const denWav = await PCMtoWav(denPcm, SAMPLE_RATE);
+        const origWav = result && result.fileUri ? new fs.File(result.fileUri) : (await PCMtoWav(origPcm, SAMPLE_RATE)).file;
+        const denWavResult = await PCMtoWav(denPcm, SAMPLE_RATE, silenceTrim);
+        const denWav = denWavResult.file;
 
         setFinalOriginalWav(origWav);
         setFinalDenoisedWav(denWav);
@@ -435,6 +442,13 @@ export default function RecordingScreen() {
                   max={40}
                   steps={ALSTEPS}
                   info={`Limits how aggressively the AI removes noise.\n0dB = most aggressive (quietest background).\n40dB = preserves nearly all ambient sound.\nStart at 0dB and increase if audio sounds too processed.`}
+                />
+
+                <View style={styles.settingsDivider} />
+
+                <SilenceTrimSettingsBlock
+                  settings={silenceTrim}
+                  onChange={setSilenceTrim}
                 />
               </View>
             ) : null}
@@ -641,6 +655,11 @@ const styles = StyleSheet.create({
     width: "100%",
     paddingHorizontal: theme.SPACING.medium,
     marginBottom: 40,
+  },
+  settingsDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    marginVertical: 15,
   },
   recordButton: {
     alignItems: "center",

@@ -1,5 +1,5 @@
 import metadata from "@/assets/model/model_metadata.json";
-import { copyFile } from "@/modules/AudioProcessorModule";
+import { copyFile, getFileSize } from "@/modules/AudioProcessorModule";
 import * as fs from "expo-file-system";
 import { sanitizeFileName } from "./formatHandler";
 
@@ -47,10 +47,36 @@ export function outputDir(): fs.Directory {
  * Copies a picked/shared file (file:// or content://) into app documents so
  * it survives process death, cache eviction and source-app revocation.
  * Returns the stable file:// File ready for processing.
+ *
+ * The import keeps the SOURCE file name (no timestamp prefix) and is reused
+ * when the same file is picked again (same name + same size). A stable name
+ * and unchanged mtime make buildCacheKey() produce the same key, so
+ * re-denosing an unchanged file serves the cached result instantly instead of
+ * starting from blank. A re-pick of a different file with the same name but a
+ * different size overwrites the import (and therefore misses the cache).
  */
 export async function importToDocuments(sourceUri: string, name: string): Promise<fs.File> {
-  const destName = `${Date.now()}_${sanitizeFileName(name || "import")}`;
+  const safe = sanitizeFileName(name || "import");
+  const destName = name && name.trim().length > 0 ? safe : `import_${Date.now()}`;
   const dest = new fs.File(importsDir(), destName);
+
+  if (dest.exists) {
+    try {
+      const sourceSize = await getFileSize(sourceUri);
+      if (sourceSize >= 0 && dest.size === sourceSize) {
+        // Same file re-imported — reuse the existing copy so its mtime (and
+        // therefore the denoise cache key) stays stable.
+        return dest;
+      }
+    } catch {
+      // Cannot read the source size — fall through and re-copy.
+    }
+    try {
+      dest.delete();
+    } catch {
+      // Ignore; copyFile overwrites the existing file in place anyway.
+    }
+  }
   await copyFile(sourceUri, dest.uri);
   return dest;
 }
@@ -105,6 +131,12 @@ export function buildCacheKey(
   settings: {
     attenLimDb: number;
     normalize: { toggle: boolean; targetRMS: number; maxPeakDb: number };
+    silenceTrim: {
+      enabled: boolean;
+      mode: string;
+      thresholdDb: number;
+      minSilenceMs: number;
+    };
   },
 ): string {
   const modelSignature = `${metadata.hop_size}-${metadata.fft_size}`;
@@ -118,6 +150,10 @@ export function buildCacheKey(
     settings.normalize.toggle,
     settings.normalize.targetRMS,
     settings.normalize.maxPeakDb,
+    settings.silenceTrim.enabled,
+    settings.silenceTrim.mode,
+    settings.silenceTrim.thresholdDb,
+    settings.silenceTrim.minSilenceMs,
   ].join("|");
 }
 

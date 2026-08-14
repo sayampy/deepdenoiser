@@ -24,6 +24,10 @@ import java.nio.ByteOrder
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.math.log10
+import kotlin.math.max
+import kotlin.math.min
+import kotlin.math.sqrt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -193,10 +197,42 @@ class MediaProcessor(private val context: Context) {
                 destPath
             }
 
-    // (5) Audio-Video Muxing
-    // Combines video from videoPath and audio from audioPath
-    suspend fun muxAudioVideo(videoPath: String, audioPath: String, outputPath: String): String =
+    // Returns the byte size of any readable URI (file:// or content://), or -1
+    // if the size cannot be determined. Used to detect "same file, re-imported"
+    // so unchanged inputs can reuse their existing copy (and thus their cached
+    // denoise result) instead of being re-processed from scratch.
+    suspend fun getFileSize(path: String): Long =
             withContext(Dispatchers.IO) {
+                val uri = getSafeUri(path)
+                val size =
+                        context.contentResolver
+                                .openAssetFileDescriptor(uri, "r")
+                                ?.use { afd -> afd.length } ?: -1L
+                if (size != AssetFileDescriptor.UNKNOWN_LENGTH) {
+                    size
+                } else {
+                    // Some providers report UNKNOWN_LENGTH — fall back to the
+                    // plain file path when it is a real file.
+                    val file = File(Uri.decode(uri.path ?: ""))
+                    if (file.exists()) file.length() else -1L
+                }
+            }
+
+    // (5) Audio-Video Muxing
+    // Combines video from videoPath and audio from audioPath.
+    // When `trim` is enabled, the video track is restricted to [startUs, endUs]
+    // (the same window the audio was trimmed to) and its timestamps are rebased
+    // to the audio timeline so the two tracks stay in sync.
+    suspend fun muxAudioVideo(
+            videoPath: String,
+            audioPath: String,
+            outputPath: String,
+            trim: Map<String, Any?>? = null
+    ): String =
+            withContext(Dispatchers.IO) {
+                val trimEnabled = (trim?.get("enabled") as? Boolean) ?: false
+                val trimStartUs = (trim?.get("startUs") as? Number)?.toLong() ?: 0L
+                val trimEndUs = (trim?.get("endUs") as? Number)?.toLong() ?: Long.MAX_VALUE
                 var muxer: MediaMuxer? = null
                 var videoExtractor: MediaExtractor? = null
                 var audioExtractor: MediaExtractor? = null
@@ -328,6 +364,11 @@ class MediaProcessor(private val context: Context) {
                     var audioEOS = false
                     var muxIterations = 0
                     val maxMuxIterations = 1_000_000
+                    // Once trimming, wait for the first keyframe inside the window
+                    // before writing the video track (MediaMuxer + most decoders
+                    // need the track to start on a keyframe).
+                    var videoTrimStarted = !trimEnabled
+                    var videoSamplesWritten = 0
 
                     while (!videoEOS || !audioEOS) {
                         if (++muxIterations > maxMuxIterations) {
@@ -344,11 +385,33 @@ class MediaProcessor(private val context: Context) {
                             if (sampleSize < 0) {
                                 videoEOS = true
                             } else {
+                                val sampleTimeUs = videoExtractor.sampleTime
+                                if (trimEnabled) {
+                                    if (sampleTimeUs < trimStartUs || sampleTimeUs > trimEndUs) {
+                                        // Outside the trimmed window — drop.
+                                        if (!videoExtractor.advance()) videoEOS = true
+                                        continue
+                                    }
+                                    if (!videoTrimStarted) {
+                                        val isKeyFrame =
+                                                (videoExtractor.sampleFlags and
+                                                        MediaCodec.BUFFER_FLAG_KEY_FRAME) != 0
+                                        if (!isKeyFrame) {
+                                            // Mid-GOP: wait for the first keyframe.
+                                            if (!videoExtractor.advance()) videoEOS = true
+                                            continue
+                                        }
+                                        videoTrimStarted = true
+                                    }
+                                    bufferInfo.presentationTimeUs = sampleTimeUs - trimStartUs
+                                } else {
+                                    bufferInfo.presentationTimeUs = sampleTimeUs
+                                }
                                 bufferInfo.size = sampleSize
                                 bufferInfo.offset = 0
-                                bufferInfo.presentationTimeUs = videoExtractor.sampleTime
                                 bufferInfo.flags = videoExtractor.sampleFlags
                                 muxer.writeSampleData(videoMuxerTrack, buffer, bufferInfo)
+                                videoSamplesWritten++
                                 if (!videoExtractor.advance()) videoEOS = true
                             }
                         } else if (!audioEOS) {
@@ -364,6 +427,14 @@ class MediaProcessor(private val context: Context) {
                                 if (!audioExtractor.advance()) audioEOS = true
                             }
                         }
+                    }
+
+                    if (trimEnabled && videoSamplesWritten == 0) {
+                        throw Exception(
+                                "Silence trim left no muxable video frames " +
+                                        "(window ${trimStartUs}us-${trimEndUs}us). " +
+                                        "Retry with silence trim disabled."
+                        )
                     }
                 } finally {
                     if (isMuxerStarted) {
@@ -565,13 +636,21 @@ class MediaProcessor(private val context: Context) {
 
     // (4) PCM to WAV Conversion
     // Appends the 44-byte RIFF header to a raw PCM file.
+    // When `silenceTrim` is provided (and enabled), silent pauses in the PCM are
+    // detected and removed, shortening the audio. With `removeInternalPauses`
+    // pauses in the middle are removed too (audio files); without it only
+    // leading/trailing silence is removed (video files — internal cuts would
+    // need a video re-encode to stay in sync). The returned map carries the
+    // overall trim window (in microseconds, in the original PCM timeline) so
+    // callers can apply the SAME window to a paired video track.
     suspend fun pcmToWav(
             pcmPath: String,
             wavPath: String,
             sampleRate: Int = 48000,
             channels: Int = 1,
-            bitDepth: Int = 16
-    ) =
+            bitDepth: Int = 16,
+            silenceTrim: Map<String, Any?>? = null
+    ): Map<String, Any?> =
             withContext(Dispatchers.IO) {
                 val pcmUri = getSafeUri(pcmPath)
                 val wavUri = getSafeUri(wavPath)
@@ -593,30 +672,348 @@ class MediaProcessor(private val context: Context) {
                     } ?: throw Exception("Failed to calculate PCM data length: $pcmPath")
                 }
 
-                val totalDataLength = pcmDataLength + 36
+                // ---- Silence trim analysis (16-bit mono PCM only) ----
+                // When enabled, silent runs of at least `minSilenceMs` are removed.
+                // For audio files (`removeInternalPauses`) this includes pauses in the
+                // MIDDLE of the recording, which shortens the audio. For video files
+                // only leading/trailing silence is removed, because cutting the middle
+                // of a video track requires re-encoding to stay in sync.
+                var trimStartSample = 0L
+                var trimEndSample = max(0L, pcmDataLength / 2 - 1)
+                var trimmed = false
+                var trimSegments: List<Pair<Long, Long>>? = null
+                val frameSamples = max(1, sampleRate / 100) // 10 ms frames
+                val trimEnabled = (silenceTrim?.get("enabled") as? Boolean) ?: false
+                if (trimEnabled && bitDepth == 16 && channels == 1 && trimEndSample > 0) {
+                    val mode = silenceTrim["mode"] as? String ?: "auto"
+                    val manualThresholdDb =
+                            (silenceTrim["thresholdDb"] as? Number)?.toDouble() ?: -40.0
+                    val minSilenceMs =
+                            ((silenceTrim["minSilenceMs"] as? Number)?.toInt() ?: 300)
+                    val removeInternalPauses =
+                            (silenceTrim["removeInternalPauses"] as? Boolean) ?: false
+                    val totalSamples = trimEndSample + 1
+                    val minSilenceSamples = minSilenceMs.toLong() * sampleRate / 1000
+
+                    val thresholdDb =
+                            if (mode == "manual") {
+                                manualThresholdDb
+                            } else {
+                                computeAutoSilenceThresholdDb(pcmUri, totalSamples, frameSamples)
+                            }
+
+                    val segments =
+                            computeTrimSegments(
+                                    pcmUri,
+                                    totalSamples,
+                                    frameSamples,
+                                    thresholdDb,
+                                    minSilenceSamples,
+                                    removeInternalPauses
+                            )
+                    if (segments.isNotEmpty()) {
+                        val segs =
+                                segments.map {
+                                    it.first * frameSamples to
+                                            min(
+                                                    it.second * frameSamples + frameSamples - 1,
+                                                    totalSamples - 1
+                                            )
+                                }
+                        trimSegments = segs
+                        trimStartSample = segs.first().first
+                        trimEndSample = segs.last().second
+                        trimmed =
+                                trimStartSample > 0 ||
+                                        trimEndSample < totalSamples - 1 ||
+                                        segs.size > 1
+                    }
+                    // All-silent file (no segments) → keep the whole recording.
+                }
+                if (trimStartSample > trimEndSample) {
+                    // Safety: never produce an empty WAV.
+                    trimStartSample = 0L
+                    trimEndSample = max(0L, pcmDataLength / 2 - 1)
+                    trimSegments = null
+                    trimmed = false
+                }
+
+                val segmentBytes: Long =
+                        trimSegments?.sumOf { (it.second - it.first + 1) * 2 } ?: 0L
+                val trimmedDataLength =
+                        if (trimSegments != null && trimSegments.size > 1) segmentBytes
+                        else (trimEndSample - trimStartSample + 1) * 2
+                val totalDataLength = trimmedDataLength + 36
                 val byteRate = (sampleRate * channels * bitDepth) / 8
 
                 context.contentResolver.openInputStream(pcmUri)?.use { inputStream ->
                     context.contentResolver.openOutputStream(wavUri)?.use { outputStream ->
                         writeWavHeader(
                                 outputStream,
-                                pcmDataLength,
+                                trimmedDataLength,
                                 totalDataLength,
                                 sampleRate,
                                 channels,
                                 byteRate,
                                 bitDepth
                         )
-                        val buffer = ByteArray(8192)
-                        var bytesRead: Int
-                        while (inputStream.read(buffer).also { bytesRead = it } != -1) {
-                            outputStream.write(buffer, 0, bytesRead)
+                        if (trimSegments != null && trimSegments.size > 1) {
+                            copyTrimmedSegments(
+                                    inputStream,
+                                    outputStream,
+                                    trimSegments,
+                                    trimEndSample + 1,
+                                    sampleRate,
+                                    trimmed
+                            )
+                        } else {
+                            var toSkip = trimStartSample * 2
+                            val skipBuffer = ByteArray(8192)
+                            while (toSkip > 0) {
+                                val r =
+                                        inputStream.read(
+                                                skipBuffer,
+                                                0,
+                                                min(skipBuffer.size.toLong(), toSkip).toInt()
+                                        )
+                                if (r == -1) break
+                                toSkip -= r
+                            }
+                            var remaining = trimmedDataLength
+                            val buffer = ByteArray(8192)
+                            while (remaining > 0) {
+                                val r =
+                                        inputStream.read(
+                                                buffer,
+                                                0,
+                                                min(buffer.size.toLong(), remaining).toInt()
+                                        )
+                                if (r == -1) break
+                                outputStream.write(buffer, 0, r)
+                                remaining -= r
+                            }
                         }
                     } ?: throw Exception("Failed to open WAV output stream: $wavPath")
                 } ?: throw Exception("Failed to open PCM input stream: $pcmPath")
-                
-                wavPath
+
+                mapOf(
+                        "path" to wavPath,
+                        "trimStartUs" to trimStartSample * 1_000_000L / sampleRate,
+                        "trimEndUs" to (trimEndSample + 1) * 1_000_000L / sampleRate,
+                        "trimmed" to trimmed
+                )
             }
+
+    /**
+     * Streams the 16-bit LE PCM and invokes [onFrameDb] with the RMS of every
+     * frame in dBFS. A trailing partial frame is included.
+     */
+    private fun forEachFrameRms(
+            uri: Uri,
+            frameSamples: Int,
+            onFrameDb: (Double) -> Unit
+    ) {
+        var sumSq = 0.0
+        var samplesInFrame = 0
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            val buffer = ByteArray(64 * 1024)
+            var read: Int
+            while (input.read(buffer).also { read = it } != -1) {
+                var i = 0
+                while (i + 1 < read) {
+                    val lo = buffer[i].toInt() and 0xff
+                    val hi = buffer[i + 1].toInt()
+                    val sample = (lo or (hi shl 8)).toShort().toInt()
+                    sumSq += sample.toDouble() * sample.toDouble()
+                    samplesInFrame++
+                    if (samplesInFrame >= frameSamples) {
+                        onFrameDb(frameRmsDb(sumSq, samplesInFrame))
+                        sumSq = 0.0
+                        samplesInFrame = 0
+                    }
+                    i += 2
+                }
+            }
+        } ?: throw Exception("Failed to open PCM input stream for analysis: $uri")
+        if (samplesInFrame > 0) {
+            onFrameDb(frameRmsDb(sumSq, samplesInFrame))
+        }
+    }
+
+    private fun frameRmsDb(sumSq: Double, sampleCount: Int): Double {
+        val rms = sqrt(sumSq / sampleCount)
+        return 20.0 * log10(rms / 32768.0)
+    }
+
+    /**
+     * Auto threshold: 8 dB above the 25th percentile of the frame-RMS
+     * distribution (a robust estimate of the quiet/noise floor), clamped into a
+     * speech-safe window.
+     *
+     * The clamp matters: speech RMS typically sits 15-30 dB BELOW the loudest
+     * frame, so any peak-relative cap (e.g. peak-15dB) lands inside the speech
+     * range and chops quiet passages — the root cause of "trim removed the
+     * first seconds of speech" reports. Instead we bound the threshold in
+     * absolute terms: it can never rise above -35 dBFS (quiet speech is
+     * protected) and never sink below -45 dBFS (denoised dead air, typically
+     * -60..-90 dBFS, is still caught).
+     */
+    private fun computeAutoSilenceThresholdDb(
+            uri: Uri,
+            totalSamples: Long,
+            frameSamples: Int
+    ): Double {
+        val histogram = IntArray(121) // bins covering -120..0 dB, 1 dB each
+        var frameCount = 0L
+        forEachFrameRms(uri, frameSamples) { db ->
+            frameCount++
+            histogram[((db + 120.0).coerceIn(0.0, 120.0)).toInt()]++
+        }
+        if (frameCount == 0L || totalSamples <= 0) return -45.0
+        val target = (frameCount * 25) / 100
+        var cum = 0L
+        var p25Bin = 120
+        for (b in histogram.indices) {
+            cum += histogram[b]
+            if (cum >= target) {
+                p25Bin = b
+                break
+            }
+        }
+        val p25 = p25Bin - 120 + 0.5
+        return (p25 + 8.0).coerceIn(-45.0, -35.0)
+    }
+
+    /**
+     * Classifies frames against [thresholdDb] and returns the runs of non-silent
+     * frames to KEEP as (startFrame, endFrame) pairs. Silent runs shorter than
+     * [minSilenceSamples] are merged into the kept audio (normal speech rhythm is
+     * preserved); longer silent runs are dropped entirely — the audio is shortened
+     * by exactly those pauses. When [removeInternalPauses] is false only
+     * leading/trailing silence is dropped (a video track cannot be cut in the
+     * middle without re-encoding to stay in sync).
+     */
+    private fun computeTrimSegments(
+            uri: Uri,
+            totalSamples: Long,
+            frameSamples: Int,
+            thresholdDb: Double,
+            minSilenceSamples: Long,
+            removeInternalPauses: Boolean
+    ): List<Pair<Long, Long>> {
+        // Frame classification (two streaming passes so no per-frame objects are
+        // retained — just a compact BooleanArray).
+        var frameCount = 0L
+        forEachFrameRms(uri, frameSamples) { frameCount++ }
+        if (frameCount == 0L || totalSamples <= 0) return emptyList()
+        val silent = BooleanArray(frameCount.toInt())
+        var idx = 0
+        forEachFrameRms(uri, frameSamples) { db ->
+            silent[idx++] = db < thresholdDb
+        }
+
+        val segments = mutableListOf<Pair<Long, Long>>()
+        var runStart = -1L
+        var i = 0L
+        while (i < frameCount) {
+            if (!silent[i.toInt()]) {
+                if (runStart == -1L) runStart = i
+                i++
+            } else {
+                var j = i
+                while (j < frameCount && silent[j.toInt()]) j++
+                val gapSamples = (j - i) * frameSamples
+                val isLeading = runStart == -1L
+                val isTrailing = j == frameCount
+                val canSplit = removeInternalPauses || isLeading || isTrailing
+                if (canSplit && gapSamples >= minSilenceSamples) {
+                    if (!isLeading) segments.add(runStart to (i - 1))
+                    runStart = -1L
+                } else if (isLeading) {
+                    // Short leading silence: keep the whole head, from frame 0.
+                    runStart = 0L
+                }
+                i = j
+            }
+        }
+        if (runStart != -1L) {
+            segments.add(runStart to (frameCount - 1))
+        }
+        return segments
+    }
+
+    /**
+     * Writes [segments] (absolute sample ranges, inclusive) back-to-back, skipping
+     * the removed pauses between them. When [trimmed], short linear fades smooth
+     * every cut point so joins never click.
+     */
+    private fun copyTrimmedSegments(
+            input: InputStream,
+            output: OutputStream,
+            segments: List<Pair<Long, Long>>,
+            totalSamples: Long,
+            sampleRate: Int,
+            trimmed: Boolean
+    ) {
+        val fadeSamples = min(240, max(1, sampleRate / 200)) // 5 ms
+        val bulk = ByteArray(64 * 1024)
+        val skipBuffer = ByteArray(8192)
+        val sampleBuf = ByteArray(2)
+        var prevEndSample = -1L
+        for ((segIndex, seg) in segments.withIndex()) {
+            val startSample = seg.first
+            val endSample = seg.second
+
+            // Skip the removed pause before this segment.
+            var toSkip = (startSample - prevEndSample - 1) * 2
+            while (toSkip > 0) {
+                val r = input.read(skipBuffer, 0, min(skipBuffer.size.toLong(), toSkip).toInt())
+                if (r == -1) break
+                toSkip -= r
+            }
+
+            val segLen = endSample - startSample + 1
+            val fadeInLen =
+                    if (trimmed && (segIndex > 0 || startSample > 0)) {
+                        min(fadeSamples.toLong(), segLen).toInt()
+                    } else 0
+            val fadeOutLen =
+                    if (trimmed && (segIndex < segments.size - 1 || endSample < totalSamples - 1)) {
+                        min(fadeSamples.toLong(), segLen - fadeInLen).toInt()
+                    } else 0
+
+            // Fade-in region (sample-granular so we can ramp).
+            for (k in 1..fadeInLen) {
+                writeInt16Sample(output, (readInt16Sample(input, sampleBuf) * k) / fadeInLen)
+            }
+            // Bulk middle.
+            var middleBytes = (segLen - fadeInLen - fadeOutLen) * 2
+            while (middleBytes > 0) {
+                val r = input.read(bulk, 0, min(bulk.size.toLong(), middleBytes).toInt())
+                if (r == -1) break
+                output.write(bulk, 0, r)
+                middleBytes -= r
+            }
+            // Fade-out region.
+            for (k in fadeOutLen downTo 1) {
+                writeInt16Sample(output, (readInt16Sample(input, sampleBuf) * k) / fadeOutLen)
+            }
+            prevEndSample = endSample
+        }
+    }
+
+    private fun readInt16Sample(input: InputStream, buf: ByteArray): Int {
+        val lo = input.read()
+        val hi = input.read()
+        if (lo == -1 || hi == -1) return 0
+        return (lo or (hi shl 8)).toShort().toInt()
+    }
+
+    private fun writeInt16Sample(output: OutputStream, v: Int) {
+        val s = v.coerceIn(-32768, 32767)
+        output.write(s and 0xff)
+        output.write((s shr 8) and 0xff)
+    }
 
     private fun writeWavHeader(
             os: OutputStream,

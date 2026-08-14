@@ -28,6 +28,10 @@ import {
   markDonationPromptShown,
   shouldShowDonationReminder,
 } from "@/src/scripts/settings";
+import {
+  DEFAULT_SILENCE_TRIM,
+  SilenceTrimSettings,
+} from "@/src/scripts/silenceTrim";
 import Feather from "@expo/vector-icons/Feather";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -67,6 +71,8 @@ export default function ProcessScreen() {
   const [eta, setEta] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState(0);
   const [attenLimDb, setAttenLimDb] = useState(0);
+  const [silenceTrim, setSilenceTrim] =
+    useState<SilenceTrimSettings>(DEFAULT_SILENCE_TRIM);
   const [normalize, setNormalize] = useState<{
     toggle: boolean;
     targetRMS: number;
@@ -128,9 +134,19 @@ export default function ProcessScreen() {
   const handleDenoise = async () => {
     if (!originalFile) return;
 
+    // Silence trim is not available for video files (internal cuts would
+    // desync the video track), so it is forcibly disabled for them.
+    const effectiveSilenceTrim: SilenceTrimSettings = isFileTypeVideo
+      ? { ...silenceTrim, enabled: false }
+      : silenceTrim;
+
     // Reuse a previously denoised result for the same input + settings
     // instead of re-running the whole pipeline from scratch.
-    const cacheKey = buildCacheKey(originalFile, { attenLimDb, normalize });
+    const cacheKey = buildCacheKey(originalFile, {
+      attenLimDb,
+      normalize,
+      silenceTrim: effectiveSilenceTrim,
+    });
     try {
       const cached = await lookupCachedOutput(cacheKey);
       if (cached) {
@@ -291,15 +307,21 @@ export default function ProcessScreen() {
       setProgressText("Finalizing media...");
 
       const originalBase = filename.split(".").slice(0, -1).join(".");
-      const finalWavFile = await PCMtoWav(denoisedPcmFile);
+      const wavResult = await PCMtoWav(denoisedPcmFile, 48000, effectiveSilenceTrim);
       let outputFile: fs.File;
       if (isFileTypeVideo) {
         // Mux against the cache temp WAV, then discard it — only the final MP4
         // is worth keeping in persistent storage (indexed by the cache).
+        // The silence-trim offsets are passed through so the video track is
+        // cut by the same window and stays in sync with the trimmed audio.
         setProgressText("Merging audio with video...");
-        const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);
+        const finalVideoFile = await mergeAudioVideo(originalFile, wavResult.file, {
+          startUs: wavResult.trimStartUs,
+          endUs: wavResult.trimEndUs,
+          trimmed: wavResult.trimmed,
+        });
         try {
-          if (finalWavFile.exists) finalWavFile.delete();
+          if (wavResult.file.exists) wavResult.file.delete();
         } catch (err) {
           console.warn("Failed to delete intermediate WAV:", err);
         }
@@ -310,7 +332,7 @@ export default function ProcessScreen() {
         setDenoisedFile(outputFile);
       } else {
         outputFile = placeOutput(
-          finalWavFile,
+          wavResult.file,
           `${sanitizeFileName(originalBase)}_denoised.wav`,
         );
         setDenoisedFile(outputFile);
@@ -409,6 +431,9 @@ export default function ProcessScreen() {
           onAttenLimDbChange={setAttenLimDb}
           normalize={normalize}
           onNormalizeChange={setNormalize}
+          silenceTrim={silenceTrim}
+          onSilenceTrimChange={setSilenceTrim}
+          showSilenceTrim={!isFileTypeVideo}
         />
 
         {denoising && (

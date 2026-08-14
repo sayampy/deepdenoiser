@@ -1,6 +1,11 @@
 import { NativeModule, requireNativeModule } from "expo";
 
-import { AudioProcessorModuleEvents } from "./AudioProcessorModule.types";
+import {
+  AudioProcessorModuleEvents,
+  PcmToWavResult,
+  SilenceTrimNativeConfig,
+  VideoTrimConfig,
+} from "./AudioProcessorModule.types";
 
 declare class AudioProcessorModule extends NativeModule<AudioProcessorModuleEvents> {
   extractAndTranscodeAudio(
@@ -18,7 +23,8 @@ declare class AudioProcessorModule extends NativeModule<AudioProcessorModuleEven
     sampleRate: number,
     channels: number,
     bitDepth: number,
-  ): Promise<string>;
+    silenceTrim?: SilenceTrimNativeConfig | null,
+  ): Promise<PcmToWavResult>;
   extractWavAudio(
     inputUri: string,
     outputUri: string,
@@ -27,8 +33,10 @@ declare class AudioProcessorModule extends NativeModule<AudioProcessorModuleEven
     videoUri: string,
     audioUri: string,
     outputUri: string,
+    trim?: VideoTrimConfig | null,
   ): Promise<string>;
   copyFile(sourceUri: string, destUri: string): Promise<string>;
+  getFileSize(path: string): Promise<number>;
 }
 
 

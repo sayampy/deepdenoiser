@@ -2,6 +2,7 @@
 // and on native platforms to AudioProcessorModule.ts
 // export { default } from "./src/AudioProcessorModule";
 import AudioProcessorModule from "./src/AudioProcessorModule";
+import type { PcmToWavResult, SilenceTrimNativeConfig, VideoTrimConfig } from "./src/AudioProcessorModule.types";
 export * from "./src/AudioProcessorModule.types";
 
 export async function extractAndTranscodeAudio(
@@ -20,8 +21,14 @@ export async function mixAudioVideo(
   videoUri: string,
   audioUri: string,
   outputUri: string,
+  trim?: VideoTrimConfig,
 ): Promise<string> {
-  return await AudioProcessorModule.mixAudioVideo(videoUri, audioUri, outputUri);
+  return await AudioProcessorModule.mixAudioVideo(
+    videoUri,
+    audioUri,
+    outputUri,
+    trim ?? null,
+  );
 }
 
 export async function decodeToPCM(
@@ -44,13 +51,15 @@ export async function pcmToWav(
   sampleRate: number = 48000,
   channels: number = 1,
   bitDepth: number = 16,
-): Promise<string> {
+  silenceTrim?: SilenceTrimNativeConfig,
+): Promise<PcmToWavResult> {
   return await AudioProcessorModule.pcmToWav(
     pcmUri,
     wavUri,
     sampleRate,
     channels,
     bitDepth,
+    silenceTrim ?? null,
   );
 }
 
@@ -59,4 +68,8 @@ export async function copyFile(
   destUri: string,
 ): Promise<string> {
   return await AudioProcessorModule.copyFile(sourceUri, destUri);
+}
+
+export async function getFileSize(path: string): Promise<number> {
+  return await AudioProcessorModule.getFileSize(path);
 }

@@ -8,8 +8,21 @@ import {
 import * as fs from "expo-file-system";
 import * as MediaLibrary from "expo-media-library";
 import { trackAppEvent } from "./analytics";
+import type { SilenceTrimSettings } from "./silenceTrim";
+import { trimToNativeConfig } from "./silenceTrim";
 
 const ILLEGAL_FS_CHARS = /[^a-zA-Z0-9._-]/g;
+
+/** Result of PCMtoWav: the wrapped WAV plus the silence-trim window. */
+export interface WavResult {
+  file: fs.File;
+  /** Trimmed window start in the original PCM timeline (microseconds). */
+  trimStartUs: number;
+  /** Trimmed window end in the original PCM timeline (microseconds). */
+  trimEndUs: number;
+  /** True when leading/trailing silence was actually removed. */
+  trimmed: boolean;
+}
 
 export async function toWav(file: fs.File): Promise<fs.File> {
   try {
@@ -27,7 +40,7 @@ export async function toWav(file: fs.File): Promise<fs.File> {
 
     // Then wrap in WAV
     const wavFile = await PCMtoWav(pcmFile, sampleRate);
-    return wavFile;
+    return wavFile.file;
   } catch (error) {
     console.error("Failed to convert to WAV.", error);
     // Re-throw the error to be handled by the caller
@@ -66,7 +79,11 @@ export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; s
   }
 }
 
-export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promise<fs.File> {
+export async function PCMtoWav(
+  file: fs.File,
+  sampleRate: number = 48000,
+  silenceTrim?: SilenceTrimSettings,
+): Promise<WavResult> {
   try {
     const outputFile = new fs.File(
       fs.Paths.cache,
@@ -74,15 +91,21 @@ export async function PCMtoWav(file: fs.File, sampleRate: number = 48000): Promi
     );
 
     // Use native pcmToWav to avoid loading entire file into memory as base64
-    await nativePcmToWav(
+    const result = await nativePcmToWav(
       file.uri,
       outputFile.uri,
       sampleRate,
       1, // channels (mono)
-      16 // bitDepth (16-bit)
+      16, // bitDepth (16-bit)
+      silenceTrim && silenceTrim.enabled ? trimToNativeConfig(silenceTrim) : undefined,
     );
 
-    return outputFile;
+    return {
+      file: outputFile,
+      trimStartUs: result.trimStartUs,
+      trimEndUs: result.trimEndUs,
+      trimmed: result.trimmed,
+    };
   } catch (error) {
     console.error("Failed to wrap PCM in WAV.", error);
     throw new Error(
@@ -284,6 +307,7 @@ export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): P
 export async function mergeAudioVideo(
   video: fs.File,
   audio: fs.File,
+  trim?: { startUs: number; endUs: number; trimmed: boolean },
 ): Promise<fs.File> {
   try {
     // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
@@ -299,6 +323,9 @@ export async function mergeAudioVideo(
       video.uri,
       transcodedAudio.uri,
       outputFile.uri.replace('file://', ''),
+      trim && trim.trimmed
+        ? { enabled: true, startUs: trim.startUs, endUs: trim.endUs }
+        : undefined,
     );
     return outputFile;
   } catch (error) {
