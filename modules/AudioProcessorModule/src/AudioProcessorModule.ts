@@ -28,6 +28,7 @@ declare class AudioProcessorModule extends NativeModule<AudioProcessorModuleEven
     audioUri: string,
     outputUri: string,
   ): Promise<string>;
+  copyFile(sourceUri: string, destUri: string): Promise<string>;
 }
 
 

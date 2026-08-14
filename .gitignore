@@ -20,7 +20,7 @@ expo-env.d.ts
 *.p12
 *.key
 *.mobileprovision
-
+build/
 # Metro
 .metro-health-check*
 

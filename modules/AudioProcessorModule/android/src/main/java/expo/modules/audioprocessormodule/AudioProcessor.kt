@@ -21,6 +21,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.Dispatchers
@@ -33,8 +34,13 @@ class MediaProcessor(private val context: Context) {
 
     private fun getSafeUri(path: String): Uri {
         return try {
-            if (path.startsWith("content://") || path.startsWith("file://")) {
+            if (path.startsWith("content://")) {
                 Uri.parse(path)
+            } else if (path.startsWith("file://")) {
+                // Uri.parse treats '#'/spaces as URI fragments and truncates
+                // the path — build the URI from the raw file path instead so
+                // filenames like "song #1.mp3" keep working.
+                Uri.fromFile(File(Uri.decode(path.removePrefix("file://"))))
             } else {
                 Uri.fromFile(File(path))
             }
@@ -90,33 +96,12 @@ class MediaProcessor(private val context: Context) {
             inputPath: String,
             outputPath: String,
             targetBitrate: Int? = null
-    ): String = suspendCancellableCoroutine { continuation ->
+    ): String {
         val requestId = "transcode_${System.currentTimeMillis()}"
+        val resumed = AtomicBoolean(false)
 
         val optionsBuilder =
                 TransformationOptions.Builder().setGranularity(MediaTransformer.GRANULARITY_DEFAULT)
-
-        val listener =
-                object : TransformationListener {
-                    override fun onStarted(id: String) {}
-                    override fun onProgress(id: String, progress: Float) {}
-                    override fun onCompleted(id: String, stats: List<TrackTransformationInfo>?) {
-                        continuation.resume(outputPath)
-                    }
-                    override fun onCancelled(id: String, stats: List<TrackTransformationInfo>?) {
-                        continuation.resumeWithException(Exception("Transformation cancelled"))
-                    }
-                    override fun onError(
-                            id: String,
-                            cause: Throwable?,
-                            stats: List<TrackTransformationInfo>?
-                    ) {
-                        val message = cause?.message ?: "Unknown Litr Error"
-                        continuation.resumeWithException(
-                                Exception("Transcode failed ($inputPath): $message", cause)
-                        )
-                    }
-                }
 
         // Get source sample rate to avoid pitch shift
         val extractor = MediaExtractor()
@@ -136,21 +121,77 @@ class MediaProcessor(private val context: Context) {
             extractor.release()
         }
 
-        // For extraction + re-encoding, we isolate the audio track
-        // If targetBitrate is set, Litr will re-encode. Otherwise, it pass-throughs.
-        mediaTransformer.transform(
-                requestId,
-                getSafeUri(inputPath),
-                getSafeUri(outputPath),
-                null, // Video format (null to drop video)
-                if (targetBitrate != null) createAudioFormat(targetBitrate, sourceSampleRate)
-                else null,
-                listener,
-                optionsBuilder.build()
-        )
+        return suspendCancellableCoroutine { continuation ->
+            val listener =
+                    object : TransformationListener {
+                        override fun onStarted(id: String) {}
+                        override fun onProgress(id: String, progress: Float) {}
+                        override fun onCompleted(
+                                id: String,
+                                stats: List<TrackTransformationInfo>?
+                        ) {
+                            if (resumed.compareAndSet(false, true)) {
+                                continuation.resume(outputPath)
+                            }
+                        }
+                        override fun onCancelled(id: String, stats: List<TrackTransformationInfo>?) {
+                            if (resumed.compareAndSet(false, true)) {
+                                continuation.resumeWithException(Exception("Transformation cancelled"))
+                            }
+                        }
+                        override fun onError(
+                                id: String,
+                                cause: Throwable?,
+                                stats: List<TrackTransformationInfo>?
+                        ) {
+                            if (resumed.compareAndSet(false, true)) {
+                                val message = cause?.message ?: "Unknown Litr Error"
+                                continuation.resumeWithException(
+                                        Exception("Transcode failed ($inputPath): $message", cause)
+                                )
+                            }
+                        }
+                    }
 
-        continuation.invokeOnCancellation { mediaTransformer.cancel(requestId) }
+            // For extraction + re-encoding, we isolate the audio track
+            // If targetBitrate is set, Litr will re-encode. Otherwise, it pass-throughs.
+            mediaTransformer.transform(
+                    requestId,
+                    getSafeUri(inputPath),
+                    getSafeUri(outputPath),
+                    null, // Video format (null to drop video)
+                    if (targetBitrate != null) createAudioFormat(targetBitrate, sourceSampleRate)
+                    else null,
+                    listener,
+                    optionsBuilder.build()
+            )
+
+            continuation.invokeOnCancellation {
+                if (resumed.compareAndSet(false, true)) {
+                    mediaTransformer.cancel(requestId)
+                }
+            }
+        }
     }
+
+    // Copies a file from any readable URI (file:// or content://) to a
+    // destination file:// path. Used to move picked/shared files out of the
+    // evictable cache and into app documents before processing.
+    suspend fun copyFile(sourcePath: String, destPath: String): String =
+            withContext(Dispatchers.IO) {
+                val srcUri = getSafeUri(sourcePath)
+                val dstUri = getSafeUri(destPath)
+                context.contentResolver.openInputStream(srcUri)?.use { input ->
+                    context.contentResolver.openOutputStream(dstUri)?.use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                        }
+                    } ?: throw Exception("Failed to open destination: $destPath")
+                } ?: throw Exception("Failed to open source: $sourcePath")
+                destPath
+            }
 
     // (5) Audio-Video Muxing
     // Combines video from videoPath and audio from audioPath
@@ -161,6 +202,7 @@ class MediaProcessor(private val context: Context) {
                 var audioExtractor: MediaExtractor? = null
                 var isMuxerStarted = false
                 var pfd: ParcelFileDescriptor? = null
+                var transcodedTempPath: String? = null
 
                 try {
                     // Setup muxer
@@ -177,20 +219,43 @@ class MediaProcessor(private val context: Context) {
                     } catch (e: Exception) {
                         throw Exception("Failed to open video source: $videoPath. ${e.message}")
                     }
-                    val videoTrack = findTrackIndex(videoExtractor, "video/")
+                    var videoTrack = findTrackIndex(videoExtractor, "video/")
                     if (videoTrack == -1) throw Exception("No video track found in $videoPath")
-                    val videoFormat = videoExtractor.getTrackFormat(videoTrack)
-                    val videoMuxerTrack = muxer.addTrack(videoFormat)
+                    var videoFormat = videoExtractor.getTrackFormat(videoTrack)
 
-                    // Preserve video rotation
+                    // Some video codecs (VP8/VP9, MPEG-1/2, MJPEG, ...) cannot be muxed into an
+                    // MP4 container. Re-encode such videos to H.264 first so the mux never fails.
+                    if (!canMuxVideo(videoFormat)) {
+                        val transcodePath = transcodeVideoToH264(videoPath, videoFormat)
+                        transcodedTempPath = transcodePath
+                        videoExtractor?.release()
+                        videoExtractor = MediaExtractor()
+                        try {
+                            setDataSource(videoExtractor, transcodePath)
+                        } catch (e: Exception) {
+                            throw Exception(
+                                    "Failed to open transcoded video source: $transcodePath. ${e.message}"
+                            )
+                        }
+                        videoTrack = findTrackIndex(videoExtractor, "video/")
+                        if (videoTrack == -1)
+                                throw Exception("No video track found in transcoded $transcodePath")
+                        videoFormat = videoExtractor.getTrackFormat(videoTrack)
+                    }
+
+                    // Preserve video rotation. Read it from the format that is actually
+                    // being muxed (the transcoded file may have baked rotation into the
+                    // pixels, or kept it as metadata — either way its own rotation is the
+                    // ground truth, and the muxer only needs a single hint).
                     var rotation = 0
                     if (videoFormat.containsKey(MediaFormat.KEY_ROTATION)) {
                         rotation = videoFormat.getInteger(MediaFormat.KEY_ROTATION)
                     } else {
                         // Fallback to MediaMetadataRetriever
+                        val rotationSourcePath = transcodedTempPath ?: videoPath
                         val retriever = MediaMetadataRetriever()
                         try {
-                            setDataSource(retriever, videoPath)
+                            setDataSource(retriever, rotationSourcePath)
                             val rotationStr =
                                     retriever.extractMetadata(
                                             MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION
@@ -202,6 +267,16 @@ class MediaProcessor(private val context: Context) {
                             retriever.release()
                         }
                     }
+
+                    val videoMuxerTrack =
+                            try {
+                                muxer.addTrack(videoFormat)
+                            } catch (e: Exception) {
+                                throw Exception(
+                                        "Failed to add video track (${videoFormat.getString(MediaFormat.KEY_MIME)}): ${e.message}",
+                                        e
+                                )
+                            }
                     muxer.setOrientationHint(rotation)
 
                     // Setup audio extractor
@@ -216,7 +291,15 @@ class MediaProcessor(private val context: Context) {
                     val audioTrack = findTrackIndex(audioExtractor, "audio/")
                     if (audioTrack == -1) throw Exception("No audio track found in $audioPath")
                     val audioFormat = audioExtractor.getTrackFormat(audioTrack)
-                    val audioMuxerTrack = muxer.addTrack(audioFormat)
+                    val audioMuxerTrack =
+                            try {
+                                muxer.addTrack(audioFormat)
+                            } catch (e: Exception) {
+                                throw Exception(
+                                        "Failed to add audio track (${audioFormat.getString(MediaFormat.KEY_MIME)}): ${e.message}",
+                                        e
+                                )
+                            }
 
                     muxer.start()
                     isMuxerStarted = true
@@ -293,6 +376,13 @@ class MediaProcessor(private val context: Context) {
                     muxer?.release()
                     videoExtractor?.release()
                     audioExtractor?.release()
+                    transcodedTempPath?.let {
+                        try {
+                            File(it).delete()
+                        } catch (e: Exception) {
+                            // Ignore
+                        }
+                    }
                     try {
                         pfd?.close()
                     } catch (e: Exception) {
@@ -637,6 +727,136 @@ class MediaProcessor(private val context: Context) {
         val format = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, sampleRate, 1)
         format.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
         return format
+    }
+
+    // Whether this video track can be muxed into an MP4 container as-is.
+    // NOTE: VP8/VP9 are NOT muxable into MP4 (only WebM) — they must be
+    // transcoded to H.264 first, otherwise MediaMuxer throws
+    // "Failed to add the track to the muxer".
+    private fun canMuxVideo(format: MediaFormat): Boolean {
+        val mime = format.getString(MediaFormat.KEY_MIME) ?: return false
+        val muxable =
+                mime == MediaFormat.MIMETYPE_VIDEO_AVC ||
+                        mime == MediaFormat.MIMETYPE_VIDEO_HEVC ||
+                        mime == MediaFormat.MIMETYPE_VIDEO_MPEG4 ||
+                        mime == MediaFormat.MIMETYPE_VIDEO_H263
+        if (!muxable) return false
+        // AVC/HEVC muxing requires codec-specific data (SPS/PPS) in the format
+        if (mime == MediaFormat.MIMETYPE_VIDEO_AVC || mime == MediaFormat.MIMETYPE_VIDEO_HEVC) {
+            if (format.getByteBuffer("csd-0") == null) return false
+            if (mime == MediaFormat.MIMETYPE_VIDEO_AVC && format.getByteBuffer("csd-1") == null)
+                    return false
+        }
+        return true
+    }
+
+    // Re-encodes an unsupported video track to H.264 MP4 so MediaMuxer can
+    // accept it. Audio is re-encoded to AAC too (some sources carry codecs,
+    // e.g. Opus, that also cannot be muxed into MP4).
+    private suspend fun transcodeVideoToH264(
+            inputPath: String,
+            sourceFormat: MediaFormat
+    ): String {
+        val outputFile = File(context.cacheDir, "remux_${System.currentTimeMillis()}.mp4")
+        val requestId = "remux_video_${System.currentTimeMillis()}"
+        val resumed = AtomicBoolean(false)
+
+        val width =
+                if (sourceFormat.containsKey(MediaFormat.KEY_WIDTH)) {
+                    sourceFormat.getInteger(MediaFormat.KEY_WIDTH)
+                } else {
+                    1920
+                }
+        val height =
+                if (sourceFormat.containsKey(MediaFormat.KEY_HEIGHT)) {
+                    sourceFormat.getInteger(MediaFormat.KEY_HEIGHT)
+                } else {
+                    1080
+                }
+        val bitrate =
+                when {
+                    height >= 1080 -> 8_000_000
+                    height >= 720 -> 5_000_000
+                    else -> 2_500_000
+                }
+        val videoFormat =
+                MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
+        videoFormat.setInteger(MediaFormat.KEY_BIT_RATE, bitrate)
+        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, 30)
+        videoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
+
+        val audioFormat = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, 48000, 2)
+        audioFormat.setInteger(MediaFormat.KEY_BIT_RATE, 128_000)
+
+        val optionsBuilder =
+                TransformationOptions.Builder()
+                        .setGranularity(MediaTransformer.GRANULARITY_DEFAULT)
+
+        return try {
+            suspendCancellableCoroutine { continuation ->
+                val listener =
+                        object : TransformationListener {
+                            override fun onStarted(id: String) {}
+                            override fun onProgress(id: String, progress: Float) {}
+                            override fun onCompleted(
+                                    id: String,
+                                    stats: List<TrackTransformationInfo>?
+                            ) {
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resume(outputFile.absolutePath)
+                                }
+                            }
+                            override fun onCancelled(
+                                    id: String,
+                                    stats: List<TrackTransformationInfo>?
+                            ) {
+                                if (resumed.compareAndSet(false, true)) {
+                                    continuation.resumeWithException(
+                                            Exception("Video transcode cancelled")
+                                    )
+                                }
+                            }
+                            override fun onError(
+                                    id: String,
+                                    cause: Throwable?,
+                                    stats: List<TrackTransformationInfo>?
+                            ) {
+                                if (resumed.compareAndSet(false, true)) {
+                                    val message = cause?.message ?: "Unknown Litr Error"
+                                    continuation.resumeWithException(
+                                            Exception("Video transcode failed ($inputPath): $message", cause)
+                                    )
+                                }
+                            }
+                        }
+
+                mediaTransformer.transform(
+                        requestId,
+                        getSafeUri(inputPath),
+                        Uri.fromFile(outputFile),
+                        videoFormat,
+                        audioFormat,
+                        listener,
+                        optionsBuilder.build()
+                )
+
+                continuation.invokeOnCancellation {
+                    // Cancellation already resumes the continuation — just stop
+                    // the transform and let the guard swallow late callbacks.
+                    if (resumed.compareAndSet(false, true)) {
+                        mediaTransformer.cancel(requestId)
+                    }
+                }
+            }
+            outputFile.absolutePath
+        } catch (e: Exception) {
+            // Never leave a half-written remux temp file behind.
+            try {
+                outputFile.delete()
+            } catch (ignore: Exception) {
+            }
+            throw e
+        }
     }
 
     // (6) Direct WAV PCM extraction (bypassed MediaExtractor)

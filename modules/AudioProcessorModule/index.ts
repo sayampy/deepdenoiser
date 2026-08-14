@@ -53,3 +53,10 @@ export async function pcmToWav(
     bitDepth,
   );
 }
+
+export async function copyFile(
+  sourceUri: string,
+  destUri: string,
+): Promise<string> {
+  return await AudioProcessorModule.copyFile(sourceUri, destUri);
+}

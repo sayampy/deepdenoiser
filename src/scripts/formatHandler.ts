@@ -223,19 +223,10 @@ export async function writePCMChunk(
     pcmChunk[j] = val;
   }
 
-  const bytes = new Uint8Array(pcmChunk.buffer);
-  let binaryString = "";
-  const step = 8192;
-  for (let k = 0; k < bytes.length; k += step) {
-    const end = Math.min(k + step, bytes.length);
-    for (let i = k; i < end; i++) binaryString += String.fromCharCode(bytes[i]);
-  }
-  const base64 = btoa(binaryString);
-
-  await file.write(base64, {
-    encoding: "base64",
-    append: append,
-  });
+  // Write raw little-endian PCM bytes directly. The new expo-file-system
+  // API writes Uint8Array without encoding, so we skip the base64 string
+  // building that previously dominated the recording hot path.
+  file.write(new Uint8Array(pcmChunk.buffer), { append });
 }
 
 export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {

@@ -12,7 +12,8 @@ import {
   markDonationPromptShown,
   shouldShowDonationReminder,
 } from "@/src/scripts/settings";
-import { DeepFilterNet } from "@/src/scripts/Denoiser";
+import { getDenoiser } from "@/src/scripts/denoiserSingleton";
+import type { DeepFilterNet } from "@/src/scripts/Denoiser";
 import { PCMtoWav, writePCMChunk } from "@/src/scripts/formatHandler";
 import Feather from "@expo/vector-icons/Feather";
 import {
@@ -20,7 +21,6 @@ import {
   RecordingConfig,
   useAudioRecorder
 } from "@siteed/audio-studio";
-import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -41,6 +41,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const SAMPLE_RATE = 48000;
 const HOP_SIZE = 512;
 const ALSTEPS = [0, 5, 10, 15, 20, 30, 40];
+/** Safety valve: max queued 100ms chunks (~3s) before falling back to raw PCM. */
+const MAX_QUEUED_CHUNKS = 30;
+/** Once in passthrough mode, stay there until the backlog drops below this. */
+const PASSTHROUGH_RESUME_AT = 10;
 
 export default function RecordingScreen() {
   const router = useRouter();
@@ -74,13 +78,32 @@ export default function RecordingScreen() {
   const denoiserRef = useRef<DeepFilterNet | null>(null);
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const queueDepthRef = useRef(0);
   const isStoppingRef = useRef(false);
+  const isRecordingRef = useRef(isRecording);
   const pausedDurationRef = useRef(0);
   const isPausedRef = useRef(isPaused);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  /** True while chunks are being written raw because the queue is backed up. */
+  const passthroughModeRef = useRef(false);
+  /** True when the previous chunk was written raw (used to reset model state). */
+  const wasPassthroughRef = useRef(false);
+
+  // Waits for every task currently chained on the processing queue. Re-checks
+  // until the chain is stable so a stream event racing the stop cannot append
+  // late work after the drain completed.
+  const drainQueue = async () => {
+    let chain = processingQueueRef.current;
+    while (true) {
+      await chain;
+      if (processingQueueRef.current === chain) break;
+      chain = processingQueueRef.current;
+    }
+  };
 
   useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
 
   useEffect(() => {
     if (isPaused) {
@@ -91,10 +114,7 @@ export default function RecordingScreen() {
   useEffect(() => {
     const initDenoiser = async () => {
       try {
-        const denoiser = new DeepFilterNet();
-        const modelAsset = Asset.fromModule(require("@/assets/model/denoiser_model.ort"));
-        await modelAsset.downloadAsync();
-        await denoiser.loadModel(modelAsset.localUri!);
+        const denoiser = await getDenoiser();
         denoiserRef.current = denoiser;
         setDenoiserReady(true);
       } catch (err) {
@@ -106,10 +126,19 @@ export default function RecordingScreen() {
     initDenoiser();
 
     return () => {
-      (async () => {
-        if (isRecording) await stopAudioRecording();
-        await denoiserRef.current?.release();
-      })();
+      // Stop any in-flight recording when leaving the screen. The ONNX session
+      // itself is shared via the singleton and intentionally NOT released here
+      // (releasing it was leaking/racing and caused crashes). isStoppingRef must
+      // be set so late stream events are dropped instead of appending to the
+      // processing queue after the screen is gone.
+      isStoppingRef.current = true;
+      if (isRecordingRef.current) {
+        stopAudioRecording()
+          .then(drainQueue)
+          .catch((err) =>
+            console.error("Failed to stop recording on unmount:", err),
+          );
+      }
     };
   }, []);
 
@@ -146,51 +175,88 @@ export default function RecordingScreen() {
     if (!eventData || eventData.length === 0) return;
     const float32Data = new Float32Array(eventData);
 
-    processingQueueRef.current = processingQueueRef.current.then(async () => {
-      try {
-        const denoiser = denoiserRef.current;
-        if (!denoiser) return;
+    // If the denoise queue is hopelessly behind (slow device), write the raw
+    // PCM for this chunk instead of dropping audio — the denoised file stays
+    // time-aligned with the original and memory stays bounded. Hysteresis
+    // (stay in passthrough until the backlog is nearly empty) prevents
+    // oscillating between raw and denoised every chunk.
+    const passthrough = passthroughModeRef.current
+      ? queueDepthRef.current >= PASSTHROUGH_RESUME_AT
+      : queueDepthRef.current >= MAX_QUEUED_CHUNKS;
+    if (passthrough) {
+      passthroughModeRef.current = true;
+      console.warn(
+        "Recording denoise queue backlogged — writing raw PCM chunk instead.",
+      );
+    } else {
+      passthroughModeRef.current = false;
+    }
+    queueDepthRef.current++;
 
-        // 1. Save original PCM
-        const origFile = originalPcmFileRef.current;
-        if (origFile) {
-          await writePCMChunk(origFile, float32Data, true);
-        }
+    processingQueueRef.current = processingQueueRef.current
+      .then(async () => {
+        try {
+          const denoiser = denoiserRef.current;
+          if (!denoiser) return;
 
-        // 2. Denoise and save
-        const denFile = denoisedPcmFileRef.current;
-        if (denFile) {
-          // Combine with previous leftovers
-          const combined = new Float32Array(audioBufferRef.current.length + float32Data.length);
-          combined.set(audioBufferRef.current);
-          combined.set(float32Data, audioBufferRef.current.length);
-
-          const numFrames = Math.floor(combined.length / HOP_SIZE);
-          const processableLength = numFrames * HOP_SIZE;
-          const leftovers = combined.subarray(processableLength);
-
-          if (numFrames > 0) {
-            const processData = combined.subarray(0, processableLength);
-            const denoisedOutput = new Float32Array(processableLength);
-
-            for (let i = 0; i < processableLength; i += HOP_SIZE) {
-              const frame = processData.subarray(i, i + HOP_SIZE);
-              const outFrame = await denoiser.processFrame(frame);
-              denoisedOutput.set(outFrame, i);
-            }
-            await writePCMChunk(denFile, denoisedOutput, true);
+          // 1. Save original PCM
+          const origFile = originalPcmFileRef.current;
+          if (origFile) {
+            await writePCMChunk(origFile, float32Data, true);
           }
 
-          // Store leftovers for next chunk
-          audioBufferRef.current = new Float32Array(leftovers);
+          // 2. Denoise (or passthrough) and save
+          const denFile = denoisedPcmFileRef.current;
+          if (denFile) {
+            // Combine with previous leftovers
+            const combined = new Float32Array(audioBufferRef.current.length + float32Data.length);
+            combined.set(audioBufferRef.current);
+            combined.set(float32Data, audioBufferRef.current.length);
+
+            const numFrames = Math.floor(combined.length / HOP_SIZE);
+            const processableLength = numFrames * HOP_SIZE;
+            const leftovers = combined.subarray(processableLength);
+
+            if (numFrames > 0) {
+              const processData = combined.subarray(0, processableLength);
+              const denoisedOutput = new Float32Array(processableLength);
+
+              if (passthrough) {
+                denoisedOutput.set(processData);
+              } else {
+                // If the previous chunk was written raw, the model's recurrent
+                // state corresponds to audio seconds behind the current chunk.
+                // Reset it so denoising resumes from a clean state instead of
+                // a stale one.
+                if (wasPassthroughRef.current) {
+                  denoiser.setupStreaming(attenLimDb);
+                }
+                for (let i = 0; i < processableLength; i += HOP_SIZE) {
+                  const frame = processData.subarray(i, i + HOP_SIZE);
+                  await denoiser.processFrame(frame, denoisedOutput, i);
+                }
+              }
+              wasPassthroughRef.current = passthrough;
+              await writePCMChunk(denFile, denoisedOutput, true);
+            }
+
+            // Store leftovers for next chunk
+            audioBufferRef.current = new Float32Array(leftovers);
+          }
+        } catch (err) {
+          console.error("Error in audio stream processing:", err);
         }
-      } catch (err) {
-        console.error("Error in audio stream processing:", err);
-      }
-    }).catch((err) => {
-      console.error("Fatal error in processing queue (chain poisoned):", err);
-      processingQueueRef.current = Promise.resolve();
-    });
+      })
+      .catch((err) => {
+        // Unreachable in practice (the task body catches everything), but if it
+        // ever fires, do NOT reset the chain — resetting would let newly
+        // enqueued tasks run concurrently with in-flight ones and interleave
+        // writes to the same PCM files.
+        console.error("Error in recording processing queue:", err);
+      })
+      .finally(() => {
+        queueDepthRef.current = Math.max(0, queueDepthRef.current - 1);
+      });
   };
 
   const startRecording = async () => {
@@ -215,7 +281,13 @@ export default function RecordingScreen() {
       setFinalDenoisedWav(null);
       isStoppingRef.current = false;
       audioBufferRef.current = new Float32Array(0);
+      // Ensure any previous recording's queue has fully drained before
+      // replacing the chain — otherwise old and new tasks would run
+      // interleaved against the same shared model state.
+      await drainQueue();
       processingQueueRef.current = Promise.resolve();
+      passthroughModeRef.current = false;
+      wasPassthroughRef.current = false;
 
       // Reset denoiser states for new recording
       denoiserRef.current?.setupStreaming(attenLimDb);
@@ -246,8 +318,11 @@ export default function RecordingScreen() {
       isStoppingRef.current = true;
       const result = await stopAudioRecording();
 
-      // Wait for all background processing to finish
-      await processingQueueRef.current;
+      // Wait for all background processing to finish. drainQueue re-checks
+      // until the chain is stable — a stream event racing the stop can append
+      // a chunk after we captured the promise, which would otherwise write
+      // out of order.
+      await drainQueue();
 
       const origPcm = originalPcmFileRef.current;
       const denPcm = denoisedPcmFileRef.current;
@@ -258,7 +333,8 @@ export default function RecordingScreen() {
           const leftovers = audioBufferRef.current;
           const paddedFrame = new Float32Array(HOP_SIZE);
           paddedFrame.set(leftovers);
-          const outFrame = await denoiserRef.current.processFrame(paddedFrame);
+          const outBuf = new Float32Array(HOP_SIZE);
+          const outFrame = await denoiserRef.current.processFrame(paddedFrame, outBuf);
           await writePCMChunk(denPcm, outFrame.subarray(0, leftovers.length), true);
           audioBufferRef.current = new Float32Array(0);
         }

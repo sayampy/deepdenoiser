@@ -8,13 +8,18 @@ import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
-import { DeepFilterNet } from "@/src/scripts/Denoiser";
+import { getDenoiser } from "@/src/scripts/denoiserSingleton";
+import {
+  buildCacheKey,
+  lookupCachedOutput,
+  placeOutput,
+  storeCachedOutput,
+} from "@/src/scripts/denoiseCache";
 import {
   decodeToPCMFile,
   mergeAudioVideo,
   PCMtoWav,
   readPCMChunks,
-  renameFile,
   sanitizeFileName,
   writePCMChunk,
 } from "@/src/scripts/formatHandler";
@@ -24,7 +29,6 @@ import {
   shouldShowDonationReminder,
 } from "@/src/scripts/settings";
 import Feather from "@expo/vector-icons/Feather";
-import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -124,6 +128,21 @@ export default function ProcessScreen() {
   const handleDenoise = async () => {
     if (!originalFile) return;
 
+    // Reuse a previously denoised result for the same input + settings
+    // instead of re-running the whole pipeline from scratch.
+    const cacheKey = buildCacheKey(originalFile, { attenLimDb, normalize });
+    try {
+      const cached = await lookupCachedOutput(cacheKey);
+      if (cached) {
+        trackAppEvent("denoise_cached_hit");
+        setDenoisedFile(cached);
+        setProcessingTime(0);
+        return;
+      }
+    } catch (err) {
+      console.warn("Denoise cache lookup failed, proceeding fresh:", err);
+    }
+
     setDenoising(true);
     setProgress(0);
     setProgressText("Initializing...");
@@ -170,12 +189,7 @@ export default function ProcessScreen() {
       }
 
       setProgressText("Optimizing AI model...");
-      const denoiser = new DeepFilterNet();
-      const modelAsset = Asset.fromModule(
-        require("@/assets/model/denoiser_model.ort"),
-      );
-      await modelAsset.downloadAsync();
-      await denoiser.loadModel(modelAsset.localUri!);
+      const denoiser = await getDenoiser();
 
       setProgressText("Removing noise...");
       setProgress(0);
@@ -218,8 +232,7 @@ export default function ProcessScreen() {
           const denoisedOutput = new Float32Array(processLen);
           for (let i = 0; i < processLen; i += hopSize) {
             const frame = toProcess.subarray(i, i + hopSize);
-            const outFrame = await denoiser.processFrame(frame);
-            denoisedOutput.set(outFrame, i);
+            await denoiser.processFrame(frame, denoisedOutput, i);
           }
 
           let finalOutputChunk = denoisedOutput;
@@ -259,7 +272,8 @@ export default function ProcessScreen() {
       if (inputBuffer.length > 0) {
         const padded = new Float32Array(hopSize);
         padded.set(inputBuffer);
-        const outFrame = await denoiser.processFrame(padded);
+        const outBuf = new Float32Array(hopSize);
+        const outFrame = await denoiser.processFrame(padded, outBuf);
         let finalFrame = outFrame.subarray(0, inputBuffer.length);
         if (outputSamplesSkipped < fftSize) {
           const skip = Math.min(
@@ -278,23 +292,35 @@ export default function ProcessScreen() {
 
       const originalBase = filename.split(".").slice(0, -1).join(".");
       const finalWavFile = await PCMtoWav(denoisedPcmFile);
-      renameFile(
-        finalWavFile,
-        `${sanitizeFileName(originalBase)}_denoised.wav`,
-      );
+      let outputFile: fs.File;
       if (isFileTypeVideo) {
+        // Mux against the cache temp WAV, then discard it — only the final MP4
+        // is worth keeping in persistent storage (indexed by the cache).
         setProgressText("Merging audio with video...");
-        const finalVideoFile = await mergeAudioVideo(
-          originalFile,
-          finalWavFile,
-        );
-        renameFile(
+        const finalVideoFile = await mergeAudioVideo(originalFile, finalWavFile);
+        try {
+          if (finalWavFile.exists) finalWavFile.delete();
+        } catch (err) {
+          console.warn("Failed to delete intermediate WAV:", err);
+        }
+        outputFile = placeOutput(
           finalVideoFile,
           `${sanitizeFileName(originalBase)}_denoised.mp4`,
         );
-        setDenoisedFile(finalVideoFile);
+        setDenoisedFile(outputFile);
       } else {
-        setDenoisedFile(finalWavFile);
+        outputFile = placeOutput(
+          finalWavFile,
+          `${sanitizeFileName(originalBase)}_denoised.wav`,
+        );
+        setDenoisedFile(outputFile);
+      }
+
+      // Persist the result so re-denoising the same file is instant.
+      try {
+        await storeCachedOutput(cacheKey, outputFile);
+      } catch (err) {
+        console.warn("Failed to store denoise cache entry:", err);
       }
 
       const duration = (Date.now() - startTime) / 1000;
