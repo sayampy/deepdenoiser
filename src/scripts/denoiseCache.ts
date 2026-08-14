@@ -93,33 +93,66 @@ export function placeOutput(source: fs.File, name: string): fs.File {
 }
 
 // ---------------------------------------------------------------------------
-// Denoise result cache
+// Generic JSON index helpers (shared by the final-output cache and the
+// layered pipeline caches below).
 // ---------------------------------------------------------------------------
 
-function indexFile(): fs.File {
-  return new fs.File(fs.Paths.document, INDEX_FILE_NAME);
-}
-
-async function readIndex(): Promise<CacheIndex> {
+async function readJsonIndex<T>(fileName: string): Promise<Record<string, T>> {
   try {
-    const file = indexFile();
+    const file = new fs.File(fs.Paths.document, fileName);
     if (!file.exists) return {};
     const raw = await file.text();
     if (!raw.trim()) return {};
     const parsed = JSON.parse(raw);
     return typeof parsed === "object" && parsed !== null ? parsed : {};
   } catch (error) {
-    console.error("Failed to read denoise cache index:", error);
+    console.error(`Failed to read ${fileName}:`, error);
     return {};
   }
 }
 
-async function writeIndex(index: CacheIndex): Promise<void> {
+async function writeJsonIndex<T>(fileName: string, index: Record<string, T>): Promise<void> {
   try {
-    indexFile().write(JSON.stringify(index), { encoding: "utf8" });
+    new fs.File(fs.Paths.document, fileName).write(JSON.stringify(index), {
+      encoding: "utf8",
+    });
   } catch (error) {
-    console.error("Failed to write denoise cache index:", error);
+    console.error(`Failed to write ${fileName}:`, error);
   }
+}
+
+function pruneOldest<T extends { createdAt: number; path?: string }>(
+  index: Record<string, T>,
+  maxEntries: number,
+): void {
+  const keys = Object.keys(index);
+  if (keys.length <= maxEntries) return;
+  const oldest = keys
+    .sort((a, b) => (index[a].createdAt || 0) - (index[b].createdAt || 0))
+    .slice(0, keys.length - maxEntries);
+  for (const key of oldest) {
+    const path = index[key]?.path;
+    if (path) {
+      try {
+        new fs.File(path).delete();
+      } catch (error) {
+        console.warn("Failed to delete pruned cache file:", error);
+      }
+    }
+    delete index[key];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Denoise result cache (final outputs)
+// ---------------------------------------------------------------------------
+
+async function readIndex(): Promise<CacheIndex> {
+  return readJsonIndex<CacheEntry>(INDEX_FILE_NAME);
+}
+
+async function writeIndex(index: CacheIndex): Promise<void> {
+  await writeJsonIndex<CacheEntry>(INDEX_FILE_NAME, index);
 }
 
 /**
@@ -175,23 +208,125 @@ export async function lookupCachedOutput(key: string): Promise<fs.File | null> {
 export async function storeCachedOutput(key: string, file: fs.File): Promise<void> {
   const index = await readIndex();
   index[key] = { path: file.uri, createdAt: Date.now() };
-
-  const keys = Object.keys(index);
-  if (keys.length > MAX_CACHED_OUTPUTS) {
-    const oldest = keys
-      .sort((a, b) => (index[a].createdAt || 0) - (index[b].createdAt || 0))
-      .slice(0, keys.length - MAX_CACHED_OUTPUTS);
-    for (const oldKey of oldest) {
-      try {
-        new fs.File(index[oldKey].path).delete();
-      } catch (error) {
-        console.warn("Failed to delete pruned cache output:", error);
-      }
-      delete index[oldKey];
-    }
-  }
-
+  pruneOldest(index, MAX_CACHED_OUTPUTS);
   await writeIndex(index);
+}
+
+// ---------------------------------------------------------------------------
+// Layered pipeline cache (decode + denoise intermediates)
+// ---------------------------------------------------------------------------
+//
+// Re-denoising the SAME file with DIFFERENT settings re-runs expensive steps
+// (audio extraction, PCM decode, ONNX inference) that produce identical
+// intermediates. Two extra cache layers reuse them:
+//
+//  - decode layer:  input identity (name+size+mtime) -> decoded PCM at the
+//                   SOURCE sample rate. Skipping it saves the MediaExtractor
+//                   + MediaCodec decode on every re-run.
+//  - denoise layer: decode identity + attenLimDb + normalize -> denoised PCM
+//                   at 48 kHz. Skipping it saves the entire ONNX pass; only
+//                   the cheap native WAV wrap + silence trim is re-applied, so
+//                   toggling trim on/off (or changing its settings) no longer
+//                   re-runs the model — "trim off" simply re-wraps the
+//                   previously denoised audio at full length.
+//
+// Files live in the OS cache under names that cleanupTempCache() deliberately
+// does NOT match, and are deleted by pruning or OS eviction. A missing file
+// just falls back to re-running that step (the lookup validates existence).
+
+const DECODE_INDEX_NAME = "decode_cache.json";
+const DENOISE_INDEX_NAME = "denoise_cache.json";
+const MAX_CACHED_DECODES = 5;
+const MAX_CACHED_DENOISES = 8;
+
+interface DecodeEntry {
+  path: string;
+  sampleRate: number;
+  createdAt: number;
+}
+
+interface DenoiseEntry {
+  path: string;
+  createdAt: number;
+}
+
+/** Unique identity of an input file (stable across identical re-imports). */
+export function buildInputIdentity(input: fs.File): string {
+  return [input.name, input.size, input.modificationTime].join("|");
+}
+
+/** Key for the decode layer (input identity only — settings-agnostic). */
+export function buildDecodeKey(input: fs.File): string {
+  return ["dec-v1", buildInputIdentity(input)].join("|");
+}
+
+/** Key for the denoise layer (input identity + denoise settings). */
+export function buildDenoiseKey(
+  input: fs.File,
+  settings: {
+    attenLimDb: number;
+    normalize: { toggle: boolean; targetRMS: number; maxPeakDb: number };
+  },
+): string {
+  return [
+    "dn-v1",
+    buildInputIdentity(input),
+    settings.attenLimDb,
+    settings.normalize.toggle,
+    settings.normalize.targetRMS,
+    settings.normalize.maxPeakDb,
+  ].join("|");
+}
+
+/** Stable-ish name for a staged intermediate PCM (never matches cleanupTempCache). */
+export function stagePcmPath(prefix: "stage_dec" | "stage_dn"): string {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}.pcm`;
+}
+
+export async function lookupDecodedPCM(
+  key: string,
+): Promise<{ file: fs.File; sampleRate: number } | null> {
+  const index = await readJsonIndex<DecodeEntry>(DECODE_INDEX_NAME);
+  const entry = index[key];
+  if (!entry) return null;
+  const file = new fs.File(entry.path);
+  if (!file.exists) {
+    delete index[key];
+    await writeJsonIndex(DECODE_INDEX_NAME, index);
+    return null;
+  }
+  return { file, sampleRate: entry.sampleRate };
+}
+
+export async function storeDecodedPCM(
+  key: string,
+  file: fs.File,
+  sampleRate: number,
+): Promise<void> {
+  const index = await readJsonIndex<DecodeEntry>(DECODE_INDEX_NAME);
+  index[key] = { path: file.uri, sampleRate, createdAt: Date.now() };
+  pruneOldest(index, MAX_CACHED_DECODES);
+  await writeJsonIndex(DECODE_INDEX_NAME, index);
+}
+
+export async function lookupDenoisedPCM(key: string): Promise<fs.File | null> {
+  const index = await readJsonIndex<DenoiseEntry>(DENOISE_INDEX_NAME);
+  const entry = index[key];
+  if (!entry) return null;
+  const file = new fs.File(entry.path);
+  if (!file.exists) {
+    delete index[key];
+    await writeJsonIndex(DENOISE_INDEX_NAME, index);
+    return null;
+  }
+  return file;
+}
+
+export async function storeDenoisedPCM(key: string, file: fs.File): Promise<void> {
+  const index = await readJsonIndex<DenoiseEntry>(DENOISE_INDEX_NAME);
+  index[key] = { path: file.uri, createdAt: Date.now() };
+  pruneOldest(index, MAX_CACHED_DENOISES);
+  await writeJsonIndex(DENOISE_INDEX_NAME, index);
 }
 
 // ---------------------------------------------------------------------------

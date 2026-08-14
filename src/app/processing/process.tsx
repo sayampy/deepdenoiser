@@ -11,9 +11,16 @@ import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
 import { getDenoiser } from "@/src/scripts/denoiserSingleton";
 import {
   buildCacheKey,
+  buildDecodeKey,
+  buildDenoiseKey,
   lookupCachedOutput,
+  lookupDecodedPCM,
+  lookupDenoisedPCM,
   placeOutput,
+  stagePcmPath,
   storeCachedOutput,
+  storeDecodedPCM,
+  storeDenoisedPCM,
 } from "@/src/scripts/denoiseCache";
 import {
   decodeToPCMFile,
@@ -166,8 +173,33 @@ export default function ProcessScreen() {
     setDenoisedFile(null);
     try {
       const startTime = Date.now();
-      setProgressText("Extracting audio...");
-      const { file: pcmFile, sampleRate } = await decodeToPCMFile(originalFile);
+
+      // ---- Layer 1: decoded PCM (input identity only) ----
+      // Re-denosing the same file reuses the extracted+decoded PCM instead of
+      // re-running the native decode (expensive MediaCodec pass).
+      const decodeKey = buildDecodeKey(originalFile);
+      let pcmFile: fs.File;
+      let sampleRate: number;
+      const cachedDecode = await lookupDecodedPCM(decodeKey);
+      if (cachedDecode) {
+        pcmFile = cachedDecode.file;
+        sampleRate = cachedDecode.sampleRate;
+        trackAppEvent("denoise_decode_reused");
+        setProgressText("Reusing cached audio...");
+      } else {
+        setProgressText("Extracting audio...");
+        const decoded = await decodeToPCMFile(
+          originalFile,
+          new fs.File(fs.Paths.cache, stagePcmPath("stage_dec")).uri,
+        );
+        pcmFile = decoded.file;
+        sampleRate = decoded.sampleRate;
+        try {
+          await storeDecodedPCM(decodeKey, pcmFile, sampleRate);
+        } catch (err) {
+          console.warn("Failed to store decoded PCM cache:", err);
+        }
+      }
       const totalSamples = pcmFile.size / 2;
 
       let globalGain = 1.0;
@@ -204,102 +236,117 @@ export default function ProcessScreen() {
         if (globalGain > 5.0) globalGain = 5.0;
       }
 
-      setProgressText("Optimizing AI model...");
-      const denoiser = await getDenoiser();
+      // ---- Layer 2: denoised PCM (input + denoise settings) ----
+      // Only the silence-trim settings changed? Reuse the previously denoised
+      // PCM and just re-apply the (cheap) WAV wrap + trim — no ONNX pass at
+      // all. Trim off = re-wrap the denoised audio at full length.
+      const denoiseKey = buildDenoiseKey(originalFile, { attenLimDb, normalize });
+      let denoisedPcmFile: fs.File;
+      const cachedDenoise = await lookupDenoisedPCM(denoiseKey);
+      if (cachedDenoise) {
+        denoisedPcmFile = cachedDenoise;
+        trackAppEvent("denoise_model_reused");
+        setProgressText("Reusing denoised audio...");
+      } else {
+        setProgressText("Optimizing AI model...");
+        const denoiser = await getDenoiser();
 
-      setProgressText("Removing noise...");
-      setProgress(0);
-      const model_startTime = Date.now();
+        setProgressText("Removing noise...");
+        setProgress(0);
+        const model_startTime = Date.now();
 
-      const targetRate = 48000;
-      const hopSize = 512;
-      const fftSize = 960;
-      denoiser.setupStreaming(attenLimDb);
+        const targetRate = 48000;
+        const hopSize = 512;
+        const fftSize = 960;
+        denoiser.setupStreaming(attenLimDb);
 
-      const denoisedPcmFile = new fs.File(
-        fs.Paths.cache,
-        `denoised_${Date.now()}.pcm`,
-      );
-      if (denoisedPcmFile.exists) denoisedPcmFile.delete();
+        denoisedPcmFile = new fs.File(fs.Paths.cache, stagePcmPath("stage_dn"));
 
-      let inputBuffer = new Float32Array(fftSize);
-      let processedInputSamples = 0;
-      let firstWrite = true;
-      let outputSamplesSkipped = 0;
-      const samplesPerChunk = sampleRate * 5; // 5s chunks for better responsiveness
+        let inputBuffer = new Float32Array(fftSize);
+        let processedInputSamples = 0;
+        let firstWrite = true;
+        let outputSamplesSkipped = 0;
+        const samplesPerChunk = sampleRate * 5; // 5s chunks for better responsiveness
 
-      await readPCMChunks(
-        pcmFile,
-        samplesPerChunk,
-        async (chunk, inputSamples) => {
-          if (normalize.toggle) {
-            for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
-          }
+        await readPCMChunks(
+          pcmFile,
+          samplesPerChunk,
+          async (chunk, inputSamples) => {
+            if (normalize.toggle) {
+              for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
+            }
 
-          const combined = new Float32Array(inputBuffer.length + chunk.length);
-          combined.set(inputBuffer);
-          combined.set(chunk, inputBuffer.length);
+            const combined = new Float32Array(inputBuffer.length + chunk.length);
+            combined.set(inputBuffer);
+            combined.set(chunk, inputBuffer.length);
 
-          const numFrames = Math.floor(combined.length / hopSize);
-          const processLen = numFrames * hopSize;
-          const toProcess = combined.subarray(0, processLen);
-          inputBuffer = combined.slice(processLen);
+            const numFrames = Math.floor(combined.length / hopSize);
+            const processLen = numFrames * hopSize;
+            const toProcess = combined.subarray(0, processLen);
+            inputBuffer = combined.slice(processLen);
 
-          const denoisedOutput = new Float32Array(processLen);
-          for (let i = 0; i < processLen; i += hopSize) {
-            const frame = toProcess.subarray(i, i + hopSize);
-            await denoiser.processFrame(frame, denoisedOutput, i);
-          }
+            const denoisedOutput = new Float32Array(processLen);
+            for (let i = 0; i < processLen; i += hopSize) {
+              const frame = toProcess.subarray(i, i + hopSize);
+              await denoiser.processFrame(frame, denoisedOutput, i);
+            }
 
-          let finalOutputChunk = denoisedOutput;
+            let finalOutputChunk = denoisedOutput;
+            if (outputSamplesSkipped < fftSize) {
+              const skip = Math.min(
+                fftSize - outputSamplesSkipped,
+                finalOutputChunk.length,
+              );
+              finalOutputChunk = finalOutputChunk.subarray(skip);
+              outputSamplesSkipped += skip;
+            }
+
+            if (finalOutputChunk.length > 0) {
+              await writePCMChunk(denoisedPcmFile, finalOutputChunk, !firstWrite);
+              firstWrite = false;
+            }
+
+            processedInputSamples += inputSamples;
+            const p = Math.min(
+              Math.round((processedInputSamples / totalSamples) * 100),
+              100,
+            );
+            setProgress(p);
+
+            if (p > 0 && Number.isFinite(p)) {
+              const elapsed = (Date.now() - model_startTime) / 1000;
+              const remaining = elapsed / (p / 100) - elapsed;
+              if (remaining > 0 && Number.isFinite(remaining)) {
+                setEta(`${timeHandler(Math.ceil(remaining))} left`);
+              }
+            }
+          },
+          sampleRate,
+          targetRate,
+        );
+
+        if (inputBuffer.length > 0) {
+          const padded = new Float32Array(hopSize);
+          padded.set(inputBuffer);
+          const outBuf = new Float32Array(hopSize);
+          const outFrame = await denoiser.processFrame(padded, outBuf);
+          let finalFrame = outFrame.subarray(0, inputBuffer.length);
           if (outputSamplesSkipped < fftSize) {
             const skip = Math.min(
               fftSize - outputSamplesSkipped,
-              finalOutputChunk.length,
+              finalFrame.length,
             );
-            finalOutputChunk = finalOutputChunk.subarray(skip);
-            outputSamplesSkipped += skip;
+            finalFrame = finalFrame.subarray(skip);
           }
-
-          if (finalOutputChunk.length > 0) {
-            await writePCMChunk(denoisedPcmFile, finalOutputChunk, !firstWrite);
-            firstWrite = false;
+          if (finalFrame.length > 0) {
+            await writePCMChunk(denoisedPcmFile, finalFrame, !firstWrite);
           }
-
-          processedInputSamples += inputSamples;
-          const p = Math.min(
-            Math.round((processedInputSamples / totalSamples) * 100),
-            100,
-          );
-          setProgress(p);
-
-          if (p > 0 && Number.isFinite(p)) {
-            const elapsed = (Date.now() - model_startTime) / 1000;
-            const remaining = elapsed / (p / 100) - elapsed;
-            if (remaining > 0 && Number.isFinite(remaining)) {
-              setEta(`${timeHandler(Math.ceil(remaining))} left`);
-            }
-          }
-        },
-        sampleRate,
-        targetRate,
-      );
-
-      if (inputBuffer.length > 0) {
-        const padded = new Float32Array(hopSize);
-        padded.set(inputBuffer);
-        const outBuf = new Float32Array(hopSize);
-        const outFrame = await denoiser.processFrame(padded, outBuf);
-        let finalFrame = outFrame.subarray(0, inputBuffer.length);
-        if (outputSamplesSkipped < fftSize) {
-          const skip = Math.min(
-            fftSize - outputSamplesSkipped,
-            finalFrame.length,
-          );
-          finalFrame = finalFrame.subarray(skip);
         }
-        if (finalFrame.length > 0) {
-          await writePCMChunk(denoisedPcmFile, finalFrame, !firstWrite);
+
+        try {
+          await storeDenoisedPCM(denoiseKey, denoisedPcmFile);
+        } catch (err) {
+          console.warn("Failed to store denoised PCM cache:", err);
         }
       }
 
@@ -352,9 +399,6 @@ export default function ProcessScreen() {
         duration: duration,
         file_type: isFileTypeVideo ? "video" : "audio",
       });
-
-      if (pcmFile.exists) pcmFile.delete();
-      if (denoisedPcmFile.exists) denoisedPcmFile.delete();
     } catch (error) {
       console.error("Error during denoising:", error);
       const err = error instanceof Error ? error : new Error(String(error));

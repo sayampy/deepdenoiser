@@ -51,7 +51,7 @@ export async function pcmToWav(
   sampleRate: number = 48000,
   channels: number = 1,
   bitDepth: number = 16,
-  silenceTrim?: SilenceTrimNativeConfig,
+  silenceTrim?: SilenceTrimNativeConfig | null,
 ): Promise<PcmToWavResult> {
   return await AudioProcessorModule.pcmToWav(
     pcmUri,

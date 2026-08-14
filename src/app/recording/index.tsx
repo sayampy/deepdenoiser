@@ -44,10 +44,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const SAMPLE_RATE = 48000;
 const HOP_SIZE = 512;
 const ALSTEPS = [0, 5, 10, 15, 20, 30, 40];
-/** Safety valve: max queued 100ms chunks (~3s) before falling back to raw PCM. */
-const MAX_QUEUED_CHUNKS = 30;
+/** Safety valve: max queued 100ms chunks (~9s) before falling back to raw PCM. */
+const MAX_QUEUED_CHUNKS = 90;
 /** Once in passthrough mode, stay there until the backlog drops below this. */
-const PASSTHROUGH_RESUME_AT = 10;
+const PASSTHROUGH_RESUME_AT = 30;
 
 export default function RecordingScreen() {
   const router = useRouter();
@@ -351,7 +351,15 @@ export default function RecordingScreen() {
         }
 
         const origWav = result && result.fileUri ? new fs.File(result.fileUri) : (await PCMtoWav(origPcm, SAMPLE_RATE)).file;
-        const denWavResult = await PCMtoWav(denPcm, SAMPLE_RATE, silenceTrim);
+        // Trim is applied HERE, at finalization — only after the entire
+        // recording has been denoised and the queue fully drained. It never
+        // runs during recording, and only when the user explicitly enabled it
+        // (the toggle-off case must be honored, so disabled => no trim map).
+        const denWavResult = await PCMtoWav(
+          denPcm,
+          SAMPLE_RATE,
+          silenceTrim.enabled ? silenceTrim : undefined,
+        );
         const denWav = denWavResult.file;
 
         setFinalOriginalWav(origWav);

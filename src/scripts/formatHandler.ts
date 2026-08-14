@@ -50,9 +50,14 @@ export async function toWav(file: fs.File): Promise<fs.File> {
   }
 }
 
-export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; sampleRate: number }> {
+export async function decodeToPCMFile(
+  file: fs.File,
+  outputUri?: string,
+): Promise<{ file: fs.File; sampleRate: number }> {
   try {
-    const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
+    const outputFile = outputUri
+      ? new fs.File(outputUri)
+      : new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
     const result = await decodeToPCM(
       file.uri,
       outputFile.uri,
@@ -64,7 +69,9 @@ export async function decodeToPCMFile(file: fs.File): Promise<{ file: fs.File; s
     if (/\.wav(\?|#|$)/i.test(file.uri)) {
       try {
         console.warn("MediaExtractor failed on WAV, trying direct extraction:", file.uri);
-        const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
+        const outputFile = outputUri
+          ? new fs.File(outputUri)
+          : new fs.File(fs.Paths.cache, `denoised_${Date.now()}.pcm`);
         const result = await extractWavAudio(file.uri, outputFile.uri);
         return { file: outputFile, sampleRate: result.sampleRate };
       } catch (wavError) {
@@ -90,14 +97,16 @@ export async function PCMtoWav(
       `denoised_${Date.now()}.wav`,
     );
 
-    // Use native pcmToWav to avoid loading entire file into memory as base64
+    // Use native pcmToWav to avoid loading entire file into memory as base64.
+    // Pass null (never undefined) when trim is disabled so the bridge reliably
+    // maps it to a missing map on the native side.
     const result = await nativePcmToWav(
       file.uri,
       outputFile.uri,
       sampleRate,
       1, // channels (mono)
       16, // bitDepth (16-bit)
-      silenceTrim && silenceTrim.enabled ? trimToNativeConfig(silenceTrim) : undefined,
+      silenceTrim && silenceTrim.enabled ? trimToNativeConfig(silenceTrim) : null,
     );
 
     return {

@@ -674,10 +674,11 @@ class MediaProcessor(private val context: Context) {
 
                 // ---- Silence trim analysis (16-bit mono PCM only) ----
                 // When enabled, silent runs of at least `minSilenceMs` are removed.
-                // For audio files (`removeInternalPauses`) this includes pauses in the
-                // MIDDLE of the recording, which shortens the audio. For video files
-                // only leading/trailing silence is removed, because cutting the middle
-                // of a video track requires re-encoding to stay in sync.
+                // For audio files internal pauses (not just head/tail) are removed,
+                // which shortens the audio. The analysis is a SINGLE read pass:
+                // per-frame RMS values stay in memory, so the auto threshold and the
+                // kept segments are computed without re-reading the file — the trim
+                // runs only at finalization and adds one cheap pass over the PCM.
                 var trimStartSample = 0L
                 var trimEndSample = max(0L, pcmDataLength / 2 - 1)
                 var trimmed = false
@@ -695,17 +696,29 @@ class MediaProcessor(private val context: Context) {
                     val totalSamples = trimEndSample + 1
                     val minSilenceSamples = minSilenceMs.toLong() * sampleRate / 1000
 
+                    // One read pass: per-frame RMS + histogram (for the auto
+                    // threshold). The histogram is cheap to keep alongside.
+                    var frameDb = FloatArray(1024)
+                    var frameCount = 0
+                    val histogram = IntArray(241)
+                    forEachFrameRms(pcmUri, frameSamples) { db ->
+                        if (frameCount == frameDb.size) {
+                            frameDb = frameDb.copyOf(frameDb.size * 2)
+                        }
+                        frameDb[frameCount++] = db.toFloat()
+                        histogram[((db + 120.0).coerceIn(0.0, 120.0)).toInt()]++
+                    }
                     val thresholdDb =
                             if (mode == "manual") {
                                 manualThresholdDb
                             } else {
-                                computeAutoSilenceThresholdDb(pcmUri, totalSamples, frameSamples)
+                                autoThresholdFromHistogram(histogram, frameCount.toLong())
                             }
 
                     val segments =
-                            computeTrimSegments(
-                                    pcmUri,
-                                    totalSamples,
+                            trimSegmentsFromFrames(
+                                    frameDb,
+                                    frameCount,
                                     frameSamples,
                                     thresholdDb,
                                     minSilenceSamples,
@@ -858,18 +871,8 @@ class MediaProcessor(private val context: Context) {
      * protected) and never sink below -45 dBFS (denoised dead air, typically
      * -60..-90 dBFS, is still caught).
      */
-    private fun computeAutoSilenceThresholdDb(
-            uri: Uri,
-            totalSamples: Long,
-            frameSamples: Int
-    ): Double {
-        val histogram = IntArray(121) // bins covering -120..0 dB, 1 dB each
-        var frameCount = 0L
-        forEachFrameRms(uri, frameSamples) { db ->
-            frameCount++
-            histogram[((db + 120.0).coerceIn(0.0, 120.0)).toInt()]++
-        }
-        if (frameCount == 0L || totalSamples <= 0) return -45.0
+    private fun autoThresholdFromHistogram(histogram: IntArray, frameCount: Long): Double {
+        if (frameCount <= 0) return -45.0
         val target = (frameCount * 25) / 100
         var cum = 0L
         var p25Bin = 120
@@ -885,49 +888,38 @@ class MediaProcessor(private val context: Context) {
     }
 
     /**
-     * Classifies frames against [thresholdDb] and returns the runs of non-silent
-     * frames to KEEP as (startFrame, endFrame) pairs. Silent runs shorter than
+     * Walks the per-frame RMS values and returns the runs of non-silent frames
+     * to KEEP as (startFrame, endFrame) pairs. Silent runs shorter than
      * [minSilenceSamples] are merged into the kept audio (normal speech rhythm is
      * preserved); longer silent runs are dropped entirely — the audio is shortened
      * by exactly those pauses. When [removeInternalPauses] is false only
      * leading/trailing silence is dropped (a video track cannot be cut in the
      * middle without re-encoding to stay in sync).
      */
-    private fun computeTrimSegments(
-            uri: Uri,
-            totalSamples: Long,
+    private fun trimSegmentsFromFrames(
+            frameDb: FloatArray,
+            frameCount: Int,
             frameSamples: Int,
             thresholdDb: Double,
             minSilenceSamples: Long,
             removeInternalPauses: Boolean
     ): List<Pair<Long, Long>> {
-        // Frame classification (two streaming passes so no per-frame objects are
-        // retained — just a compact BooleanArray).
-        var frameCount = 0L
-        forEachFrameRms(uri, frameSamples) { frameCount++ }
-        if (frameCount == 0L || totalSamples <= 0) return emptyList()
-        val silent = BooleanArray(frameCount.toInt())
-        var idx = 0
-        forEachFrameRms(uri, frameSamples) { db ->
-            silent[idx++] = db < thresholdDb
-        }
-
         val segments = mutableListOf<Pair<Long, Long>>()
         var runStart = -1L
-        var i = 0L
+        var i = 0
         while (i < frameCount) {
-            if (!silent[i.toInt()]) {
-                if (runStart == -1L) runStart = i
+            if (frameDb[i] >= thresholdDb) {
+                if (runStart == -1L) runStart = i.toLong()
                 i++
             } else {
                 var j = i
-                while (j < frameCount && silent[j.toInt()]) j++
-                val gapSamples = (j - i) * frameSamples
+                while (j < frameCount && frameDb[j] < thresholdDb) j++
+                val gapSamples = (j - i).toLong() * frameSamples
                 val isLeading = runStart == -1L
                 val isTrailing = j == frameCount
                 val canSplit = removeInternalPauses || isLeading || isTrailing
                 if (canSplit && gapSamples >= minSilenceSamples) {
-                    if (!isLeading) segments.add(runStart to (i - 1))
+                    if (!isLeading) segments.add(runStart to (i - 1).toLong())
                     runStart = -1L
                 } else if (isLeading) {
                     // Short leading silence: keep the whole head, from frame 0.
@@ -937,7 +929,7 @@ class MediaProcessor(private val context: Context) {
             }
         }
         if (runStart != -1L) {
-            segments.add(runStart to (frameCount - 1))
+            segments.add(runStart to (frameCount - 1).toLong())
         }
         return segments
     }
