@@ -52,7 +52,6 @@ export const Styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
     paddingHorizontal: SPACING.medium,
-    paddingTop: Platform.OS === 'ios' ? 0 : SPACING.large,
   },
   contentContainer: {
     paddingBottom: SPACING.xlarge,

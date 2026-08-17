@@ -1,10 +1,10 @@
 import * as theme from "@/src/constants/theme";
 import type { SilenceTrimSettings } from "@/src/scripts/silenceTrim";
 import Feather from "@expo/vector-icons/Feather";
+import { Host, Switch } from "@expo/ui/jetpack-compose";
 import React, { useState } from "react";
 import {
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -95,13 +95,18 @@ export default function AdvanceSettings({
                   <Feather name="help-circle" size={18} color={theme.COLORS.subtext} />
                 </InfoBubble>
               </View>
-              <Switch
-                value={normalize.toggle}
-                onValueChange={handleToggleNormalize}
-                trackColor={{ false: theme.COLORS.border, true: theme.COLORS.primary }}
-                thumbColor={theme.COLORS.text}
-                ios_backgroundColor={theme.COLORS.border}
-              />
+              <Host matchContents colorScheme="dark">
+                <Switch
+                  value={normalize.toggle}
+                  onCheckedChange={handleToggleNormalize}
+                  colors={{
+                    uncheckedTrackColor: theme.COLORS.border,
+                    checkedTrackColor: theme.COLORS.primary,
+                    checkedThumbColor: theme.COLORS.text,
+                    uncheckedThumbColor: theme.COLORS.text,
+                  }}
+                />
+              </Host>
             </View>
           </View>
 

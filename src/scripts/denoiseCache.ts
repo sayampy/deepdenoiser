@@ -85,10 +85,10 @@ export async function importToDocuments(sourceUri: string, name: string): Promis
  * Moves a finished output file into the persistent outputs directory.
  * Returns the relocated File.
  */
-export function placeOutput(source: fs.File, name: string): fs.File {
+export async function placeOutput(source: fs.File, name: string): Promise<fs.File> {
   const dest = new fs.File(outputDir(), sanitizeFileName(name));
   if (dest.exists) dest.delete();
-  source.move(dest);
+  await source.move(dest);
   return dest;
 }
 

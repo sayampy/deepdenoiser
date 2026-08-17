@@ -1,6 +1,6 @@
 import * as theme from "@/src/constants/theme";
 import Feather from "@expo/vector-icons/Feather";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import React, { useCallback, useEffect, useRef } from "react";
 import {

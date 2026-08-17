@@ -42,10 +42,9 @@ import {
 import Feather from "@expo/vector-icons/Feather";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { Host, LinearProgressIndicator, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -372,13 +371,13 @@ export default function ProcessScreen() {
         } catch (err) {
           console.warn("Failed to delete intermediate WAV:", err);
         }
-        outputFile = placeOutput(
+        outputFile = await placeOutput(
           finalVideoFile,
           `${sanitizeFileName(originalBase)}_denoised.mp4`,
         );
         setDenoisedFile(outputFile);
       } else {
-        outputFile = placeOutput(
+        outputFile = await placeOutput(
           wavResult.file,
           `${sanitizeFileName(originalBase)}_denoised.wav`,
         );
@@ -427,7 +426,9 @@ export default function ProcessScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={[theme.Styles.container, theme.Styles.centered]}>
-        <ActivityIndicator size="large" color={theme.COLORS.primary} />
+        <Host matchContents colorScheme="dark">
+          <LoadingIndicator color={theme.COLORS.primary} />
+        </Host>
         <Text style={styles.loadingText}>Loading media...</Text>
       </SafeAreaView>
     );
@@ -436,7 +437,6 @@ export default function ProcessScreen() {
   return (
     // <SafeAreaView>
     <SafeAreaView style={theme.Styles.container}>
-      <StatusBar style="light" />
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
@@ -487,11 +487,13 @@ export default function ProcessScreen() {
               {eta && <Text style={styles.etaText}>{eta}</Text>}
             </View>
             <View style={styles.progressBarWrapper}>
-              <View style={styles.progressBarBg}>
-                <View
-                  style={[styles.progressBarFill, { width: `${progress}%` }]}
+              <Host style={{ flex: 1 }} colorScheme="dark">
+                <LinearProgressIndicator
+                  progress={progress / 100}
+                  color={theme.COLORS.primary}
+                  trackColor={theme.COLORS.border}
                 />
-              </View>
+              </Host>
               <Text style={styles.progressPercent}>{progress}%</Text>
             </View>
           </View>
@@ -548,10 +550,11 @@ export default function ProcessScreen() {
             disabled={denoising}
           >
             {denoising ? (
-              <ActivityIndicator
-                color={theme.COLORS.background}
-                style={{ marginRight: 10 }}
-              />
+              <Host matchContents colorScheme="dark">
+                <LoadingIndicator
+                  color={theme.COLORS.background}
+                />
+              </Host>
             ) : (
               <Feather
                 name="zap"

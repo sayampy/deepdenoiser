@@ -3,9 +3,9 @@ import { Asset } from 'expo-asset';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import * as Sharing from 'expo-sharing';
+import { Host, LoadingIndicator } from '@expo/ui/jetpack-compose';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Platform,
   ScrollView,
@@ -165,7 +165,9 @@ export default function UpdateModal() {
           <View style={styles.footer}>
             {downloading ? (
               <View style={styles.downloadingContainer}>
-                <ActivityIndicator color={COLORS.primary} style={{ marginRight: 12 }} />
+                <Host matchContents colorScheme="dark">
+                  <LoadingIndicator color={COLORS.primary} />
+                </Host>
                 <Text style={styles.downloadingText}>Downloading update...</Text>
               </View>
             ) : (

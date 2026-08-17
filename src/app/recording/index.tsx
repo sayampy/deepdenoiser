@@ -1,35 +1,34 @@
 import AudioPlayer from "@/src/components/audioPlayer";
+import CustomSlider from "@/src/components/customSlider";
 import DonationModal from "@/src/components/DonationModal";
 import DonationReminderModal from "@/src/components/DonationReminderModal";
 import ErrorModal from "@/src/components/ErrorModal";
 import SaveButton from "@/src/components/SaveButton";
 import ShareBtn from "@/src/components/shareBtn";
-import CustomSlider from "@/src/components/customSlider";
 import SilenceTrimSettingsBlock from "@/src/components/silenceTrimSettings";
 import * as theme from "@/src/constants/theme";
-import type { SilenceTrimSettings } from "@/src/scripts/silenceTrim";
-import { DEFAULT_SILENCE_TRIM } from "@/src/scripts/silenceTrim";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
+import type { DeepFilterNet } from "@/src/scripts/Denoiser";
+import { getDenoiser } from "@/src/scripts/denoiserSingleton";
+import { PCMtoWav, writePCMChunk } from "@/src/scripts/formatHandler";
 import {
   incrementDenoiseCount,
   markDonationPromptShown,
   shouldShowDonationReminder,
 } from "@/src/scripts/settings";
-import { getDenoiser } from "@/src/scripts/denoiserSingleton";
-import type { DeepFilterNet } from "@/src/scripts/Denoiser";
-import { PCMtoWav, writePCMChunk } from "@/src/scripts/formatHandler";
+import type { SilenceTrimSettings } from "@/src/scripts/silenceTrim";
+import { DEFAULT_SILENCE_TRIM } from "@/src/scripts/silenceTrim";
+import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import Feather from "@expo/vector-icons/Feather";
 import {
   AudioDataEvent,
   RecordingConfig,
-  useAudioRecorder
+  useAudioRecorder,
 } from "@siteed/audio-studio";
 import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Animated,
   Pressable,
@@ -58,7 +57,7 @@ export default function RecordingScreen() {
     resumeRecording,
     isRecording,
     isPaused,
-    durationMs
+    durationMs,
   } = useAudioRecorder();
 
   const [isProcessing, setIsProcessing] = useState(false);
@@ -69,17 +68,21 @@ export default function RecordingScreen() {
   const originalPcmFileRef = useRef<fs.File | null>(null);
   const denoisedPcmFileRef = useRef<fs.File | null>(null);
 
-  const [finalOriginalWav, setFinalOriginalWav] = useState<fs.File | null>(null);
-  const [finalDenoisedWav, setFinalDenoisedWav] = useState<fs.File | null>(null);
+  const [finalOriginalWav, setFinalOriginalWav] = useState<fs.File | null>(
+    null,
+  );
+  const [finalDenoisedWav, setFinalDenoisedWav] = useState<fs.File | null>(
+    null,
+  );
   const [isFinalizing, setIsFinalizing] = useState(false);
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
-  const [isDonationReminderVisible, setIsDonationReminderVisible] = useState(false);
+  const [isDonationReminderVisible, setIsDonationReminderVisible] =
+    useState(false);
   const [isDonationModalVisible, setIsDonationModalVisible] = useState(false);
   const [attenLimDb, setAttenLimDb] = useState(0);
-  const [silenceTrim, setSilenceTrim] = useState<SilenceTrimSettings>(
-    DEFAULT_SILENCE_TRIM,
-  );
+  const [silenceTrim, setSilenceTrim] =
+    useState<SilenceTrimSettings>(DEFAULT_SILENCE_TRIM);
 
   const denoiserRef = useRef<DeepFilterNet | null>(null);
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
@@ -108,8 +111,12 @@ export default function RecordingScreen() {
     }
   };
 
-  useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
-  useEffect(() => { isRecordingRef.current = isRecording; }, [isRecording]);
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+  useEffect(() => {
+    isRecordingRef.current = isRecording;
+  }, [isRecording]);
 
   useEffect(() => {
     if (isPaused) {
@@ -163,7 +170,7 @@ export default function RecordingScreen() {
             duration: 800,
             useNativeDriver: true,
           }),
-        ])
+        ]),
       );
       animRef.current = anim;
       anim.start();
@@ -174,7 +181,8 @@ export default function RecordingScreen() {
   }, [isRecording, isPaused]);
 
   const handleAudioStream = async (event: AudioDataEvent) => {
-    if (isPausedRef.current || !denoiserRef.current || isStoppingRef.current) return;
+    if (isPausedRef.current || !denoiserRef.current || isStoppingRef.current)
+      return;
 
     // Copy buffer immediately — the source may reuse the underlying ArrayBuffer
     const eventData = event.data as Float32Array;
@@ -215,7 +223,9 @@ export default function RecordingScreen() {
           const denFile = denoisedPcmFileRef.current;
           if (denFile) {
             // Combine with previous leftovers
-            const combined = new Float32Array(audioBufferRef.current.length + float32Data.length);
+            const combined = new Float32Array(
+              audioBufferRef.current.length + float32Data.length,
+            );
             combined.set(audioBufferRef.current);
             combined.set(float32Data, audioBufferRef.current.length);
 
@@ -301,9 +311,9 @@ export default function RecordingScreen() {
       const config: RecordingConfig = {
         sampleRate: SAMPLE_RATE,
         channels: 1,
-        encoding: 'pcm_16bit',
+        encoding: "pcm_16bit",
         interval: 100, // Emit data every 100ms
-        streamFormat: 'float32',
+        streamFormat: "float32",
         onAudioStream: handleAudioStream,
         keepAwake: true,
         showNotification: false,
@@ -340,8 +350,15 @@ export default function RecordingScreen() {
           const paddedFrame = new Float32Array(HOP_SIZE);
           paddedFrame.set(leftovers);
           const outBuf = new Float32Array(HOP_SIZE);
-          const outFrame = await denoiserRef.current.processFrame(paddedFrame, outBuf);
-          await writePCMChunk(denPcm, outFrame.subarray(0, leftovers.length), true);
+          const outFrame = await denoiserRef.current.processFrame(
+            paddedFrame,
+            outBuf,
+          );
+          await writePCMChunk(
+            denPcm,
+            outFrame.subarray(0, leftovers.length),
+            true,
+          );
           audioBufferRef.current = new Float32Array(0);
         }
 
@@ -350,7 +367,10 @@ export default function RecordingScreen() {
           throw new Error("PCM files missing after recording.");
         }
 
-        const origWav = result && result.fileUri ? new fs.File(result.fileUri) : (await PCMtoWav(origPcm, SAMPLE_RATE)).file;
+        const origWav =
+          result && result.fileUri
+            ? new fs.File(result.fileUri)
+            : (await PCMtoWav(origPcm, SAMPLE_RATE)).file;
         // Trim is applied HERE, at finalization — only after the entire
         // recording has been denoised and the queue fully drained. It never
         // runs during recording, and only when the user explicitly enabled it
@@ -399,30 +419,43 @@ export default function RecordingScreen() {
 
   return (
     <SafeAreaView style={theme.Styles.container}>
-      <StatusBar style="light" />
       <View style={styles.header}>
-        <Pressable 
-          onPress={() => router.back()} 
+        <Pressable
+          onPress={() => router.back()}
           style={({ pressed }) => [
             styles.backButton,
-            { opacity: pressed ? 0.7 : 1 }
-          ]} 
+            { opacity: pressed ? 0.7 : 1 },
+          ]}
           disabled={isRecording}
-          android_ripple={{ color: 'rgba(255, 255, 255, 0.1)', borderless: true, radius: 24 }}
+          android_ripple={{
+            color: "rgba(255, 255, 255, 0.1)",
+            borderless: true,
+            radius: 24,
+          }}
         >
           <Feather name="arrow-left" size={24} color={theme.COLORS.text} />
         </Pressable>
         <Text style={styles.headerTitle}>Voice Recorder</Text>
       </View>
 
-      <ScrollView style={styles.content} contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
         {!finalOriginalWav && !isFinalizing && (
           <View style={styles.timerContainer}>
-
-            <Text style={styles.timerText}>{formatTime(isPaused ? pausedDurationRef.current : durationMs)}</Text>
+            <Text style={styles.timerText}>
+              {formatTime(isPaused ? pausedDurationRef.current : durationMs)}
+            </Text>
             {isRecording && !isPaused && (
               <View style={styles.recordingIndicator}>
-                <Animated.View style={[styles.pulseCircle, { transform: [{ scale: pulseAnim }] }]} />
+                <Animated.View
+                  style={[
+                    styles.pulseCircle,
+                    { transform: [{ scale: pulseAnim }] },
+                  ]}
+                />
                 <View style={styles.recordingDot} />
               </View>
             )}
@@ -431,13 +464,19 @@ export default function RecordingScreen() {
 
         {isFinalizing ? (
           <View style={styles.finalizingContainer}>
-            <ActivityIndicator size="large" color={theme.COLORS.primary} />
+            <Host matchContents colorScheme="dark">
+              <LoadingIndicator color={theme.COLORS.primary} />
+            </Host>
             <Text style={styles.statusText}>Finalizing Audio...</Text>
           </View>
         ) : !finalOriginalWav ? (
           <View style={styles.controlsContainer}>
             <Text style={styles.statusText}>
-              {!isRecording && !isPaused ? "Ready to record" : isPaused ? "Recording paused" : "Denoising in Real-time"}
+              {!isRecording && !isPaused
+                ? "Ready to record"
+                : isPaused
+                  ? "Recording paused"
+                  : "Denoising in Real-time"}
             </Text>
 
             {!isRecording && !isPaused ? (
@@ -462,13 +501,17 @@ export default function RecordingScreen() {
             ) : null}
 
             {!isRecording && !isPaused ? (
-              <Pressable 
+              <Pressable
                 style={({ pressed }) => [
                   styles.recordButton,
-                  { opacity: pressed ? 0.9 : 1 }
-                ]} 
+                  { opacity: pressed ? 0.9 : 1 },
+                ]}
                 onPress={startRecording}
-                android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 70 }}
+                android_ripple={{
+                  color: "rgba(255, 255, 255, 0.2)",
+                  borderless: true,
+                  radius: 70,
+                }}
               >
                 <View style={styles.recordButtonInner}>
                   <Feather name="mic" size={40} color={theme.COLORS.white} />
@@ -479,25 +522,44 @@ export default function RecordingScreen() {
               <View style={styles.activeControls}>
                 <Pressable
                   style={({ pressed }) => [
-                    styles.controlCircle, 
-                    { backgroundColor: "rgba(255, 255, 255, 0.1)", opacity: pressed ? 0.7 : 1 }
+                    styles.controlCircle,
+                    {
+                      backgroundColor: "rgba(255, 255, 255, 0.1)",
+                      opacity: pressed ? 0.7 : 1,
+                    },
                   ]}
                   onPress={isPaused ? resumeRecording : pauseRecording}
-                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 32 }}
+                  android_ripple={{
+                    color: "rgba(255, 255, 255, 0.2)",
+                    borderless: true,
+                    radius: 32,
+                  }}
                 >
-                  <Feather name={isPaused ? "play" : "pause"} size={28} color={theme.COLORS.text} />
+                  <Feather
+                    name={isPaused ? "play" : "pause"}
+                    size={28}
+                    color={theme.COLORS.text}
+                  />
                 </Pressable>
 
-                <Pressable 
+                <Pressable
                   style={({ pressed }) => [
                     styles.stopButton,
-                    { opacity: pressed ? 0.8 : 1 }
-                  ]} 
+                    { opacity: pressed ? 0.8 : 1 },
+                  ]}
                   onPress={stopRecording}
-                  android_ripple={{ color: 'rgba(255, 255, 255, 0.2)', borderless: true, radius: 50 }}
+                  android_ripple={{
+                    color: "rgba(255, 255, 255, 0.2)",
+                    borderless: true,
+                    radius: 50,
+                  }}
                 >
                   <View style={styles.stopButtonInner}>
-                    <Feather name="square" size={32} color={theme.COLORS.white} />
+                    <Feather
+                      name="square"
+                      size={32}
+                      color={theme.COLORS.white}
+                    />
                   </View>
                 </Pressable>
               </View>
@@ -507,10 +569,17 @@ export default function RecordingScreen() {
           <View style={styles.resultsContainer}>
             <View style={styles.resultCard}>
               <View style={styles.resultHeader}>
-                <Feather name="volume-2" size={20} color={theme.COLORS.subtext} />
+                <Feather
+                  name="volume-2"
+                  size={20}
+                  color={theme.COLORS.subtext}
+                />
                 <Text style={styles.resultTitle}>Original Audio</Text>
               </View>
-              <AudioPlayer uri={finalOriginalWav.uri} name="Original recording" />
+              <AudioPlayer
+                uri={finalOriginalWav.uri}
+                name="Original recording"
+              />
               <View style={styles.resultActions}>
                 <SaveButton
                   file={finalOriginalWav}
@@ -518,29 +587,59 @@ export default function RecordingScreen() {
                   savedLabel="Saved"
                   albumName="DeepDenoiser/Recordings"
                   style={[theme.Styles.button, styles.saveSubButton]}
-                  onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+                  onError={(err) => {
+                    setError(err);
+                    setIsErrorModalVisible(true);
+                  }}
                 />
                 <ShareBtn uri={finalOriginalWav.uri} />
               </View>
             </View>
 
-            <View style={[styles.resultCard, { borderColor: theme.COLORS.success, borderWidth: 1, marginTop: 24 }]}>
+            <View
+              style={[
+                styles.resultCard,
+                {
+                  borderColor: theme.COLORS.success,
+                  borderWidth: 1,
+                  marginTop: 24,
+                },
+              ]}
+            >
               <View style={styles.resultHeader}>
                 <View style={styles.zapIcon}>
-                  <Feather name="zap" size={16} color={theme.COLORS.background} />
+                  <Feather
+                    name="zap"
+                    size={16}
+                    color={theme.COLORS.background}
+                  />
                 </View>
-                <Text style={[styles.resultTitle, { color: theme.COLORS.success }]}>Denoised Audio</Text>
+                <Text
+                  style={[styles.resultTitle, { color: theme.COLORS.success }]}
+                >
+                  Denoised Audio
+                </Text>
               </View>
-              <AudioPlayer uri={finalDenoisedWav!.uri} name="Denoised recording" />
+              <AudioPlayer
+                uri={finalDenoisedWav!.uri}
+                name="Denoised recording"
+              />
               <View style={styles.resultActions}>
                 <SaveButton
                   file={finalDenoisedWav}
                   label="Save Denoised"
                   savedLabel="Saved"
                   albumName="DeepDenoiser/Recordings"
-                  style={[theme.Styles.button, styles.saveSubButton, { backgroundColor: theme.COLORS.success }]}
+                  style={[
+                    theme.Styles.button,
+                    styles.saveSubButton,
+                    { backgroundColor: theme.COLORS.success },
+                  ]}
                   savedBg={theme.COLORS.success}
-                  onError={(err) => { setError(err); setIsErrorModalVisible(true); }}
+                  onError={(err) => {
+                    setError(err);
+                    setIsErrorModalVisible(true);
+                  }}
                 />
                 <ShareBtn uri={finalDenoisedWav!.uri} />
               </View>
@@ -553,8 +652,19 @@ export default function RecordingScreen() {
                 setFinalDenoisedWav(null);
               }}
             >
-              <Feather name="refresh-cw" size={18} color={theme.COLORS.primary} />
-              <Text style={[theme.Styles.buttonText, { color: theme.COLORS.primary }]}>Record New</Text>
+              <Feather
+                name="refresh-cw"
+                size={18}
+                color={theme.COLORS.primary}
+              />
+              <Text
+                style={[
+                  theme.Styles.buttonText,
+                  { color: theme.COLORS.primary },
+                ]}
+              >
+                Record New
+              </Text>
             </TouchableOpacity>
           </View>
         )}
@@ -600,7 +710,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    alignItems: 'center',
+    alignItems: "center",
     paddingBottom: 100,
     // paddingHorizontal: theme.SPACING.medium,
   },
@@ -621,13 +731,13 @@ const styles = StyleSheet.create({
   },
   recordingIndicator: {
     marginLeft: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
     width: 24,
     height: 24,
   },
   pulseCircle: {
-    position: 'absolute',
+    position: "absolute",
     width: 20,
     height: 20,
     borderRadius: 10,
@@ -764,14 +874,14 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     backgroundColor: theme.COLORS.success,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   saveSubButton: {
     flex: 1,
     height: 54,
     borderRadius: 18,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 10,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -781,12 +891,12 @@ const styles = StyleSheet.create({
   },
   newRecordButton: {
     marginTop: 48,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
     borderWidth: 1,
     borderColor: theme.COLORS.primary,
     height: 60,
     borderRadius: 20,
-    flexDirection: 'row',
+    flexDirection: "row",
     gap: 12,
-  }
+  },
 });

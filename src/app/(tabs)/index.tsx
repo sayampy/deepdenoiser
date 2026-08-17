@@ -8,10 +8,9 @@ import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
 import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   ScrollView,
@@ -93,7 +92,6 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={theme.Styles.container}>
-      <StatusBar style="light" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -186,7 +184,9 @@ export default function HomeScreen() {
 
           {isLoading && (
             <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color={theme.COLORS.primary} />
+              <Host matchContents colorScheme="dark">
+                <LoadingIndicator color={theme.COLORS.primary} />
+              </Host>
               <Text style={styles.loaderText}>Processing asset...</Text>
             </View>
           )}

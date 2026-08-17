@@ -1,8 +1,9 @@
 import * as theme from "@/src/constants/theme";
 import type { SilenceTrimSettings } from "@/src/scripts/silenceTrim";
 import Feather from "@expo/vector-icons/Feather";
+import { Host, Switch } from "@expo/ui/jetpack-compose";
 import React from "react";
-import { StyleSheet, Switch, Text, TouchableOpacity, View } from "react-native";
+import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import CustomSlider from "./customSlider";
 import InfoBubble from "./InfoBubble";
 
@@ -43,16 +44,18 @@ export default function SilenceTrimSettings({
               />
             </InfoBubble>
           </View>
-          <Switch
-            value={settings.enabled}
-            onValueChange={(value) => onChange({ ...settings, enabled: value })}
-            trackColor={{
-              false: theme.COLORS.border,
-              true: theme.COLORS.primary,
-            }}
-            thumbColor={theme.COLORS.text}
-            ios_backgroundColor={theme.COLORS.border}
-          />
+          <Host matchContents colorScheme="dark">
+            <Switch
+              value={settings.enabled}
+              onCheckedChange={(value) => onChange({ ...settings, enabled: value })}
+              colors={{
+                uncheckedTrackColor: theme.COLORS.border,
+                checkedTrackColor: theme.COLORS.primary,
+                checkedThumbColor: theme.COLORS.text,
+                uncheckedThumbColor: theme.COLORS.text,
+              }}
+            />
+          </Host>
         </View>
       </View>
 

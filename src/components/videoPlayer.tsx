@@ -1,5 +1,5 @@
 import * as theme from "@/src/constants/theme";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useRef } from "react";
 import {

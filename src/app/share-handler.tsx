@@ -3,8 +3,9 @@ import ErrorModal from "@/src/components/ErrorModal";
 import { importToDocuments } from "@/src/scripts/denoiseCache";
 import { useRouter } from "expo-router";
 import { useIncomingShare } from "expo-sharing";
+import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 
 export default function ShareHandler() {
   const { resolvedSharedPayloads, isResolving, clearSharedPayloads, error: shareError } = useIncomingShare();
@@ -70,7 +71,9 @@ export default function ShareHandler() {
 
   return (
     <View style={[theme.Styles.container, styles.centered]}>
-      <ActivityIndicator size="large" color={theme.COLORS.primary} />
+      <Host matchContents colorScheme="dark">
+        <LoadingIndicator color={theme.COLORS.primary} />
+      </Host>
       <Text style={styles.loadingText}>
         {isResolving
           ? "Preparing shared file..."

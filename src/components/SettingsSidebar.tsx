@@ -2,12 +2,12 @@ import * as theme from "@/src/constants/theme";
 import Aptabase from "@aptabase/react-native";
 import { Feather } from "@expo/vector-icons";
 import Constants from "expo-constants";
+import { Host, Switch } from "@expo/ui/jetpack-compose";
 import React, { useEffect, useState } from "react";
 import {
   Modal,
   Pressable,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -70,12 +70,18 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
                   Help us improve by sharing anonymous usage data.
                 </Text>
               </View>
-              <Switch
-                value={settings.analytics}
-                onValueChange={(v) => handleToggle("analytics", v)}
-                trackColor={{ false: theme.COLORS.border, true: theme.COLORS.primary }}
-                thumbColor={theme.COLORS.white}
-              />
+              <Host matchContents colorScheme="dark">
+                <Switch
+                  value={settings.analytics}
+                  onCheckedChange={(v) => handleToggle("analytics", v)}
+                  colors={{
+                    uncheckedTrackColor: theme.COLORS.border,
+                    checkedTrackColor: theme.COLORS.primary,
+                    checkedThumbColor: theme.COLORS.white,
+                    uncheckedThumbColor: theme.COLORS.white,
+                  }}
+                />
+              </Host>
             </View>
 
             <View style={styles.settingItem}>
@@ -85,12 +91,18 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
                   Automatically send reports to help us fix bugs.
                 </Text>
               </View>
-              <Switch
-                value={settings.crashlytics}
-                onValueChange={(v) => handleToggle("crashlytics", v)}
-                trackColor={{ false: theme.COLORS.border, true: theme.COLORS.primary }}
-                thumbColor={theme.COLORS.white}
-              />
+              <Host matchContents colorScheme="dark">
+                <Switch
+                  value={settings.crashlytics}
+                  onCheckedChange={(v) => handleToggle("crashlytics", v)}
+                  colors={{
+                    uncheckedTrackColor: theme.COLORS.border,
+                    checkedTrackColor: theme.COLORS.primary,
+                    checkedThumbColor: theme.COLORS.white,
+                    uncheckedThumbColor: theme.COLORS.white,
+                  }}
+                />
+              </Host>
             </View>
 
             <View style={styles.settingItem}>
@@ -100,12 +112,18 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
                   Automatically check for new versions on startup.
                 </Text>
               </View>
-              <Switch
-                value={settings.checkForUpdates}
-                onValueChange={(v) => handleToggle("checkForUpdates", v)}
-                trackColor={{ false: theme.COLORS.border, true: theme.COLORS.primary }}
-                thumbColor={theme.COLORS.white}
-              />
+              <Host matchContents colorScheme="dark">
+                <Switch
+                  value={settings.checkForUpdates}
+                  onCheckedChange={(v) => handleToggle("checkForUpdates", v)}
+                  colors={{
+                    uncheckedTrackColor: theme.COLORS.border,
+                    checkedTrackColor: theme.COLORS.primary,
+                    checkedThumbColor: theme.COLORS.white,
+                    uncheckedThumbColor: theme.COLORS.white,
+                  }}
+                />
+              </Host>
             </View>
           </View>
 
