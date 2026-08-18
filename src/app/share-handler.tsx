@@ -63,8 +63,12 @@ export default function ShareHandler() {
         }
       } else if (shareError) {
         console.error("Error resolving shared payload:", shareError);
-        setError(shareError instanceof Error ? shareError : new Error(String(shareError)));
-        setIsErrorModalVisible(true);
+        // Defer state updates to avoid cascading renders inside effect
+        const err = shareError instanceof Error ? shareError : new Error(String(shareError));
+        setTimeout(() => {
+          setError(err);
+          setIsErrorModalVisible(true);
+        }, 0);
       }
     }
   }, [resolvedSharedPayloads, isResolving, shareError, clearSharedPayloads, router]);

@@ -55,6 +55,7 @@ const CustomSlider = ({
     progress.value = withSpring(getInitialProgress());
   }, [value, steps, min, max, progress]);
 
+  /* eslint-disable react-hooks/immutability -- Reanimated shared values accessed on UI thread */
   const pan = Gesture.Pan()
     .onBegin(() => {
       isPressed.value = true;
@@ -84,6 +85,7 @@ const CustomSlider = ({
     .onFinalize(() => {
       isPressed.value = false;
     });
+  /* eslint-enable react-hooks/immutability */
 
   const animatedThumbStyle = useAnimatedStyle(() => {
     return {

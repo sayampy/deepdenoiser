@@ -3,7 +3,6 @@ import { getSettings } from "./settings";
 
 let isInitialized = false;
 
-// Note: Replace with actual Aptabase App Key
 const APTABASE_APP_KEY = "A-EU-5330967073";
 
 export const initAnalytics = async () => {

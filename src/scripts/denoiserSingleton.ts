@@ -22,6 +22,7 @@ export async function getDenoiser(): Promise<DeepFilterNet> {
     loadPromise = (async () => {
       const denoiser = new DeepFilterNet();
       const modelAsset = Asset.fromModule(
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- Static asset require required by Expo bundler
         require("@/assets/model/denoiser_model.ort"),
       );
       await modelAsset.downloadAsync();

@@ -8,7 +8,7 @@ import { createPermissionHook } from "expo-modules-core";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -29,7 +29,6 @@ const useMicrophonePermissions = createPermissionHook({
 });
 
 export default function RootLayout() {
-  const [appIsReady, setAppIsReady] = useState(false);
   const [mediaPermissionResponse, requestMediaPermission] = MediaLibrary.usePermissions();
   const [micPermissionResponse, requestMicPermission] = useMicrophonePermissions();
 
@@ -37,25 +36,14 @@ export default function RootLayout() {
     ...Feather.font,
   });
 
-  // // Analytics — run once on mount
-  // useEffect(() => {
-  //   (async () => {
-  //     try {
-  //       await initAnalytics();
-  //       // await trackAppEvent("app_open");
-  //     } catch (e) {
-  //       console.warn(e);
-  //     }
-  //   })();
-  // }, []);
+  const appIsReady = fontsLoaded || fontError;
 
   // Splash — hide when fonts are ready
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      setAppIsReady(true);
+    if (appIsReady) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [appIsReady]);
 
   if (!appIsReady && !fontError) {
     return null;

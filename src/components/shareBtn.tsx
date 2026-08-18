@@ -4,7 +4,6 @@ import Feather from "@expo/vector-icons/Feather";
 import * as Sharing from "expo-sharing";
 import React from "react";
 import {
-    StyleSheet,
     TouchableOpacity
 } from "react-native";
 

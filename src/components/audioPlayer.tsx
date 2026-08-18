@@ -4,7 +4,6 @@ import { useFocusEffect } from "expo-router/react-navigation";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import React, { useCallback, useEffect, useRef } from "react";
 import {
-  Dimensions,
   Pressable,
   StyleSheet,
   Text,
@@ -49,11 +48,12 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
           player.pause();
         }
       } catch (error) {
-        console.warn(error);
+        console.warn("AudioPlayer failed to load media:", error);
       }
     };
   }, [player, status.playing]));
 
+  /* eslint-disable react-hooks/refs -- Reanimated shared values accessed on UI thread, not during render */
   const pan = Gesture.Pan()
     .onBegin((event) => {
       isSeeking.value = true;
@@ -72,13 +72,17 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
       runOnJS(syncSeekingToRef)(false);
       runOnJS(handleSeek)(progress.value);
     });
+  /* eslint-enable react-hooks/refs */
 
+  /* eslint-disable react-hooks/exhaustive-deps -- progress is a stable Reanimated shared value */
   useEffect(() => {
     if (!isSeekingRef.current && status.duration > 0) {
       progress.value = status.currentTime / status.duration;
     }
   }, [status.currentTime, status.duration]);
+  /* eslint-enable react-hooks/exhaustive-deps */
 
+  /* eslint-disable react-hooks/exhaustive-deps, react-hooks/immutability -- progress is a stable Reanimated shared value */
   useEffect(() => {
     if (status.currentTime >= status.duration && status.duration > 0 && !status.playing) {
       player.seekTo(0);
@@ -86,6 +90,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
       player.pause();
     }
   }, [status.currentTime, status.duration, status.playing, player]);
+  /* eslint-enable react-hooks/exhaustive-deps, react-hooks/immutability */
 
   const handlePlayPause = () => {
     if (!player) return;

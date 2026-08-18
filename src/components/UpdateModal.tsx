@@ -49,10 +49,6 @@ export default function UpdateModal() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    checkUpdates();
-  }, []);
-
   const checkUpdates = async () => {
     try {
       const settings = await getSettings();
@@ -75,12 +71,16 @@ export default function UpdateModal() {
             setVisible(true);
           }
         }
-        // setVisible(true); // For test
       }
     } catch (err) {
       console.error('Failed to check for updates:', err);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async data load on mount
+    checkUpdates();
+  }, []);
 
   const handleDownload = async () => {
     if (!updateInfo) return;

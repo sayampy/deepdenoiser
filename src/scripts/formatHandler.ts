@@ -43,7 +43,6 @@ export async function toWav(file: fs.File): Promise<fs.File> {
     return wavFile.file;
   } catch (error) {
     console.error("Failed to convert to WAV.", error);
-    // Re-throw the error to be handled by the caller
     throw new Error(
       `WAV conversion failed: ${error instanceof Error ? error.message : String(error)}`,
     );
@@ -303,7 +302,6 @@ export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): P
     if (album) {
       await MediaLibrary.createAssetAsync(file.uri, album.id);
     } else {
-      // const asset = await MediaLibrary.createAssetAsync(file.uri);
       await MediaLibrary.createAlbumAsync(albumName, undefined, false, file.uri);
     }
     trackAppEvent("save_file");

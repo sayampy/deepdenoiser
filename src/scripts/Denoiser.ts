@@ -80,7 +80,6 @@ export class DeepFilterNet {
 
         const { states, stateBuffers, attenLimDb, inputFrameData, inputFrame } = this.streamStates;
 
-        // Copy input frame data
         inputFrameData.set(frame);
 
         const feeds: Record<string, Tensor> = {

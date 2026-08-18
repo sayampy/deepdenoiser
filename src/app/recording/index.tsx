@@ -60,7 +60,6 @@ export default function RecordingScreen() {
     durationMs,
   } = useAudioRecorder();
 
-  const [isProcessing, setIsProcessing] = useState(false);
   const [denoiserReady, setDenoiserReady] = useState(false);
 
   // We use refs for files to ensure the callback has immediate access to them
@@ -90,10 +89,10 @@ export default function RecordingScreen() {
   const queueDepthRef = useRef(0);
   const isStoppingRef = useRef(false);
   const isRecordingRef = useRef(isRecording);
-  const pausedDurationRef = useRef(0);
+  const [pausedDuration, setPausedDuration] = useState(0);
   const isPausedRef = useRef(isPaused);
   const animRef = useRef<Animated.CompositeAnimation | null>(null);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [pulseAnim] = useState(() => new Animated.Value(1));
   /** True while chunks are being written raw because the queue is backed up. */
   const passthroughModeRef = useRef(false);
   /** True when the previous chunk was written raw (used to reset model state). */
@@ -120,7 +119,8 @@ export default function RecordingScreen() {
 
   useEffect(() => {
     if (isPaused) {
-      pausedDurationRef.current = durationMs;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync pause timestamp for display
+      setPausedDuration(durationMs);
     }
   }, [isPaused, durationMs]);
 
@@ -153,6 +153,7 @@ export default function RecordingScreen() {
           );
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only: stop on unmount
   }, []);
 
   useEffect(() => {
@@ -178,7 +179,7 @@ export default function RecordingScreen() {
       pulseAnim.setValue(1);
     }
     return () => animRef.current?.stop();
-  }, [isRecording, isPaused]);
+  }, [isRecording, isPaused, pulseAnim]);
 
   const handleAudioStream = async (event: AudioDataEvent) => {
     if (isPausedRef.current || !denoiserRef.current || isStoppingRef.current)
@@ -446,7 +447,7 @@ export default function RecordingScreen() {
         {!finalOriginalWav && !isFinalizing && (
           <View style={styles.timerContainer}>
             <Text style={styles.timerText}>
-              {formatTime(isPaused ? pausedDurationRef.current : durationMs)}
+              {formatTime(isPaused ? pausedDuration : (durationMs ?? 0))}
             </Text>
             {isRecording && !isPaused && (
               <View style={styles.recordingIndicator}>
@@ -774,6 +775,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.SPACING.medium,
     marginBottom: 40,
   },
+
   settingsDivider: {
     height: 1,
     backgroundColor: "rgba(255, 255, 255, 0.05)",

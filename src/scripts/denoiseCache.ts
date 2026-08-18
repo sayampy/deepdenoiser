@@ -207,6 +207,17 @@ export async function lookupCachedOutput(key: string): Promise<fs.File | null> {
 /** Stores a finished output under `key`, pruning the oldest entries. */
 export async function storeCachedOutput(key: string, file: fs.File): Promise<void> {
   const index = await readIndex();
+
+  // Invalidate stale entries that point to the same physical file.
+  // placeOutput() uses a deterministic filename per input, so different
+  // settings produce different keys but overwrite the same path — the old
+  // entry would otherwise return the wrong (previously-trimmed) content.
+  for (const [otherKey, entry] of Object.entries(index)) {
+    if (otherKey !== key && entry.path === file.uri) {
+      delete index[otherKey];
+    }
+  }
+
   index[key] = { path: file.uri, createdAt: Date.now() };
   pruneOldest(index, MAX_CACHED_OUTPUTS);
   await writeIndex(index);

@@ -7,7 +7,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import CustomSlider from "./customSlider";
 import InfoBubble from "./InfoBubble";
 
-interface SilenceTrimSettingsProps {
+interface SilenceTrimProps {
   settings: SilenceTrimSettings;
   onChange: (settings: SilenceTrimSettings) => void;
 }
@@ -16,10 +16,11 @@ const THRESHOLD_STEPS = [-60, -55, -50, -45, -40, -35, -30, -25, -20];
 
 const MIN_PAUSE_STEPS = [200, 300, 400, 500, 600, 800, 1000, 1500, 2000];
 
+// eslint-disable-next-line @typescript-eslint/no-redeclare -- component name matches its props type by convention
 export default function SilenceTrimSettings({
   settings,
   onChange,
-}: SilenceTrimSettingsProps) {
+}: SilenceTrimProps) {
   const setMode = (mode: "auto" | "manual") => {
     if (settings.mode === mode) return;
     onChange({ ...settings, mode });

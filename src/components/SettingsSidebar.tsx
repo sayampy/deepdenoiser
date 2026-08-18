@@ -22,16 +22,17 @@ interface SettingsSidebarProps {
 export default function SettingsSidebar({ visible, onClose }: SettingsSidebarProps) {
   const [settings, setSettings] = useState<AppSettings | null>(null);
 
-  useEffect(() => {
-    if (visible) {
-      loadSettings();
-    }
-  }, [visible]);
-
   const loadSettings = async () => {
     const s = await getSettings();
     setSettings(s);
   };
+
+  useEffect(() => {
+    if (visible) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- async data load
+      loadSettings();
+    }
+  }, [visible]);
 
   const handleToggle = async (key: keyof AppSettings, value: boolean) => {
     const updated = await updateSettings({ [key]: value });

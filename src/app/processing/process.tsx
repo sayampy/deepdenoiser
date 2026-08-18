@@ -42,7 +42,7 @@ import {
 import Feather from "@expo/vector-icons/Feather";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { Host, LinearProgressIndicator, LoadingIndicator } from "@expo/ui/jetpack-compose";
+import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import React, { useEffect, useState } from "react";
 import {
   ScrollView,
@@ -487,13 +487,14 @@ export default function ProcessScreen() {
               {eta && <Text style={styles.etaText}>{eta}</Text>}
             </View>
             <View style={styles.progressBarWrapper}>
-              <Host style={{ flex: 1 }} colorScheme="dark">
-                <LinearProgressIndicator
-                  progress={progress / 100}
-                  color={theme.COLORS.primary}
-                  trackColor={theme.COLORS.border}
+              <View style={styles.progressBarBg}>
+                <View
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${progress}%` },
+                  ]}
                 />
-              </Host>
+              </View>
               <Text style={styles.progressPercent}>{progress}%</Text>
             </View>
           </View>
@@ -621,7 +622,6 @@ export default function ProcessScreen() {
         error={error}
         onClose={() => setIsErrorModalVisible(false)}
       />
-      {/* </View> */}
     </SafeAreaView>
   );
 }
