@@ -1,5 +1,5 @@
 import * as theme from "@/src/constants/theme";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect } from "expo-router/react-navigation";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useRef } from "react";
 import {
@@ -32,11 +32,11 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
           player.release();
         }
       } catch (error) {
-        console.warn(error);
+        console.warn("VideoPlayer failed to load media:", error);
       }
     };
   },
-    []));
+    [player]));
 
   return (
     <View style={styles.card}>
@@ -82,7 +82,11 @@ const styles = StyleSheet.create({
     height: "100%",
   },
   loaderContainer: {
-    ...StyleSheet.absoluteFillObject,
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(15, 23, 42, 0.5)",

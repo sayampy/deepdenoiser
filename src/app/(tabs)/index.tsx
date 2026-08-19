@@ -2,16 +2,15 @@ import AudioPlayer from "@/src/components/audioPlayer";
 import ErrorModal from "@/src/components/ErrorModal";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
+import { importToDocuments, cleanupTempCache } from "@/src/scripts/denoiseCache";
 import Feather from "@expo/vector-icons/Feather";
 
 import * as DocumentPicker from "expo-document-picker";
 import * as fs from "expo-file-system";
-import { File } from "expo-file-system";
 import { useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   ScrollView,
@@ -35,13 +34,12 @@ export default function HomeScreen() {
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
 
   useEffect(() => {
-    //Clears Cache
-    const cache = new fs.Directory(fs.Paths.cache);
-    cache.list().forEach((file) => {
-      file.delete();
-    });
-  },
-    []);
+    // Remove only this app's leftover temp PCM/encode artifacts.
+    // NEVER wipe the whole cache — that deleted the expo-document-picker
+    // working copy out from under users mid-flow (ENOENT crash reports).
+    cleanupTempCache();
+  }, []);
+
   const handleImportFile = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -54,12 +52,18 @@ export default function HomeScreen() {
       if (result.assets && result.assets.length > 0) {
         setIsLoading(true);
         const asset = result.assets[0];
-        const asset_file = new File(asset.uri);
-        const filename = asset.name;
-        // asset_file.rename(asset.name);
+        // Copy the picked file out of the evictable cache into app documents
+        // so a cache purge (or the system) can't remove it mid-processing.
+        const imported = await importToDocuments(asset.uri, asset.name);
+        // The cache/DocumentPicker copy is no longer needed.
+        try {
+          new fs.File(asset.uri).delete();
+        } catch {
+          // Ignore — the copy may already be gone or un-deletable.
+        }
         setTempFile({
-          uri: asset_file.uri,
-          name: filename,
+          uri: imported.uri,
+          name: asset.name,
           type: asset.mimeType?.startsWith("audio") ? "Audio" : "Video",
         });
         setIsLoading(false);
@@ -88,7 +92,6 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={theme.Styles.container}>
-      <StatusBar style="light" />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -181,7 +184,9 @@ export default function HomeScreen() {
 
           {isLoading && (
             <View style={styles.loaderContainer}>
-              <ActivityIndicator size="large" color={theme.COLORS.primary} />
+              <Host matchContents colorScheme="dark">
+                <LoadingIndicator color={theme.COLORS.primary} />
+              </Host>
               <Text style={styles.loaderText}>Processing asset...</Text>
             </View>
           )}

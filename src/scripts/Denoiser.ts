@@ -14,6 +14,7 @@ export class DeepFilterNet {
 
     private streamStates: {
         states: Tensor | Tensor[];
+        stateBuffers: Float32Array[];
         attenLimDb: Tensor;
         inputFrameData: Float32Array;
         inputFrame: Tensor;
@@ -44,10 +45,10 @@ export class DeepFilterNet {
     public async loadModel(modelPath: string): Promise<void> {
         try {
             const options: InferenceSession.SessionOptions = {
-                executionProviders: ["cpu"],
+                executionProviders: ["xnnpack", "cpu"],
                 graphOptimizationLevel: "all",
                 interOpNumThreads: 1, // Optimized for multi-core mobile CPUs
-                intraOpNumThreads: 2,
+                intraOpNumThreads: 4,
             };
             this.session = await InferenceSession.create(modelPath, options);
         } catch (e) {
@@ -57,24 +58,28 @@ export class DeepFilterNet {
     }
 
     public setupStreaming(attenLimDbValue: number = 0.0): void {
-        const { states, attenLimDb } = this.initStates(attenLimDbValue);
+        const { states, stateBuffers, attenLimDb } = this.initStates(attenLimDbValue);
         const inputFrameData = new Float32Array(this.hopSize);
         const inputFrame = new Tensor("float32", inputFrameData, [this.hopSize]);
         this.streamStates = {
             states,
+            stateBuffers,
             attenLimDb,
             inputFrameData,
             inputFrame,
         };
     }
 
-    public async processFrame(frame: Float32Array): Promise<Float32Array> {
+    public async processFrame(
+        frame: Float32Array,
+        dest?: Float32Array,
+        destOffset = 0,
+    ): Promise<Float32Array> {
         if (!this.session) throw new Error("Session not initialized");
         if (!this.streamStates) throw new Error("Streaming not setup. Call setupStreaming() first.");
 
-        const { states, attenLimDb, inputFrameData, inputFrame } = this.streamStates;
+        const { states, stateBuffers, attenLimDb, inputFrameData, inputFrame } = this.streamStates;
 
-        // Copy input frame data
         inputFrameData.set(frame);
 
         const feeds: Record<string, Tensor> = {
@@ -96,22 +101,26 @@ export class DeepFilterNet {
 
         const results = await this.session.run(feeds);
 
-        // Update output buffer and states
-        const outFrameRaw = results[this.outputNames[0]].data as Float32Array;
-
+        // Copy output state data back into the pre-allocated state tensors
+        // (buffer reuse — no new Tensor objects per frame, avoiding GC churn
+        // across the 100k+ frames of a long file).
         if (this.hasSingleStateTensor) {
             const nextStateRaw = results[this.outputNames[1]].data as Float32Array;
-            this.streamStates.states = new Tensor("float32", nextStateRaw, this.statesShape);
+            stateBuffers[0].set(nextStateRaw);
         } else {
-            const newStates: Tensor[] = [];
             for (let j = 0; j < this.stateInputNames.length; j++) {
                 const nextMultiStateRaw = results[this.outputNames[j + 1]].data as Float32Array;
-                const originalShape = (states as Tensor[])[j].dims;
-                newStates.push(new Tensor("float32", nextMultiStateRaw, originalShape));
+                stateBuffers[j].set(nextMultiStateRaw);
             }
-            this.streamStates.states = newStates;
         }
 
+        // Write output directly into `dest` when provided, avoiding an extra
+        // allocation + copy in the caller's hot loop.
+        const outFrameRaw = results[this.outputNames[0]].data as Float32Array;
+        if (dest) {
+            dest.set(outFrameRaw, destOffset);
+            return dest;
+        }
         return outFrameRaw;
     }
 
@@ -133,27 +142,34 @@ export class DeepFilterNet {
 
     private initStates(attenLimDbValue: number = 0.0): {
         states: Tensor | Tensor[];
+        stateBuffers: Float32Array[];
         attenLimDb: Tensor;
     } {
         let states: Tensor | Tensor[];
+        let stateBuffers: Float32Array[];
 
         if (this.hasSingleStateTensor) {
-            states = new Tensor("float32", new Float32Array(this.statesLen), this.statesShape);
+            const buffer = new Float32Array(this.statesLen);
+            stateBuffers = [buffer];
+            states = new Tensor("float32", buffer, this.statesShape);
         } else {
             states = [];
+            stateBuffers = [];
             const stateInputsMeta = metadata.inputs.filter((i) =>
                 this.stateInputNames.includes(i.name),
             );
             for (const meta of stateInputsMeta) {
                 const size = meta.shape.reduce((a, b) => a * b, 1);
+                const buffer = new Float32Array(size);
+                stateBuffers.push(buffer);
                 states.push(
-                    new Tensor("float32", new Float32Array(size), meta.shape),
+                    new Tensor("float32", buffer, meta.shape),
                 );
             }
         }
 
         const attenLimDb = new Tensor("float32", new Float32Array([attenLimDbValue]), [1]);
-        return { states, attenLimDb };
+        return { states, stateBuffers, attenLimDb };
     }
 
     /**

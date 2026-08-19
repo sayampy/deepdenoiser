@@ -62,6 +62,7 @@ class AudioProcessorModule : Module() {
                 sampleRate: Int,
                 channels: Int,
                 bitDepth: Int,
+                silenceTrim: Map<String, Any?>?,
                 promise: expo.modules.kotlin.Promise ->
             moduleScope.launch {
                 try {
@@ -71,7 +72,14 @@ class AudioProcessorModule : Module() {
                                             ?: throw Exception("React Context is null")
                             )
                     val result =
-                            processor.pcmToWav(pcmInput, wavOutput, sampleRate, channels, bitDepth)
+                            processor.pcmToWav(
+                                    pcmInput,
+                                    wavOutput,
+                                    sampleRate,
+                                    channels,
+                                    bitDepth,
+                                    silenceTrim
+                            )
                     promise.resolve(result)
                 } catch (e: Exception) {
                     promise.reject("ERR_WAV_CONV", e.message ?: e.toString(), e)
@@ -98,10 +106,9 @@ class AudioProcessorModule : Module() {
             }
         }
 
-        AsyncFunction("mixAudioVideo") {
-                videoPath: String,
-                audioPath: String,
-                outputPath: String,
+        AsyncFunction("copyFile") {
+                sourceUri: String,
+                destUri: String,
                 promise: expo.modules.kotlin.Promise ->
             moduleScope.launch {
                 try {
@@ -110,7 +117,46 @@ class AudioProcessorModule : Module() {
                                     appContext.reactContext
                                             ?: throw Exception("React Context is null")
                             )
-                    val result = processor.muxAudioVideo(videoPath, audioPath, outputPath)
+                    val result = processor.copyFile(sourceUri, destUri)
+                    promise.resolve(result)
+                } catch (e: Exception) {
+                    promise.reject("ERR_COPY_FILE", e.message ?: e.toString(), e)
+                }
+            }
+        }
+
+        AsyncFunction("getFileSize") {
+                path: String,
+                promise: expo.modules.kotlin.Promise ->
+            moduleScope.launch {
+                try {
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
+                    val result = processor.getFileSize(path)
+                    promise.resolve(result)
+                } catch (e: Exception) {
+                    promise.reject("ERR_GET_FILE_SIZE", e.message ?: e.toString(), e)
+                }
+            }
+        }
+
+        AsyncFunction("mixAudioVideo") {
+                videoPath: String,
+                audioPath: String,
+                outputPath: String,
+                trim: Map<String, Any?>?,
+                promise: expo.modules.kotlin.Promise ->
+            moduleScope.launch {
+                try {
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
+                    val result = processor.muxAudioVideo(videoPath, audioPath, outputPath, trim)
                     promise.resolve(result)
                 } catch (e: Exception) {
                     promise.reject("ERR_MUX_AUDIO_VIDEO", e.message ?: e.toString(), e)

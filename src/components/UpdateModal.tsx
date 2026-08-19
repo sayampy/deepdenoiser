@@ -3,9 +3,9 @@ import { Asset } from 'expo-asset';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import * as Sharing from 'expo-sharing';
+import { Host, LoadingIndicator } from '@expo/ui/jetpack-compose';
 import React, { useEffect, useState } from 'react';
 import {
-  ActivityIndicator,
   Modal,
   Platform,
   ScrollView,
@@ -49,10 +49,6 @@ export default function UpdateModal() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    checkUpdates();
-  }, []);
-
   const checkUpdates = async () => {
     try {
       const settings = await getSettings();
@@ -75,12 +71,16 @@ export default function UpdateModal() {
             setVisible(true);
           }
         }
-        // setVisible(true); // For test
       }
     } catch (err) {
       console.error('Failed to check for updates:', err);
     }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async data load on mount
+    checkUpdates();
+  }, []);
 
   const handleDownload = async () => {
     if (!updateInfo) return;
@@ -165,7 +165,9 @@ export default function UpdateModal() {
           <View style={styles.footer}>
             {downloading ? (
               <View style={styles.downloadingContainer}>
-                <ActivityIndicator color={COLORS.primary} style={{ marginRight: 12 }} />
+                <Host matchContents colorScheme="dark">
+                  <LoadingIndicator color={COLORS.primary} />
+                </Host>
                 <Text style={styles.downloadingText}>Downloading update...</Text>
               </View>
             ) : (

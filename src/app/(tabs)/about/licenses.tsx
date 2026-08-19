@@ -3,12 +3,12 @@ import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
+import { Host, OutlinedTextField } from "@expo/ui/jetpack-compose";
 import React, { useMemo, useState } from "react";
 import {
   FlatList,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -83,21 +83,27 @@ export default function LicensesScreen() {
       </View>
 
       <View style={styles.searchContainer}>
-        <Feather
-          name="search"
-          size={18}
-          color={theme.COLORS.subtext}
-          style={styles.searchIcon}
-        />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search libraries..."
-          placeholderTextColor={theme.COLORS.subtext}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+        <Host style={{ flex: 1 }} colorScheme="dark">
+          <OutlinedTextField
+            singleLine
+            onValueChange={setSearchQuery}
+            keyboardOptions={{ imeAction: "search" }}
+            colors={{
+              focusedContainerColor: theme.COLORS.surface,
+              unfocusedContainerColor: theme.COLORS.surface,
+              focusedTextColor: theme.COLORS.text,
+              unfocusedTextColor: theme.COLORS.text,
+              focusedIndicatorColor: theme.COLORS.primary,
+              unfocusedIndicatorColor: theme.COLORS.border,
+              focusedPlaceholderColor: theme.COLORS.subtext,
+              unfocusedPlaceholderColor: theme.COLORS.subtext,
+            }}
+          >
+            <OutlinedTextField.Placeholder>
+              Search libraries...
+            </OutlinedTextField.Placeholder>
+          </OutlinedTextField>
+        </Host>
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery("")}>
             <Feather name="x" size={18} color={theme.COLORS.subtext} />
@@ -135,13 +141,8 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: theme.COLORS.surface,
-    borderRadius: 12,
-    paddingHorizontal: 12,
     marginBottom: theme.SPACING.medium,
-    borderWidth: 1,
-    borderColor: theme.COLORS.border,
-    height: 48,
+    height: 56,
   },
   searchIcon: {
     marginRight: 8,

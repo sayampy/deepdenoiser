@@ -8,13 +8,25 @@ import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
-import { DeepFilterNet } from "@/src/scripts/Denoiser";
+import { getDenoiser } from "@/src/scripts/denoiserSingleton";
+import {
+  buildCacheKey,
+  buildDecodeKey,
+  buildDenoiseKey,
+  lookupCachedOutput,
+  lookupDecodedPCM,
+  lookupDenoisedPCM,
+  placeOutput,
+  stagePcmPath,
+  storeCachedOutput,
+  storeDecodedPCM,
+  storeDenoisedPCM,
+} from "@/src/scripts/denoiseCache";
 import {
   decodeToPCMFile,
   mergeAudioVideo,
   PCMtoWav,
   readPCMChunks,
-  renameFile,
   sanitizeFileName,
   writePCMChunk,
 } from "@/src/scripts/formatHandler";
@@ -23,14 +35,16 @@ import {
   markDonationPromptShown,
   shouldShowDonationReminder,
 } from "@/src/scripts/settings";
+import {
+  DEFAULT_SILENCE_TRIM,
+  SilenceTrimSettings,
+} from "@/src/scripts/silenceTrim";
 import Feather from "@expo/vector-icons/Feather";
-import { Asset } from "expo-asset";
 import * as fs from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { StatusBar } from "expo-status-bar";
+import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import React, { useEffect, useState } from "react";
 import {
-  ActivityIndicator,
   ScrollView,
   StyleSheet,
   Text,
@@ -63,6 +77,8 @@ export default function ProcessScreen() {
   const [eta, setEta] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState(0);
   const [attenLimDb, setAttenLimDb] = useState(0);
+  const [silenceTrim, setSilenceTrim] =
+    useState<SilenceTrimSettings>(DEFAULT_SILENCE_TRIM);
   const [normalize, setNormalize] = useState<{
     toggle: boolean;
     targetRMS: number;
@@ -124,6 +140,31 @@ export default function ProcessScreen() {
   const handleDenoise = async () => {
     if (!originalFile) return;
 
+    // Silence trim is not available for video files (internal cuts would
+    // desync the video track), so it is forcibly disabled for them.
+    const effectiveSilenceTrim: SilenceTrimSettings = isFileTypeVideo
+      ? { ...silenceTrim, enabled: false }
+      : silenceTrim;
+
+    // Reuse a previously denoised result for the same input + settings
+    // instead of re-running the whole pipeline from scratch.
+    const cacheKey = buildCacheKey(originalFile, {
+      attenLimDb,
+      normalize,
+      silenceTrim: effectiveSilenceTrim,
+    });
+    try {
+      const cached = await lookupCachedOutput(cacheKey);
+      if (cached) {
+        trackAppEvent("denoise_cached_hit");
+        setDenoisedFile(cached);
+        setProcessingTime(0);
+        return;
+      }
+    } catch (err) {
+      console.warn("Denoise cache lookup failed, proceeding fresh:", err);
+    }
+
     setDenoising(true);
     setProgress(0);
     setProgressText("Initializing...");
@@ -131,8 +172,33 @@ export default function ProcessScreen() {
     setDenoisedFile(null);
     try {
       const startTime = Date.now();
-      setProgressText("Extracting audio...");
-      const { file: pcmFile, sampleRate } = await decodeToPCMFile(originalFile);
+
+      // ---- Layer 1: decoded PCM (input identity only) ----
+      // Re-denosing the same file reuses the extracted+decoded PCM instead of
+      // re-running the native decode (expensive MediaCodec pass).
+      const decodeKey = buildDecodeKey(originalFile);
+      let pcmFile: fs.File;
+      let sampleRate: number;
+      const cachedDecode = await lookupDecodedPCM(decodeKey);
+      if (cachedDecode) {
+        pcmFile = cachedDecode.file;
+        sampleRate = cachedDecode.sampleRate;
+        trackAppEvent("denoise_decode_reused");
+        setProgressText("Reusing cached audio...");
+      } else {
+        setProgressText("Extracting audio...");
+        const decoded = await decodeToPCMFile(
+          originalFile,
+          new fs.File(fs.Paths.cache, stagePcmPath("stage_dec")).uri,
+        );
+        pcmFile = decoded.file;
+        sampleRate = decoded.sampleRate;
+        try {
+          await storeDecodedPCM(decodeKey, pcmFile, sampleRate);
+        } catch (err) {
+          console.warn("Failed to store decoded PCM cache:", err);
+        }
+      }
       const totalSamples = pcmFile.size / 2;
 
       let globalGain = 1.0;
@@ -169,107 +235,117 @@ export default function ProcessScreen() {
         if (globalGain > 5.0) globalGain = 5.0;
       }
 
-      setProgressText("Optimizing AI model...");
-      const denoiser = new DeepFilterNet();
-      const modelAsset = Asset.fromModule(
-        require("@/assets/model/denoiser_model.ort"),
-      );
-      await modelAsset.downloadAsync();
-      await denoiser.loadModel(modelAsset.localUri!);
+      // ---- Layer 2: denoised PCM (input + denoise settings) ----
+      // Only the silence-trim settings changed? Reuse the previously denoised
+      // PCM and just re-apply the (cheap) WAV wrap + trim — no ONNX pass at
+      // all. Trim off = re-wrap the denoised audio at full length.
+      const denoiseKey = buildDenoiseKey(originalFile, { attenLimDb, normalize });
+      let denoisedPcmFile: fs.File;
+      const cachedDenoise = await lookupDenoisedPCM(denoiseKey);
+      if (cachedDenoise) {
+        denoisedPcmFile = cachedDenoise;
+        trackAppEvent("denoise_model_reused");
+        setProgressText("Reusing denoised audio...");
+      } else {
+        setProgressText("Optimizing AI model...");
+        const denoiser = await getDenoiser();
 
-      setProgressText("Removing noise...");
-      setProgress(0);
-      const model_startTime = Date.now();
+        setProgressText("Removing noise...");
+        setProgress(0);
+        const model_startTime = Date.now();
 
-      const targetRate = 48000;
-      const hopSize = 512;
-      const fftSize = 960;
-      denoiser.setupStreaming(attenLimDb);
+        const targetRate = 48000;
+        const hopSize = 512;
+        const fftSize = 960;
+        denoiser.setupStreaming(attenLimDb);
 
-      const denoisedPcmFile = new fs.File(
-        fs.Paths.cache,
-        `denoised_${Date.now()}.pcm`,
-      );
-      if (denoisedPcmFile.exists) denoisedPcmFile.delete();
+        denoisedPcmFile = new fs.File(fs.Paths.cache, stagePcmPath("stage_dn"));
 
-      let inputBuffer = new Float32Array(fftSize);
-      let processedInputSamples = 0;
-      let firstWrite = true;
-      let outputSamplesSkipped = 0;
-      const samplesPerChunk = sampleRate * 5; // 5s chunks for better responsiveness
+        let inputBuffer = new Float32Array(fftSize);
+        let processedInputSamples = 0;
+        let firstWrite = true;
+        let outputSamplesSkipped = 0;
+        const samplesPerChunk = sampleRate * 5; // 5s chunks for better responsiveness
 
-      await readPCMChunks(
-        pcmFile,
-        samplesPerChunk,
-        async (chunk, inputSamples) => {
-          if (normalize.toggle) {
-            for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
-          }
+        await readPCMChunks(
+          pcmFile,
+          samplesPerChunk,
+          async (chunk, inputSamples) => {
+            if (normalize.toggle) {
+              for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
+            }
 
-          const combined = new Float32Array(inputBuffer.length + chunk.length);
-          combined.set(inputBuffer);
-          combined.set(chunk, inputBuffer.length);
+            const combined = new Float32Array(inputBuffer.length + chunk.length);
+            combined.set(inputBuffer);
+            combined.set(chunk, inputBuffer.length);
 
-          const numFrames = Math.floor(combined.length / hopSize);
-          const processLen = numFrames * hopSize;
-          const toProcess = combined.subarray(0, processLen);
-          inputBuffer = combined.slice(processLen);
+            const numFrames = Math.floor(combined.length / hopSize);
+            const processLen = numFrames * hopSize;
+            const toProcess = combined.subarray(0, processLen);
+            inputBuffer = combined.slice(processLen);
 
-          const denoisedOutput = new Float32Array(processLen);
-          for (let i = 0; i < processLen; i += hopSize) {
-            const frame = toProcess.subarray(i, i + hopSize);
-            const outFrame = await denoiser.processFrame(frame);
-            denoisedOutput.set(outFrame, i);
-          }
+            const denoisedOutput = new Float32Array(processLen);
+            for (let i = 0; i < processLen; i += hopSize) {
+              const frame = toProcess.subarray(i, i + hopSize);
+              await denoiser.processFrame(frame, denoisedOutput, i);
+            }
 
-          let finalOutputChunk = denoisedOutput;
+            let finalOutputChunk = denoisedOutput;
+            if (outputSamplesSkipped < fftSize) {
+              const skip = Math.min(
+                fftSize - outputSamplesSkipped,
+                finalOutputChunk.length,
+              );
+              finalOutputChunk = finalOutputChunk.subarray(skip);
+              outputSamplesSkipped += skip;
+            }
+
+            if (finalOutputChunk.length > 0) {
+              await writePCMChunk(denoisedPcmFile, finalOutputChunk, !firstWrite);
+              firstWrite = false;
+            }
+
+            processedInputSamples += inputSamples;
+            const p = Math.min(
+              Math.round((processedInputSamples / totalSamples) * 100),
+              100,
+            );
+            setProgress(p);
+
+            if (p > 0 && Number.isFinite(p)) {
+              const elapsed = (Date.now() - model_startTime) / 1000;
+              const remaining = elapsed / (p / 100) - elapsed;
+              if (remaining > 0 && Number.isFinite(remaining)) {
+                setEta(`${timeHandler(Math.ceil(remaining))} left`);
+              }
+            }
+          },
+          sampleRate,
+          targetRate,
+        );
+
+        if (inputBuffer.length > 0) {
+          const padded = new Float32Array(hopSize);
+          padded.set(inputBuffer);
+          const outBuf = new Float32Array(hopSize);
+          const outFrame = await denoiser.processFrame(padded, outBuf);
+          let finalFrame = outFrame.subarray(0, inputBuffer.length);
           if (outputSamplesSkipped < fftSize) {
             const skip = Math.min(
               fftSize - outputSamplesSkipped,
-              finalOutputChunk.length,
+              finalFrame.length,
             );
-            finalOutputChunk = finalOutputChunk.subarray(skip);
-            outputSamplesSkipped += skip;
+            finalFrame = finalFrame.subarray(skip);
           }
-
-          if (finalOutputChunk.length > 0) {
-            await writePCMChunk(denoisedPcmFile, finalOutputChunk, !firstWrite);
-            firstWrite = false;
+          if (finalFrame.length > 0) {
+            await writePCMChunk(denoisedPcmFile, finalFrame, !firstWrite);
           }
-
-          processedInputSamples += inputSamples;
-          const p = Math.min(
-            Math.round((processedInputSamples / totalSamples) * 100),
-            100,
-          );
-          setProgress(p);
-
-          if (p > 0 && Number.isFinite(p)) {
-            const elapsed = (Date.now() - model_startTime) / 1000;
-            const remaining = elapsed / (p / 100) - elapsed;
-            if (remaining > 0 && Number.isFinite(remaining)) {
-              setEta(`${timeHandler(Math.ceil(remaining))} left`);
-            }
-          }
-        },
-        sampleRate,
-        targetRate,
-      );
-
-      if (inputBuffer.length > 0) {
-        const padded = new Float32Array(hopSize);
-        padded.set(inputBuffer);
-        const outFrame = await denoiser.processFrame(padded);
-        let finalFrame = outFrame.subarray(0, inputBuffer.length);
-        if (outputSamplesSkipped < fftSize) {
-          const skip = Math.min(
-            fftSize - outputSamplesSkipped,
-            finalFrame.length,
-          );
-          finalFrame = finalFrame.subarray(skip);
         }
-        if (finalFrame.length > 0) {
-          await writePCMChunk(denoisedPcmFile, finalFrame, !firstWrite);
+
+        try {
+          await storeDenoisedPCM(denoiseKey, denoisedPcmFile);
+        } catch (err) {
+          console.warn("Failed to store denoised PCM cache:", err);
         }
       }
 
@@ -277,24 +353,42 @@ export default function ProcessScreen() {
       setProgressText("Finalizing media...");
 
       const originalBase = filename.split(".").slice(0, -1).join(".");
-      const finalWavFile = await PCMtoWav(denoisedPcmFile);
-      renameFile(
-        finalWavFile,
-        `${sanitizeFileName(originalBase)}_denoised.wav`,
-      );
+      const wavResult = await PCMtoWav(denoisedPcmFile, 48000, effectiveSilenceTrim);
+      let outputFile: fs.File;
       if (isFileTypeVideo) {
+        // Mux against the cache temp WAV, then discard it — only the final MP4
+        // is worth keeping in persistent storage (indexed by the cache).
+        // The silence-trim offsets are passed through so the video track is
+        // cut by the same window and stays in sync with the trimmed audio.
         setProgressText("Merging audio with video...");
-        const finalVideoFile = await mergeAudioVideo(
-          originalFile,
-          finalWavFile,
-        );
-        renameFile(
+        const finalVideoFile = await mergeAudioVideo(originalFile, wavResult.file, {
+          startUs: wavResult.trimStartUs,
+          endUs: wavResult.trimEndUs,
+          trimmed: wavResult.trimmed,
+        });
+        try {
+          if (wavResult.file.exists) wavResult.file.delete();
+        } catch (err) {
+          console.warn("Failed to delete intermediate WAV:", err);
+        }
+        outputFile = await placeOutput(
           finalVideoFile,
           `${sanitizeFileName(originalBase)}_denoised.mp4`,
         );
-        setDenoisedFile(finalVideoFile);
+        setDenoisedFile(outputFile);
       } else {
-        setDenoisedFile(finalWavFile);
+        outputFile = await placeOutput(
+          wavResult.file,
+          `${sanitizeFileName(originalBase)}_denoised.wav`,
+        );
+        setDenoisedFile(outputFile);
+      }
+
+      // Persist the result so re-denoising the same file is instant.
+      try {
+        await storeCachedOutput(cacheKey, outputFile);
+      } catch (err) {
+        console.warn("Failed to store denoise cache entry:", err);
       }
 
       const duration = (Date.now() - startTime) / 1000;
@@ -304,9 +398,6 @@ export default function ProcessScreen() {
         duration: duration,
         file_type: isFileTypeVideo ? "video" : "audio",
       });
-
-      if (pcmFile.exists) pcmFile.delete();
-      if (denoisedPcmFile.exists) denoisedPcmFile.delete();
     } catch (error) {
       console.error("Error during denoising:", error);
       const err = error instanceof Error ? error : new Error(String(error));
@@ -335,7 +426,9 @@ export default function ProcessScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={[theme.Styles.container, theme.Styles.centered]}>
-        <ActivityIndicator size="large" color={theme.COLORS.primary} />
+        <Host matchContents colorScheme="dark">
+          <LoadingIndicator color={theme.COLORS.primary} />
+        </Host>
         <Text style={styles.loadingText}>Loading media...</Text>
       </SafeAreaView>
     );
@@ -344,7 +437,6 @@ export default function ProcessScreen() {
   return (
     // <SafeAreaView>
     <SafeAreaView style={theme.Styles.container}>
-      <StatusBar style="light" />
       <View style={styles.headerContainer}>
         <TouchableOpacity
           style={styles.backButton}
@@ -383,6 +475,9 @@ export default function ProcessScreen() {
           onAttenLimDbChange={setAttenLimDb}
           normalize={normalize}
           onNormalizeChange={setNormalize}
+          silenceTrim={silenceTrim}
+          onSilenceTrimChange={setSilenceTrim}
+          showSilenceTrim={!isFileTypeVideo}
         />
 
         {denoising && (
@@ -394,7 +489,10 @@ export default function ProcessScreen() {
             <View style={styles.progressBarWrapper}>
               <View style={styles.progressBarBg}>
                 <View
-                  style={[styles.progressBarFill, { width: `${progress}%` }]}
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${progress}%` },
+                  ]}
                 />
               </View>
               <Text style={styles.progressPercent}>{progress}%</Text>
@@ -453,10 +551,11 @@ export default function ProcessScreen() {
             disabled={denoising}
           >
             {denoising ? (
-              <ActivityIndicator
-                color={theme.COLORS.background}
-                style={{ marginRight: 10 }}
-              />
+              <Host matchContents colorScheme="dark">
+                <LoadingIndicator
+                  color={theme.COLORS.background}
+                />
+              </Host>
             ) : (
               <Feather
                 name="zap"
@@ -523,7 +622,6 @@ export default function ProcessScreen() {
         error={error}
         onClose={() => setIsErrorModalVisible(false)}
       />
-      {/* </View> */}
     </SafeAreaView>
   );
 }

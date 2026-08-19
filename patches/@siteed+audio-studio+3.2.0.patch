@@ -1,0 +1,170 @@
+--- a/node_modules/@siteed/audio-studio/android/src/main/java/net/siteed/audiostudio/AudioRecorderManager.kt
++++ b/node_modules/@siteed/audio-studio/android/src/main/java/net/siteed/audiostudio/AudioRecorderManager.kt
+@@ -225,7 +225,7 @@
+                 override fun resolve(value: Any?) {
+                     LogUtils.d(CLASS_NAME, "🔄 Successfully reinitialized AudioRecord with new device")
+                 }
+-                override fun reject(code: String, message: String?, cause: Throwable?) {
++                override fun reject(code: String?, message: String?, cause: Throwable?) {
+                     LogUtils.e(CLASS_NAME, "🔄 Failed to reinitialize AudioRecord: $message")
+                 }
+             })) {
+@@ -237,7 +237,7 @@
+                             "isPaused" to true
+                         ))
+                     }
+-                    override fun reject(code: String, message: String?, cause: Throwable?) {}
++                    override fun reject(code: String?, message: String?, cause: Throwable?) {}
+                 })
+                 return
+             }
+@@ -253,7 +253,7 @@
+                                 "isPaused" to true
+                             ))
+                         }
+-                        override fun reject(code: String, message: String?, cause: Throwable?) {}
++                        override fun reject(code: String?, message: String?, cause: Throwable?) {}
+                     })
+                     return
+                 }
+@@ -297,7 +297,7 @@
+                         "error" to e.message
+                     ))
+                 }
+-                override fun reject(code: String, message: String?, cause: Throwable?) {}
++                override fun reject(code: String?, message: String?, cause: Throwable?) {}
+             })
+         }
+     }
+@@ -417,7 +417,7 @@
+                                     "isPaused" to true
+                                 ))
+                             }
+-                            override fun reject(code: String, message: String?, cause: Throwable?) {
++                            override fun reject(code: String?, message: String?, cause: Throwable?) {
+                                 LogUtils.e(CLASS_NAME, "Failed to pause recording on phone call", cause)
+                             }
+                         })
+@@ -444,7 +444,7 @@
+                                         "isPaused" to false
+                                     ))
+                                 }
+-                                override fun reject(code: String, message: String?, cause: Throwable?) {
++                                override fun reject(code: String?, message: String?, cause: Throwable?) {
+                                     LogUtils.e(CLASS_NAME, "Failed to resume recording after phone call", cause)
+                                 }
+                             })
+@@ -1226,7 +1226,7 @@
+                     override fun resolve(value: Any?) {
+                         LogUtils.d(CLASS_NAME, "⏺️ Successfully reinitialized AudioRecord for resumption")
+                     }
+-                    override fun reject(code: String, message: String?, cause: Throwable?) {
++                    override fun reject(code: String?, message: String?, cause: Throwable?) {
+                         LogUtils.e(CLASS_NAME, "⏺️ Failed to reinitialize AudioRecord: $message")
+                         // We'll let the main try-catch handle this error
+                         throw IllegalStateException("Failed to reinitialize AudioRecord: $message")
+@@ -1936,7 +1936,7 @@
+                                         "isPaused" to true
+                                     ))
+                                 }
+-                                override fun reject(code: String, message: String?, cause: Throwable?) {
++                                override fun reject(code: String?, message: String?, cause: Throwable?) {
+                                     LogUtils.e(CLASS_NAME, "Failed to pause recording on audio focus loss")
+                                 }
+                             })
+@@ -1959,7 +1959,7 @@
+                                         "isPaused" to false
+                                     ))
+                                 }
+-                                override fun reject(code: String, message: String?, cause: Throwable?) {
++                                override fun reject(code: String?, message: String?, cause: Throwable?) {
+                                     LogUtils.e(CLASS_NAME, "Failed to resume recording on audio focus gain")
+                                 }
+                             })
+@@ -2006,7 +2006,7 @@
+                                         "isPaused" to true
+                                     ))
+                                 }
+-                                override fun reject(code: String, message: String?, cause: Throwable?) {
++                                override fun reject(code: String?, message: String?, cause: Throwable?) {
+                                     LogUtils.e(CLASS_NAME, "Failed to pause recording on audio focus loss")
+                                 }
+                             })
+@@ -2033,7 +2033,7 @@
+                                         "isPaused" to false
+                                     ))
+                                 }
+-                                override fun reject(code: String, message: String?, cause: Throwable?) {
++                                override fun reject(code: String?, message: String?, cause: Throwable?) {
+                                     LogUtils.e(CLASS_NAME, "Failed to resume recording on audio focus gain")
+                                 }
+                             })
+@@ -2139,7 +2139,7 @@
+             // Check permissions - create a dummy promise to avoid rejections
+             val dummyPromise = object : Promise {
+                 override fun resolve(value: Any?) {}
+-                override fun reject(code: String, message: String?, cause: Throwable?) { 
++                override fun reject(code: String?, message: String?, cause: Throwable?) { 
+                     LogUtils.e(CLASS_NAME, "Preparation error: $code - $message", cause)
+                 }
+             }
+--- a/node_modules/@siteed/audio-studio/android/src/main/java/net/siteed/audiostudio/AudioStudioModule.kt
++++ b/node_modules/@siteed/audio-studio/android/src/main/java/net/siteed/audiostudio/AudioStudioModule.kt
+@@ -252,7 +252,7 @@
+                         LogUtils.d(CLASS_NAME, "⏺️ resumeRecording completed successfully")
+                         promise.resolve(value)
+                     }
+-                    override fun reject(code: String, message: String?, cause: Throwable?) {
++                    override fun reject(code: String?, message: String?, cause: Throwable?) {
+                         LogUtils.e(CLASS_NAME, "⏺️ resumeRecording failed: $code - $message", cause)
+                         promise.reject(code, message, cause)
+                     }
+@@ -1294,7 +1294,7 @@
+                                     "isPaused" to true
+                                 ))
+                             }
+-                            override fun reject(code: String, message: String?, cause: Throwable?) {
++                            override fun reject(code: String?, message: String?, cause: Throwable?) {
+                                 LogUtils.e(CLASS_NAME, "📱 Failed to pause recording after device disconnection: $message")
+                             }
+                         })
+@@ -1314,7 +1314,7 @@
+                                 "isPaused" to true
+                             ))
+                         }
+-                        override fun reject(code: String, message: String?, cause: Throwable?) {
++                        override fun reject(code: String?, message: String?, cause: Throwable?) {
+                             LogUtils.e(CLASS_NAME, "📱 Failed to pause recording after device disconnection: $message")
+                         }
+                     })
+@@ -1336,7 +1336,7 @@
+                             "isPaused" to true
+                         ))
+                     }
+-                    override fun reject(code: String, message: String?, cause: Throwable?) {
++                    override fun reject(code: String?, message: String?, cause: Throwable?) {
+                         LogUtils.e(CLASS_NAME, "📱 Failed to pause recording after device disconnection: $message")
+                     }
+                 })
+--- a/node_modules/@siteed/audio-studio/android/src/main/java/net/siteed/audiostudio/AudioRecordingService.kt
++++ b/node_modules/@siteed/audio-studio/android/src/main/java/net/siteed/audiostudio/AudioRecordingService.kt
+@@ -101,7 +101,7 @@
+                         Log.d(Constants.TAG, "Successfully stopped recording on task removed")
+                         cleanup()
+                     }
+-                    override fun reject(code: String, message: String?, cause: Throwable?) {
++                    override fun reject(code: String?, message: String?, cause: Throwable?) {
+                         Log.e(Constants.TAG, "Failed to stop recording on task removed: $message")
+                         cleanup()
+                     }
+--- a/node_modules/@siteed/audio-studio/android/src/main/java/net/siteed/audiostudio/RecordingActionReceiver.kt
++++ b/node_modules/@siteed/audio-studio/android/src/main/java/net/siteed/audiostudio/RecordingActionReceiver.kt
+@@ -41,7 +41,7 @@
+                     isProcessingAction.set(false)
+                 }
+ 
+-                override fun reject(code: String, message: String?, cause: Throwable?) {
++                override fun reject(code: String?, message: String?, cause: Throwable?) {
+                     Log.e("RecordingActionReceiver", "$action failed: $message", cause)
+                     isProcessingAction.set(false)
+                 }

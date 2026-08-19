@@ -14,7 +14,7 @@ export function redirectSystemPath({
 
         // Default path handling
         return path;
-    } catch (_) {
+    } catch {
         // If everything fails, fallback to home
         return "/(tabs)";
     }

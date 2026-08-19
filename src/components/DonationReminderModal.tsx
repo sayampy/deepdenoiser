@@ -2,12 +2,12 @@ import RoastToast from "@/src/components/RoastToast";
 import * as theme from "@/src/constants/theme";
 import { updateSettings } from "@/src/scripts/settings";
 import { Feather } from "@expo/vector-icons";
+import { Host, Switch } from "@expo/ui/jetpack-compose";
 import React, { useState } from "react";
 import {
   Modal,
   Pressable,
   StyleSheet,
-  Switch,
   Text,
   TouchableOpacity,
   View,
@@ -84,17 +84,18 @@ export default function DonationReminderModal({
 
             <View style={styles.neverAgainRow}>
               <Text style={styles.neverAgainText}>Never show again</Text>
-              <Switch
-                value={neverAgain}
-                onValueChange={handleNeverAgainToggle}
-                trackColor={{
-                  false: theme.COLORS.border,
-                  true: theme.COLORS.primary + "60",
-                }}
-                thumbColor={
-                  neverAgain ? theme.COLORS.primary : theme.COLORS.subtext
-                }
-              />
+              <Host matchContents colorScheme="dark">
+                <Switch
+                  value={neverAgain}
+                  onCheckedChange={handleNeverAgainToggle}
+                  colors={{
+                    uncheckedTrackColor: theme.COLORS.border,
+                    checkedTrackColor: theme.COLORS.primary + "60",
+                    checkedThumbColor: theme.COLORS.primary,
+                    uncheckedThumbColor: theme.COLORS.subtext,
+                  }}
+                />
+              </Host>
             </View>
           </Pressable>
         </Pressable>

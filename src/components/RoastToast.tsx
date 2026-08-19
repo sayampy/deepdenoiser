@@ -1,6 +1,6 @@
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
 
 interface RoastToastProps {
@@ -10,8 +10,8 @@ interface RoastToastProps {
 }
 
 export default function RoastToast({ visible, message, onHide }: RoastToastProps) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(50)).current;
+  const [opacity] = useState(() => new Animated.Value(0));
+  const [translateY] = useState(() => new Animated.Value(50));
 
   useEffect(() => {
     if (visible) {

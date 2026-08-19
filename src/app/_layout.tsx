@@ -7,10 +7,9 @@ import * as MediaLibrary from "expo-media-library";
 import { createPermissionHook } from "expo-modules-core";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { StatusBar } from "expo-status-bar";
-import { useEffect, useState } from "react";
+import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
+import { useEffect } from "react";
 import {
-  ActivityIndicator,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -30,7 +29,6 @@ const useMicrophonePermissions = createPermissionHook({
 });
 
 export default function RootLayout() {
-  const [appIsReady, setAppIsReady] = useState(false);
   const [mediaPermissionResponse, requestMediaPermission] = MediaLibrary.usePermissions();
   const [micPermissionResponse, requestMicPermission] = useMicrophonePermissions();
 
@@ -38,25 +36,14 @@ export default function RootLayout() {
     ...Feather.font,
   });
 
-  // // Analytics — run once on mount
-  // useEffect(() => {
-  //   (async () => {
-  //     try {
-  //       await initAnalytics();
-  //       // await trackAppEvent("app_open");
-  //     } catch (e) {
-  //       console.warn(e);
-  //     }
-  //   })();
-  // }, []);
+  const appIsReady = fontsLoaded || fontError;
 
   // Splash — hide when fonts are ready
   useEffect(() => {
-    if (fontsLoaded || fontError) {
-      setAppIsReady(true);
+    if (appIsReady) {
       SplashScreen.hideAsync();
     }
-  }, [fontsLoaded, fontError]);
+  }, [appIsReady]);
 
   if (!appIsReady && !fontError) {
     return null;
@@ -67,7 +54,9 @@ export default function RootLayout() {
     // Permission response is still loading
     return (
       <View style={[Styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Host matchContents colorScheme="dark">
+          <LoadingIndicator color={COLORS.primary} />
+        </Host>
       </View>
     );
   }
@@ -106,7 +95,6 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <StatusBar style="light" />
       <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
 
         <Stack.Screen name="(tabs)" />
