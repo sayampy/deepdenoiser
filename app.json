@@ -27,16 +27,10 @@
     "plugins": [
       "./plugins/withNdkVersion",
       "./plugins/DisableDependencyInfo",
-      // [
-      //   "./plugins/withFlexiblePgSize",
-      //   {
-      //     "gradleFile": "node_modules/onnxruntime-react-native/android/build.gradle"
-      //   }
-      // ],
       "./plugins/withOnnxruntime",
       "./plugins/withLargeHeap",
-      // "./plugins/withDisableLintAar",
-      // "onnxruntime-react-native",
+      "./plugins/withOptimizedProguard",
+      "./plugins/withR8Optimization",
       "expo-router",
       [
         "expo-build-properties",
@@ -45,16 +39,11 @@
             "buildArchs": [
               "arm64-v8a"
             ],
-            "ndkVersion": "28.1.13356709",
             "enableBundleCompression": true,
             "enableMinifyInReleaseBuilds": true,
-            "enableShrinkResoursesInReleaseBuilds": true,
-            "shrinkResources": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
             "enablePngCrunchInReleaseBuilds": false,
-            "dependencies": [
-              "com.linkedin.litr:litr:1.5.7",
-              "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.3.9"
-            ]
+            "extraProguardRules": "-keep class ai.onnxruntime.** { *; }\n-keep class com.linkedin.android.litr.** { *; }"
           },
           "shared": {
             "useHermesV1": true
@@ -74,6 +63,7 @@
         }
       ],
       "expo-font",
+      "expo-image",
       [
         "expo-media-library",
         {
