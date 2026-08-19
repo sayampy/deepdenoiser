@@ -1,9 +1,9 @@
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import * as Linking from "expo-linking";
 import React from "react";
 import {
-  Image,
   Modal,
   Pressable,
   StyleSheet,
@@ -41,6 +41,7 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
           >
             <Image
               source={require("@/assets/images/support_me_on_kofi.png")}
+              contentFit="contain"
               style={styles.kofiImage}
             />
           </TouchableOpacity>
@@ -66,6 +67,7 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
           >
             <Image
               source={require("@/assets/images/upi-logo.png")}
+              contentFit="contain"
               style={styles.upiIcon}
             />
             <Text style={styles.upiText}>Donate via UPI</Text>
@@ -134,7 +136,6 @@ const styles = StyleSheet.create({
   kofiImage: {
     width: "100%",
     height: "100%",
-    resizeMode: "contain",
   },
   githubButton: {
     backgroundColor: "#24292e",
@@ -162,7 +163,6 @@ const styles = StyleSheet.create({
   upiIcon: {
     height: 20,
     marginRight: 5,
-    resizeMode: "contain",
   },
   upiText: {
     fontSize: theme.FONT_SIZE.body,

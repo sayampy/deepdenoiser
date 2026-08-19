@@ -40,11 +40,15 @@ class MediaProcessor(private val context: Context) {
         return try {
             if (path.startsWith("content://")) {
                 Uri.parse(path)
-            } else if (path.startsWith("file://")) {
+            } else if (path.startsWith("file:")) {
                 // Uri.parse treats '#'/spaces as URI fragments and truncates
                 // the path — build the URI from the raw file path instead so
                 // filenames like "song #1.mp3" keep working.
-                Uri.fromFile(File(Uri.decode(path.removePrefix("file://"))))
+                // Strip the scheme and any empty-authority prefix (//).
+                // Handles file:///path, file://path, and file:/path variants.
+                val withoutScheme = path.removePrefix("file:")
+                val filePath = withoutScheme.removePrefix("//")
+                Uri.fromFile(File(Uri.decode(filePath)))
             } else {
                 Uri.fromFile(File(path))
             }

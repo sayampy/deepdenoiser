@@ -6,7 +6,7 @@ import {
   pcmToWav as nativePcmToWav
 } from "@/modules/AudioProcessorModule";
 import * as fs from "expo-file-system";
-import * as MediaLibrary from "expo-media-library";
+import { Asset, Album, requestPermissionsAsync } from "expo-media-library";
 import { trackAppEvent } from "./analytics";
 import type { SilenceTrimSettings } from "./silenceTrim";
 import { trimToNativeConfig } from "./silenceTrim";
@@ -294,15 +294,15 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
   return outputFile;
 }
 export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): Promise<boolean> {
-  const { status } = await MediaLibrary.requestPermissionsAsync();
+  const { status } = await requestPermissionsAsync();
   if (status !== 'granted') return false;
 
   try {
-    const album = await MediaLibrary.getAlbumAsync(albumName);
+    const album = await Album.get(albumName);
     if (album) {
-      await MediaLibrary.createAssetAsync(file.uri, album.id);
+      await Asset.create(file.uri, album);
     } else {
-      await MediaLibrary.createAlbumAsync(albumName, undefined, false, file.uri);
+      await Album.create(albumName, [file.uri]);
     }
     trackAppEvent("save_file");
     return true;

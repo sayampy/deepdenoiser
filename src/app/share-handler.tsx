@@ -32,6 +32,7 @@ export default function ShareHandler() {
               const imported = await importToDocuments(
                 payload.contentUri!,
                 payload.originalName || "shared_file",
+                payload.value,
               );
               setIsCopying(false);
 

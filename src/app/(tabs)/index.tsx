@@ -9,10 +9,10 @@ import * as DocumentPicker from "expo-document-picker";
 import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
 import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
+import { Image } from "expo-image";
 import React, { useEffect, useState } from "react";
 import {
   Alert,
-  Image,
   ScrollView,
   StyleSheet,
   Text,

@@ -3,7 +3,7 @@ import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import * as Audio from "expo-audio";
 import { useFonts } from "expo-font";
-import * as MediaLibrary from "expo-media-library";
+import { usePermissions } from "expo-media-library";
 import { createPermissionHook } from "expo-modules-core";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
@@ -29,7 +29,7 @@ const useMicrophonePermissions = createPermissionHook({
 });
 
 export default function RootLayout() {
-  const [mediaPermissionResponse, requestMediaPermission] = MediaLibrary.usePermissions();
+  const [mediaPermissionResponse, requestMediaPermission] = usePermissions();
   const [micPermissionResponse, requestMicPermission] = useMicrophonePermissions();
 
   const [fontsLoaded, fontError] = useFonts({

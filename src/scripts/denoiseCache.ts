@@ -55,14 +55,34 @@ export function outputDir(): fs.Directory {
  * starting from blank. A re-pick of a different file with the same name but a
  * different size overwrites the import (and therefore misses the cache).
  */
-export async function importToDocuments(sourceUri: string, name: string): Promise<fs.File> {
+/**
+ * Normalise a file:// URI so that it always uses the triple-slash form
+ * (`file:///path`).  Java's `File.toURI().toString()` emits `file:/path`
+ * (one slash, authority null) which expo-file-system and some Android
+ * code-paths interpret as a literal path `file:/…` instead of stripping
+ * the scheme.
+ */
+function normalizeFileUri(uri: string): string {
+  if (uri.startsWith("file:/") && !uri.startsWith("file:///")) {
+    return "file:///" + uri.slice("file:/".length);
+  }
+  return uri;
+}
+
+export async function importToDocuments(
+  sourceUri: string,
+  name: string,
+  fallbackUri?: string,
+): Promise<fs.File> {
   const safe = sanitizeFileName(name || "import");
   const destName = name && name.trim().length > 0 ? safe : `import_${Date.now()}`;
   const dest = new fs.File(importsDir(), destName);
 
+  const normalizedSource = normalizeFileUri(sourceUri);
+
   if (dest.exists) {
     try {
-      const sourceSize = await getFileSize(sourceUri);
+      const sourceSize = await getFileSize(normalizedSource);
       if (sourceSize >= 0 && dest.size === sourceSize) {
         // Same file re-imported — reuse the existing copy so its mtime (and
         // therefore the denoise cache key) stays stable.
@@ -77,8 +97,24 @@ export async function importToDocuments(sourceUri: string, name: string): Promis
       // Ignore; copyFile overwrites the existing file in place anyway.
     }
   }
-  await copyFile(sourceUri, dest.uri);
-  return dest;
+
+  try {
+    await copyFile(normalizedSource, dest.uri);
+    return dest;
+  } catch (primaryErr) {
+    // The primary file:// URI may point to a cache copy that was silently
+    // dropped by expo-sharing.  If a content:// fallback was provided, try
+    // reading directly from it before giving up.
+    if (fallbackUri) {
+      try {
+        await copyFile(fallbackUri, dest.uri);
+        return dest;
+      } catch (fallbackErr) {
+        console.warn("Fallback content:// copy also failed:", fallbackErr);
+      }
+    }
+    throw primaryErr;
+  }
 }
 
 /**
