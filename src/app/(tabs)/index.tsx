@@ -8,9 +8,10 @@ import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
 import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
+import { useIncomingShare } from "expo-sharing";
 import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import { Image } from "expo-image";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -32,6 +33,64 @@ export default function HomeScreen() {
 
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+
+  // Defense-in-depth: handle share intents directly on the home screen so
+  // shares work even when the 150ms initial-URL routing timeout in Expo
+  // Router causes share-handler.tsx to never mount (R8/Proguard startup
+  // overhead in release builds).  share-handler.tsx remains as a fallback
+  // for when routing succeeds — clearSharedPayloads() prevents double-processing.
+  const {
+    resolvedSharedPayloads,
+    isResolving: isShareResolving,
+    clearSharedPayloads,
+    error: shareError,
+  } = useIncomingShare();
+  const shareHandledRef = useRef(false);
+
+  useEffect(() => {
+    if (shareHandledRef.current || isShareResolving) return;
+    if (resolvedSharedPayloads.length === 0 && !shareError) return;
+
+    if (shareError) {
+      console.error("Error resolving shared payload:", shareError);
+      shareHandledRef.current = true;
+      return;
+    }
+
+    const payload = resolvedSharedPayloads[0];
+    if (!payload?.contentUri) {
+      shareHandledRef.current = true;
+      return;
+    }
+
+    shareHandledRef.current = true;
+    (async () => {
+      try {
+        setIsLoading(true);
+        const imported = await importToDocuments(
+          payload.contentUri!,
+          payload.originalName ?? "shared_file",
+          payload.value,
+        );
+        clearSharedPayloads();
+        router.push({
+          pathname: "/processing/process",
+          params: {
+            fileuri: encodeURIComponent(imported.uri),
+            filename: encodeURIComponent(payload.originalName ?? "shared_file"),
+          },
+        });
+      } catch (copyErr) {
+        setIsLoading(false);
+        const err =
+          copyErr instanceof Error ? copyErr : new Error(String(copyErr));
+        console.error("Failed to import shared file:", err);
+        setError(err);
+        setIsErrorModalVisible(true);
+        clearSharedPayloads();
+      }
+    })();
+  }, [resolvedSharedPayloads, isShareResolving, shareError, clearSharedPayloads, router]);
 
   useEffect(() => {
     // Remove only this app's leftover temp PCM/encode artifacts.

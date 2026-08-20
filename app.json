@@ -3,9 +3,7 @@
     "icon": "./assets/images/icon.png",
     "scheme": "deepdenoiser",
     "userInterfaceStyle": "dark",
-    "platforms": [
-      "android"
-    ],
+    "platforms": ["android"],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.sayampy.deepdenoiser"
@@ -29,21 +27,17 @@
       "./plugins/DisableDependencyInfo",
       "./plugins/withOnnxruntime",
       "./plugins/withLargeHeap",
-      "./plugins/withOptimizedProguard",
-      "./plugins/withR8Optimization",
       "expo-router",
       [
         "expo-build-properties",
         {
           "android": {
-            "buildArchs": [
-              "arm64-v8a"
-            ],
+            "buildArchs": ["arm64-v8a"],
             "enableBundleCompression": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
-            "enablePngCrunchInReleaseBuilds": false,
-            "extraProguardRules": "-keep class ai.onnxruntime.** { *; }\n-keep class com.linkedin.android.litr.** { *; }"
+            "enablePngCrunchInReleaseBuilds": true,
+            "extraProguardRules": "-keep class expo.modules.ui.** { *; }\n-keep class ai.onnxruntime.** { *; }\n-keep class com.linkedin.android.litr.** { *; }\n-keep class * implements expo.modules.core.interfaces.ReactActivityLifecycleListener { *; }\n-keep class expo.modules.sharing.** { *; }"
           },
           "shared": {
             "useHermesV1": true
@@ -68,10 +62,7 @@
         "expo-media-library",
         {
           "isAccessMediaLocationEnabled": true,
-          "granularPermissions": [
-            "audio",
-            "video"
-          ]
+          "granularPermissions": ["audio", "video"]
         }
       ],
       "expo-asset",
@@ -88,10 +79,7 @@
         {
           "android": {
             "enabled": true,
-            "singleShareMimeTypes": [
-              "video/*",
-              "audio/*"
-            ]
+            "singleShareMimeTypes": ["video/*", "audio/*"]
           }
         }
       ]

@@ -465,7 +465,7 @@ export default function RecordingScreen() {
 
         {isFinalizing ? (
           <View style={styles.finalizingContainer}>
-            <Host matchContents colorScheme="dark">
+            <Host matchContents style={{ width: 48, height: 48 }} colorScheme="dark">
               <LoadingIndicator color={theme.COLORS.primary} />
             </Host>
             <Text style={styles.statusText}>Finalizing Audio...</Text>

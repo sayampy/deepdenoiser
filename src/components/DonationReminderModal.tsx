@@ -84,7 +84,7 @@ export default function DonationReminderModal({
 
             <View style={styles.neverAgainRow}>
               <Text style={styles.neverAgainText}>Never show again</Text>
-              <Host matchContents colorScheme="dark">
+              <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
                 <Switch
                   value={neverAgain}
                   onCheckedChange={handleNeverAgainToggle}

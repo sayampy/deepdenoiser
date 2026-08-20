@@ -71,7 +71,7 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
                   Help us improve by sharing anonymous usage data.
                 </Text>
               </View>
-              <Host matchContents colorScheme="dark">
+              <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
                 <Switch
                   value={settings.analytics}
                   onCheckedChange={(v) => handleToggle("analytics", v)}
@@ -92,7 +92,7 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
                   Automatically send reports to help us fix bugs.
                 </Text>
               </View>
-              <Host matchContents colorScheme="dark">
+              <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
                 <Switch
                   value={settings.crashlytics}
                   onCheckedChange={(v) => handleToggle("crashlytics", v)}
@@ -113,7 +113,7 @@ export default function SettingsSidebar({ visible, onClose }: SettingsSidebarPro
                   Automatically check for new versions on startup.
                 </Text>
               </View>
-              <Host matchContents colorScheme="dark">
+              <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
                 <Switch
                   value={settings.checkForUpdates}
                   onCheckedChange={(v) => handleToggle("checkForUpdates", v)}

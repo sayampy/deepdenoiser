@@ -45,7 +45,7 @@ export default function SilenceTrimSettings({
               />
             </InfoBubble>
           </View>
-          <Host matchContents colorScheme="dark">
+          <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
             <Switch
               value={settings.enabled}
               onCheckedChange={(value) => onChange({ ...settings, enabled: value })}
