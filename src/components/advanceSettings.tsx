@@ -95,7 +95,7 @@ export default function AdvanceSettings({
                   <Feather name="help-circle" size={18} color={theme.COLORS.subtext} />
                 </InfoBubble>
               </View>
-              <Host matchContents colorScheme="dark">
+              <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
                 <Switch
                   value={normalize.toggle}
                   onCheckedChange={handleToggleNormalize}
