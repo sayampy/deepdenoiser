@@ -43,7 +43,7 @@
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
             "enablePngCrunchInReleaseBuilds": false,
-            "extraProguardRules": "-keep class ai.onnxruntime.** { *; }\n-keep class com.linkedin.android.litr.** { *; }"
+            "extraProguardRules": "-keep class ai.onnxruntime.** { *; }\n-keep class com.linkedin.android.litr.** { *; }\n-keep class * implements expo.modules.core.interfaces.ReactActivityLifecycleListener { *; }\n-keep class expo.modules.sharing.** { *; }"
           },
           "shared": {
             "useHermesV1": true
