@@ -105,4 +105,6 @@ GPL-3.0 — see [LICENSE](LICENSE).
 ## ❤️ Kind Donations ❤️
 - [Fallon Lawler](https://ko-fi.com/fallonlawler)
 - Yuvananda Praveen
-Thanks a whole lot for your support😇 
+- [onemynul](https://github.com/onemynul)
+
+Thanks a whole lot for your supports😇 
