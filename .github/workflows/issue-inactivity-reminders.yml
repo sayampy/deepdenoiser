@@ -31,7 +31,7 @@ jobs:
 
             const WARNING_MARKER = '<!-- deepdenoiser-inactivity-warning:v1';
             const CLOSURE_MARKER = '<!-- deepdenoiser-inactivity-closed:v1 -->';
-            const targetLabels = new Set(['invalid', 'needs-info', 'missing-info']);
+            const targetLabels = new Set(['invalid', 'needs-info', 'missing-info', 'missing information', 'needs information', 'needs_info']);
 
             const issues = await github.paginate(
               github.rest.issues.listForRepo,
