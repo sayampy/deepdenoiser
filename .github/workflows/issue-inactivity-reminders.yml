@@ -1,0 +1,182 @@
+name: Issue inactivity reminders
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  issues:
+    types: [labeled, reopened]
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: issue-inactivity-reminders
+  cancel-in-progress: false
+
+jobs:
+  remind-and-close:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warn inactive invalid and needs-info issues
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const DAY_MS = 24 * 60 * 60 * 1000;
+            const DEADLINE_DAYS = 15;
+            const ACTIVITY_GRACE_MS = 2 * 60 * 1000;
+
+            const WARNING_MARKER = '<!-- deepdenoiser-inactivity-warning:v1';
+            const CLOSURE_MARKER = '<!-- deepdenoiser-inactivity-closed:v1 -->';
+            const targetLabels = new Set(['invalid', 'needs-info', 'missing-info']);
+
+            const issues = await github.paginate(
+              github.rest.issues.listForRepo,
+              { owner, repo, state: 'open', per_page: 100 }
+            );
+
+            for (const issue of issues) {
+              // Pull requests also appear in the issues API. Never process them.
+              if (issue.pull_request) continue;
+
+              const labels = (issue.labels || [])
+                .map(label => typeof label === 'string' ? label : label.name)
+                .filter(Boolean);
+              const matchingLabels = labels.filter(label =>
+                targetLabels.has(label.toLowerCase())
+              );
+              if (matchingLabels.length === 0) continue;
+
+              const comments = await github.paginate(
+                github.rest.issues.listComments,
+                { owner, repo, issue_number: issue.number, per_page: 100 }
+              );
+
+              // Recover safely if a previous run posted the final message but
+              // failed before it could close the issue.
+              const closureComment = comments.find(comment =>
+                (comment.body || '').includes(CLOSURE_MARKER)
+              );
+              if (closureComment) {
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  state: 'closed',
+                  state_reason: 'not_planned'
+                });
+                core.info(`Closed #${issue.number}; its final closure comment already exists.`);
+                continue;
+              }
+
+              const warningComments = comments
+                .filter(comment => (comment.body || '').includes(WARNING_MARKER))
+                .sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+              const latestWarning = warningComments[0];
+              const now = new Date();
+
+              const makeWarning = (sentAt, isReset) => {
+                const deadline = new Date(sentAt.getTime() + DEADLINE_DAYS * DAY_MS);
+                const labelText = matchingLabels.map(label => `\`${label}\``).join(', ');
+                let explanation;
+
+                if (matchingLabels.some(label => label.toLowerCase() === 'invalid')) {
+                  explanation = 'This issue is currently labeled **invalid**. If you believe this label is incorrect, please add a comment explaining why the report is valid and include any relevant details.';
+                } else {
+                  explanation = 'This issue is waiting for the information requested by the maintainers. Please add the missing details in a comment.';
+                }
+
+                const intro = isReset
+                  ? 'We noticed new activity on this issue. The 15-day response period has been reset.'
+                  : 'This is an automated reminder about an issue awaiting clarification.';
+                return [
+                  `<!-- deepdenoiser-inactivity-warning:v1 sent-at=${sentAt.toISOString()} -->`,
+                  intro,
+                  '',
+                  explanation,
+                  '',
+                  `Current label(s): ${labelText}`,
+                  `**Deadline: ${deadline.toUTCString()}**`,
+                  '',
+                  'If there are no further comments or edits within 15 days of this message, this issue will be closed automatically. You can reply here with the requested information or explain why the issue should remain open.',
+                  '',
+                  'This automation closes inactive issues to keep the tracker useful. It does not delete issues or their discussion.'
+                ].join('\n');
+              };
+
+              if (!latestWarning) {
+                const sentAt = new Date();
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  body: makeWarning(sentAt, false)
+                });
+                core.info(`Posted the 15-day warning on #${issue.number}.`);
+                continue;
+              }
+
+              const markerMatch = (latestWarning.body || '').match(
+                /<!-- deepdenoiser-inactivity-warning:v1 sent-at=([^ ]+) -->/
+              );
+              const warningAt = markerMatch
+                ? new Date(markerMatch[1])
+                : new Date(latestWarning.created_at);
+
+              if (Number.isNaN(warningAt.getTime())) {
+                core.warning(`Could not read the warning timestamp for #${issue.number}; leaving it open.`);
+                continue;
+              }
+
+              const updatedAt = new Date(issue.updated_at);
+              const hasNewActivity = updatedAt.getTime() > warningAt.getTime() + ACTIVITY_GRACE_MS;
+
+              if (hasNewActivity) {
+                const sentAt = new Date();
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: issue.number,
+                  body: makeWarning(sentAt, true)
+                });
+                core.info(`Detected activity and reset the 15-day deadline for #${issue.number}.`);
+                continue;
+              }
+
+              const elapsed = now.getTime() - warningAt.getTime();
+              if (elapsed < DEADLINE_DAYS * DAY_MS) {
+                const remaining = Math.ceil((DEADLINE_DAYS * DAY_MS - elapsed) / DAY_MS);
+                core.info(`#${issue.number} is inactive; ${remaining} day(s) remain.`);
+                continue;
+              }
+
+              const closingBody = [
+                CLOSURE_MARKER,
+                'Closing the issue because no info was given in due time.',
+                '',
+                'No new comments or edits were received during the 15-day response period after the last reminder. This issue is being closed as not planned to keep the issue tracker organized.',
+                '',
+                'If you still need help, provide the requested information and reopen this issue, or create a new issue with the details.'
+              ].join('\n');
+
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number: issue.number,
+                body: closingBody
+              });
+
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: issue.number,
+                state: 'closed',
+                state_reason: 'not_planned'
+              });
+
+              core.info(`Posted the final message and closed #${issue.number}.`);
+            }
