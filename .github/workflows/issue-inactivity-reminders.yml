@@ -27,7 +27,7 @@ jobs:
             const repo = context.repo.repo;
             const DAY_MS = 24 * 60 * 60 * 1000;
             const DEADLINE_DAYS = 15;
-            const ACTIVITY_GRACE_MS = 2 * 60 * 1000;
+            const EDIT_GRACE_MS = 5 * 1000;
 
             const WARNING_MARKER = '<!-- deepdenoiser-inactivity-warning:v1';
             const CLOSURE_MARKER = '<!-- deepdenoiser-inactivity-closed:v1 -->';
@@ -133,7 +133,14 @@ jobs:
               }
 
               const updatedAt = new Date(issue.updated_at);
-              const hasNewActivity = updatedAt.getTime() > warningAt.getTime() + ACTIVITY_GRACE_MS;
+              const hasNewComment = comments.some(comment =>
+                new Date(comment.created_at).getTime() > warningAt.getTime() &&
+                comment.user?.login !== 'github-actions[bot]'
+              );
+              // The bot's own reminder updates issue.updated_at. Use a short
+              // grace period for detecting issue-body/title edits separately.
+              const hasIssueEdit = updatedAt.getTime() > warningAt.getTime() + EDIT_GRACE_MS;
+              const hasNewActivity = hasNewComment || hasIssueEdit;
 
               if (hasNewActivity) {
                 const sentAt = new Date();
