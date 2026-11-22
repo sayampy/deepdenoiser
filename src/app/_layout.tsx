@@ -1,5 +1,7 @@
 import UpdateModal from "@/src/components/UpdateModal";
+import { ThemeProvider, useTheme } from "@/src/context/ThemeContext";
 import { COLORS, FONT_SIZE, Styles } from "@/src/constants/theme";
+import { useStyles } from "@/src/hooks/useStyles";
 import { Feather } from "@expo/vector-icons";
 import * as Audio from "expo-audio";
 import { useFonts } from "expo-font";
@@ -29,6 +31,15 @@ const useMicrophonePermissions = createPermissionHook({
 });
 
 export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootLayoutContent />
+    </ThemeProvider>
+  );
+}
+
+function RootLayoutContent() {
+  const { colorScheme } = useTheme();
   const [mediaPermissionResponse, requestMediaPermission] = usePermissions();
   const [micPermissionResponse, requestMicPermission] = useMicrophonePermissions();
 
@@ -37,6 +48,7 @@ export default function RootLayout() {
   });
 
   const appIsReady = fontsLoaded || fontError;
+  const styles = useStyles(makeStyles);
 
   // Splash — hide when fonts are ready
   useEffect(() => {
@@ -54,7 +66,7 @@ export default function RootLayout() {
     // Permission response is still loading
     return (
       <View style={[Styles.container, styles.centered]}>
-        <Host matchContents colorScheme="dark">
+        <Host matchContents colorScheme={colorScheme}>
           <LoadingIndicator color={COLORS.primary} />
         </Host>
       </View>
@@ -95,7 +107,7 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <Stack screenOptions={{ headerShown: false }} initialRouteName="(tabs)">
+      <Stack screenOptions={{ headerShown: false }}>
 
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="processing" />
@@ -105,7 +117,7 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   centered: {
     justifyContent: "center",
     alignItems: "center",

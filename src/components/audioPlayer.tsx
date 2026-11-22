@@ -1,6 +1,6 @@
 import * as theme from "@/src/constants/theme";
 import Feather from "@expo/vector-icons/Feather";
-import { useFocusEffect } from "expo-router/react-navigation";
+import { useFocusEffect } from "expo-router";
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio";
 import React, { useCallback, useEffect, useRef } from "react";
 import {
@@ -19,6 +19,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
 } from "react-native-reanimated";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface AudioPlayerProps {
   uri: string;
@@ -32,6 +33,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   const progress = useSharedValue(0);
   const isSeeking = useSharedValue(false);
   const isSeekingRef = useRef(false);
+  const styles = useStyles(makeStyles);
 
   const handleSeek = useCallback((value: number) => {
     if (player && status.duration > 0) {
@@ -175,7 +177,7 @@ const AudioPlayer: React.FC<AudioPlayerProps> = ({ uri, name }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: {
     width: "100%",
     backgroundColor: "transparent",

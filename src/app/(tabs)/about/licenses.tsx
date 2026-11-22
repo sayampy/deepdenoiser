@@ -13,6 +13,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from "@/src/context/ThemeContext";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface LicenseInfo {
   licenses: string;
@@ -31,6 +33,8 @@ const allLicenses = Object.entries(licensesData as Record<string, LicenseInfo>).
 export default function LicensesScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
+  const { colorScheme } = useTheme();
+  const styles = useStyles(makeStyles);
 
   const filteredLicenses = useMemo(() => {
     if (!searchQuery) return allLicenses;
@@ -83,7 +87,7 @@ export default function LicensesScreen() {
       </View>
 
       <View style={styles.searchContainer}>
-        <Host style={{ flex: 1 }} colorScheme="dark">
+        <Host style={{ flex: 1 }} colorScheme={colorScheme}>
           <OutlinedTextField
             singleLine
             onValueChange={setSearchQuery}
@@ -126,7 +130,7 @@ export default function LicensesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",

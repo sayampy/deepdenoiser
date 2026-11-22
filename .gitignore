@@ -3,6 +3,7 @@
 # dependencies
 node_modules/
 *.lock
+!bun.lock
 bun.lockb
 yarn.lock
 package-lock.json
@@ -47,12 +48,35 @@ app-example
 /android
 *.apk
 *.aab
-
 .aiexclude
 .geminiignore
 GEMINI.md
 AGENTS.md
+CLAUDE.md
 .ignore
 repomix-output.md
-/.agents
 skills-lock.json
+
+# AI agent tooling, plans and self-notes
+.claude/
+.opencode/
+/.agents/
+.agents-notes/
+.agent/
+agent-notes/
+plan.md
+plans/
+*.plan.md
+notes/
+todo.md
+todos/
+TODO*.md
+TODOS.md
+*.session.md
+.claudecode
+.cursorrules
+.cursor/
+.aider*
+.copilot/
+.cortexkit/
+/.build-tmp/

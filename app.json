@@ -2,7 +2,7 @@
   "expo": {
     "icon": "./assets/images/icon.png",
     "scheme": "deepdenoiser",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "platforms": ["android"],
     "ios": {
       "supportsTablet": true,
@@ -27,12 +27,14 @@
       "./plugins/DisableDependencyInfo",
       "./plugins/withOnnxruntime",
       "./plugins/withLargeHeap",
+      "./plugins/withApkInstallPermission",
       "expo-router",
+      "expo-dev-client",
       [
         "expo-build-properties",
         {
           "android": {
-            "buildArchs": ["arm64-v8a"],
+            "buildArchs": ["arm64-v8a", "x86_64"],
             "enableBundleCompression": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
@@ -72,6 +74,15 @@
         {
           "microphonePermission": "Allow DeepDenoiser to access your microphone for voice recording and denoising.",
           "enableBackgroundRecording": true
+        }
+      ],
+      [
+        "@siteed/audio-studio",
+        {
+          "enableBackgroundAudio": true,
+          "enableNotifications": true,
+          "enablePhoneStateHandling": false,
+          "enableDeviceDetection": false
         }
       ],
       [

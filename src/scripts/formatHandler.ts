@@ -8,6 +8,9 @@ import {
 import * as fs from "expo-file-system";
 import { Asset, Album, requestPermissionsAsync } from "expo-media-library";
 import { trackAppEvent } from "./analytics";
+import type { SaveCategory } from "./saveDestinations";
+import { saveToChosenDirectory } from "./saveDestinations";
+import { getSettings } from "./settings";
 import type { SilenceTrimSettings } from "./silenceTrim";
 import { trimToNativeConfig } from "./silenceTrim";
 
@@ -184,7 +187,7 @@ export async function PCMtoArray(
     for (let offset = 0; offset < fileSize; offset += chunkSize) {
       const length = Math.min(chunkSize, fileSize - offset);
       handle.offset = offset;
-      const bytes = handle.readBytes(length);
+      const bytes = handle.readBytesSync(length);
       const chunk = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
       pcmArray.set(chunk, offset / 2);
     }
@@ -204,6 +207,17 @@ export async function PCMtoArray(
   return float32Array;
 }
 
+/**
+ * Stream a 16-bit mono PCM file in sample chunks.
+ *
+ * Hardened against the file-level failures that used to surface mid-pipeline:
+ *  - a vanished file is reported with its path instead of a bare ENOENT,
+ *  - an odd byte count is truncated to whole samples rather than producing a
+ *    misaligned Int16Array (which decodes as garbage and can crash the bridge),
+ *  - a short read (file truncated while we walk it) ends the loop cleanly
+ *    instead of feeding zero-length chunks to the caller,
+ *  - the handle is always closed, even when onChunk throws.
+ */
 export async function readPCMChunks(
   file: fs.File,
   chunkSize: number, // in samples
@@ -211,18 +225,42 @@ export async function readPCMChunks(
   inputRate?: number,
   targetRate?: number
 ): Promise<void> {
-  if (!file.exists) throw new Error("File does not exist");
+  if (!file.exists) {
+    throw new Error(`Audio data is missing (${file.name}). Please import the file again.`);
+  }
 
-  const fileSize = file.size;
+  let fileSize = file.size ?? 0;
+  if (fileSize === 0) {
+    throw new Error(`Audio data is empty (${file.name}). The file may still be transferring.`);
+  }
+  if (fileSize % 2 !== 0) {
+    // Odd length means a truncated write; drop the dangling byte.
+    console.warn(`PCM file ${file.name} has an odd byte count (${fileSize}); ignoring last byte.`);
+    fileSize -= 1;
+  }
+
   const handle = file.open();
   try {
     const bytesPerChunk = chunkSize * 2;
-    for (let offset = 0; offset < fileSize; offset += bytesPerChunk) {
+    let offset = 0;
+    while (offset < fileSize) {
       const length = Math.min(bytesPerChunk, fileSize - offset);
-      const inputSamples = length / 2;
       handle.offset = offset;
-      const bytes = handle.readBytes(length);
-      const pcmChunk = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+      const bytes = handle.readBytesSync(length);
+
+      if (!bytes || bytes.byteLength === 0) {
+        // The file shrank under us; stop rather than looping forever.
+        console.warn(`PCM read returned no data at offset ${offset} of ${file.name}.`);
+        break;
+      }
+
+      const sampleCount = Math.floor(bytes.byteLength / 2);
+      const pcmChunk = new Int16Array(
+        bytes.buffer,
+        bytes.byteOffset,
+        sampleCount,
+      );
+      const inputSamples = sampleCount;
 
       let floatChunk: Float32Array;
       if (inputRate && targetRate && inputRate !== targetRate) {
@@ -235,9 +273,14 @@ export async function readPCMChunks(
       }
 
       await onChunk(floatChunk, inputSamples);
+      offset += bytes.byteLength;
     }
   } finally {
-    handle.close();
+    try {
+      handle.close();
+    } catch (error) {
+      console.warn("Failed to close PCM handle:", error);
+    }
   }
 }
 
@@ -257,7 +300,7 @@ export async function writePCMChunk(
   // Write raw little-endian PCM bytes directly. The new expo-file-system
   // API writes Uint8Array without encoding, so we skip the base64 string
   // building that previously dominated the recording hot path.
-  file.write(new Uint8Array(pcmChunk.buffer), { append });
+  await file.write(new Uint8Array(pcmChunk.buffer), { append });
 }
 
 export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
@@ -293,10 +336,23 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
 
   return outputFile;
 }
-export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): Promise<boolean> {
-  const { status } = await requestPermissionsAsync();
-  if (status !== 'granted') return false;
+export async function saveToDevice(
+  file: fs.File,
+  albumName = "DeepDenoiser",
+  category?: SaveCategory,
+): Promise<void> {
+  const { saveDirectoryUri } = await getSettings();
+  if (saveDirectoryUri && category) {
+    const saved = await saveToChosenDirectory(file, category);
+    if (!saved) throw new Error("The selected save folder is no longer available.");
+    trackAppEvent("save_file");
+    return;
+  }
 
+  const { status } = await requestPermissionsAsync();
+  if (status !== "granted") {
+    throw new Error("Media library access is required to save files. Grant storage permission in Settings.");
+  }
   try {
     const album = await Album.get(albumName);
     if (album) {
@@ -305,43 +361,76 @@ export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): P
       await Album.create(albumName, [file.uri]);
     }
     trackAppEvent("save_file");
-    return true;
   } catch (e) {
     console.error("Failed to save file to device:", e);
-    return false;
+    throw new Error(
+      `Failed to save file to device: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }
+/**
+ * Remux a denoised audio track into the original video container.
+ *
+ * MediaMuxer cannot consume PCM in MP4, so the WAV is first transcoded to AAC.
+ * Each step is validated before the next begins: a transcode that produces no
+ * bytes used to surface much later as an opaque "Merge failed", and a mux that
+ * silently wrote nothing produced a 0-byte MP4 that downloaded as "corrupt".
+ */
 export async function mergeAudioVideo(
   video: fs.File,
   audio: fs.File,
   trim?: { startUs: number; endUs: number; trimmed: boolean },
 ): Promise<fs.File> {
+  let transcodedAudio: fs.File | null = null;
   try {
-    // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
-    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.m4a`);
+    if (!video.exists) {
+      throw new Error(`Source video is missing (${video.name}). Import it again.`);
+    }
+    if (!audio.exists) {
+      throw new Error(`Denoised audio is missing (${audio.name}). Run the denoise again.`);
+    }
+
+    transcodedAudio = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.m4a`);
     await extractAndTranscodeAudio(
       audio.uri,
-      transcodedAudio.uri.replace('file://', ''),
+      transcodedAudio.uri,
       128000, // 128kbps AAC
     );
+
+    if (!transcodedAudio.exists || (transcodedAudio.size ?? 0) === 0) {
+      throw new Error("Audio could not be encoded for the video container.");
+    }
 
     const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.mp4`);
     await mixAudioVideo(
       video.uri,
       transcodedAudio.uri,
-      outputFile.uri.replace('file://', ''),
+      outputFile.uri,
       trim && trim.trimmed
         ? { enabled: true, startUs: trim.startUs, endUs: trim.endUs }
         : undefined,
     );
+
+    if (!outputFile.exists || (outputFile.size ?? 0) === 0) {
+      throw new Error("Merging produced an empty video file.");
+    }
     return outputFile;
   } catch (error) {
     console.error("Failed to merge audio and video.", error);
-    throw new Error(
-      `Merge failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Merge failed: ${detail}`);
+  } finally {
+    // The AAC intermediate is never needed after a mux attempt.
+    if (transcodedAudio?.exists) {
+      try {
+        transcodedAudio.delete();
+      } catch (error) {
+        console.warn("Failed to delete intermediate AAC:", error);
+      }
+    }
   }
 }
+
 export function sanitizeFileName(name: string): string {
   return name
     .replaceAll(ILLEGAL_FS_CHARS, '_')

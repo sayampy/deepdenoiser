@@ -1,11 +1,15 @@
 package expo.modules.audioprocessormodule
 
+import android.content.Intent
+import android.net.Uri
+import androidx.core.content.FileProvider
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancel
+import java.io.File
 
 class AudioProcessorModule : Module() {
     private val moduleScope = CoroutineScope(Dispatchers.IO)
@@ -15,6 +19,63 @@ class AudioProcessorModule : Module() {
 
         OnDestroy {
             moduleScope.cancel()
+            appContext.reactContext?.let { DenoiseForegroundService.stop(it) }
+        }
+
+        AsyncFunction("startBackgroundProcessing") { promise: expo.modules.kotlin.Promise ->
+            try {
+                val context = appContext.reactContext
+                    ?: throw IllegalStateException("React Context is null")
+                DenoiseForegroundService.start(context)
+                promise.resolve(true)
+            } catch (e: Exception) {
+                promise.reject("ERR_FOREGROUND_SERVICE", e.message ?: e.toString(), e)
+            }
+        }
+
+        AsyncFunction("stopBackgroundProcessing") { promise: expo.modules.kotlin.Promise ->
+            try {
+                appContext.reactContext?.let { DenoiseForegroundService.stop(it) }
+                promise.resolve(true)
+            } catch (e: Exception) {
+                promise.reject("ERR_FOREGROUND_SERVICE", e.message ?: e.toString(), e)
+            }
+        }
+
+        AsyncFunction("installApk") { path: String, promise: expo.modules.kotlin.Promise ->
+            try {
+                val context = appContext.reactContext
+                    ?: throw IllegalStateException("React Context is null")
+                val activity = appContext.currentActivity
+                    ?: throw IllegalStateException("No foreground activity is available")
+                val uri = Uri.parse(path)
+                val apkFile = if (uri.scheme == "file") {
+                    File(uri.path ?: throw IllegalArgumentException("Invalid APK file URI"))
+                } else {
+                    File(path)
+                }
+                require(apkFile.isFile) { "Downloaded APK does not exist" }
+
+                val contentUri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.FileSystemFileProvider",
+                    apkFile
+                )
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(contentUri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                activity.runOnUiThread {
+                    try {
+                        activity.startActivity(intent)
+                        promise.resolve(true)
+                    } catch (e: Exception) {
+                        promise.reject("ERR_APK_INSTALL", e.message ?: e.toString(), e)
+                    }
+                }
+            } catch (e: Exception) {
+                promise.reject("ERR_APK_INSTALL", e.message ?: e.toString(), e)
+            }
         }
 
         AsyncFunction("extractAndTranscodeAudio") {
@@ -125,6 +186,35 @@ class AudioProcessorModule : Module() {
             }
         }
 
+        AsyncFunction("saveFileToTree") {
+                sourceUri: String,
+                treeUri: String,
+                directoryNames: List<String>,
+                fileName: String,
+                mimeType: String?,
+                promise: expo.modules.kotlin.Promise ->
+            moduleScope.launch {
+                try {
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
+                    val result =
+                            processor.saveFileToTree(
+                                    sourceUri,
+                                    treeUri,
+                                    directoryNames,
+                                    fileName,
+                                    mimeType
+                            )
+                    promise.resolve(result)
+                } catch (e: Exception) {
+                    promise.reject("ERR_SAVE_TO_FOLDER", e.message ?: e.toString(), e)
+                }
+            }
+        }
+
         AsyncFunction("getFileSize") {
                 path: String,
                 promise: expo.modules.kotlin.Promise ->
@@ -139,6 +229,23 @@ class AudioProcessorModule : Module() {
                     promise.resolve(result)
                 } catch (e: Exception) {
                     promise.reject("ERR_GET_FILE_SIZE", e.message ?: e.toString(), e)
+                }
+            }
+        }
+
+        AsyncFunction("sha256File") {
+                path: String,
+                promise: expo.modules.kotlin.Promise ->
+            moduleScope.launch {
+                try {
+                    val processor =
+                            MediaProcessor(
+                                    appContext.reactContext
+                                            ?: throw Exception("React Context is null")
+                            )
+                    promise.resolve(processor.sha256File(path))
+                } catch (e: Exception) {
+                    promise.reject("ERR_HASH_FILE", e.message ?: e.toString(), e)
                 }
             }
         }

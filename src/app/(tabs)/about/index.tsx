@@ -11,6 +11,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useStyles } from "@/src/hooks/useStyles";
 
 import DonationModal from "@/src/components/DonationModal";
 import SettingsSidebar from "@/src/components/SettingsSidebar";
@@ -18,8 +20,10 @@ import Constants from "expo-constants";
 
 export default function AboutScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [modalVisible, setModalVisible] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const styles = useStyles(makeStyles);
 
   const openLink = (url: string) => {
     Linking.openURL(url);
@@ -31,14 +35,19 @@ export default function AboutScreen() {
         contentContainerStyle={theme.Styles.contentContainer}
         showsVerticalScrollIndicator={false}
       >
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={() => setSettingsVisible(true)}
+        <View
+          style={[
+            styles.brandRow,
+            { paddingTop: insets.top + theme.SPACING.small },
+          ]}
         >
-          <Feather name="settings" size={24} color={theme.COLORS.text} />
-        </TouchableOpacity>
-        <View style={theme.Styles.header}>
-
+          <Image
+            source={require("@/assets/images/splash-icon.png")}
+            style={styles.logo}
+            accessibilityLabel="DeepDenoiser logo"
+          />
+        </View>
+        <View style={[theme.Styles.header, styles.aboutHeader]}>
           <Text style={theme.Styles.title}>About DeepDenoiser</Text>
           <Text style={theme.Styles.subtitle}>Version {Constants.expoConfig?.version}</Text>
         </View>
@@ -112,6 +121,29 @@ export default function AboutScreen() {
 
 
 
+        <Text style={styles.sectionTitle}>Preferences</Text>
+        <View style={styles.linkContainer}>
+          <TouchableOpacity
+            style={[
+              theme.Styles.button,
+              theme.Styles.buttonSecondary,
+              styles.linkButton,
+            ]}
+            onPress={() => setSettingsVisible(true)}
+          >
+            <Feather name="settings" size={20} color={theme.COLORS.primary} />
+            <Text
+              style={[
+                theme.Styles.buttonText,
+                theme.Styles.buttonTextSecondary,
+                { marginLeft: 10 },
+              ]}
+            >
+              Settings
+            </Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.footer}>
           <Text style={styles.footerText}>
             Made with{" "}
@@ -141,12 +173,23 @@ export default function AboutScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
+  brandRow: {
+    position: "relative",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: theme.SPACING.medium,
+    paddingBottom: theme.SPACING.small,
+  },
+  logo: {
+    width: 56,
+    height: 56,
+  },
   settingsButton: {
-    position: "absolute",
-    right: 0,
-    marginTop: 14,
-    padding: 10,
+    display: "none",
+  },
+  aboutHeader: {
+    marginTop: 0,
   },
   infoCard: {
     marginBottom: 24,

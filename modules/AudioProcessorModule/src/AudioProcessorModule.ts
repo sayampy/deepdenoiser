@@ -36,7 +36,18 @@ declare class AudioProcessorModule extends NativeModule<AudioProcessorModuleEven
     trim?: VideoTrimConfig | null,
   ): Promise<string>;
   copyFile(sourceUri: string, destUri: string): Promise<string>;
+  saveFileToTree(
+    sourceUri: string,
+    treeUri: string,
+    directoryNames: string[],
+    fileName: string,
+    mimeType: string | null,
+  ): Promise<string>;
   getFileSize(path: string): Promise<number>;
+  sha256File(path: string): Promise<string>;
+  installApk(path: string): Promise<boolean>;
+  startBackgroundProcessing(): Promise<boolean>;
+  stopBackgroundProcessing(): Promise<boolean>;
 }
 
 

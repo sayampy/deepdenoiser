@@ -6,6 +6,8 @@ import React from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import CustomSlider from "./customSlider";
 import InfoBubble from "./InfoBubble";
+import { useTheme } from "@/src/context/ThemeContext";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface SilenceTrimProps {
   settings: SilenceTrimSettings;
@@ -21,6 +23,9 @@ export default function SilenceTrimSettings({
   settings,
   onChange,
 }: SilenceTrimProps) {
+  const { colorScheme } = useTheme();
+  const styles = useStyles(makeStyles);
+
   const setMode = (mode: "auto" | "manual") => {
     if (settings.mode === mode) return;
     onChange({ ...settings, mode });
@@ -45,16 +50,10 @@ export default function SilenceTrimSettings({
               />
             </InfoBubble>
           </View>
-          <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
+          <Host matchContents style={{ width: 52, height: 32 }} colorScheme={colorScheme}>
             <Switch
               value={settings.enabled}
               onCheckedChange={(value) => onChange({ ...settings, enabled: value })}
-              colors={{
-                uncheckedTrackColor: theme.COLORS.border,
-                checkedTrackColor: theme.COLORS.primary,
-                checkedThumbColor: theme.COLORS.text,
-                uncheckedThumbColor: theme.COLORS.text,
-              }}
             />
           </Host>
         </View>
@@ -132,7 +131,7 @@ export default function SilenceTrimSettings({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   settingItem: {
     marginTop: theme.SPACING.small,
   },

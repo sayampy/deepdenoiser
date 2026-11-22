@@ -1,4 +1,5 @@
 import AdvanceSettings from "@/src/components/advanceSettings";
+import ModelSelector from "@/src/components/ModelSelector";
 import AudioPlayer from "@/src/components/audioPlayer";
 import DonationModal from "@/src/components/DonationModal";
 import DonationReminderModal from "@/src/components/DonationReminderModal";
@@ -7,8 +8,19 @@ import SaveButton from "@/src/components/SaveButton";
 import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
+import {
+  startBackgroundProcessing,
+  stopBackgroundProcessing,
+} from "@/modules/AudioProcessorModule";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
-import { getDenoiser } from "@/src/scripts/denoiserSingleton";
+import { MODELS } from "@/src/scripts/models/registry";
+import { getEngine } from "@/src/scripts/models/runtime";
+import { DEFAULT_STRENGTH } from "@/src/scripts/models/strength";
+import {
+  DEFAULT_MODEL_ID,
+  getModel,
+  type ModelId,
+} from "@/src/scripts/models/registry";
 import {
   buildCacheKey,
   buildDecodeKey,
@@ -31,6 +43,7 @@ import {
   writePCMChunk,
 } from "@/src/scripts/formatHandler";
 import {
+  getSettings,
   incrementDenoiseCount,
   markDonationPromptShown,
   shouldShowDonationReminder,
@@ -55,6 +68,8 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import { useTheme } from "@/src/context/ThemeContext";
+import { useStyles } from "@/src/hooks/useStyles";
 
 export default function ProcessScreen() {
   const insets = useSafeAreaInsets();
@@ -76,7 +91,7 @@ export default function ProcessScreen() {
   const [denoisedFile, setDenoisedFile] = useState<fs.File | null>(null);
   const [eta, setEta] = useState<string | null>(null);
   const [processingTime, setProcessingTime] = useState(0);
-  const [attenLimDb, setAttenLimDb] = useState(0);
+  const [strength, setStrength] = useState(DEFAULT_STRENGTH);
   const [silenceTrim, setSilenceTrim] =
     useState<SilenceTrimSettings>(DEFAULT_SILENCE_TRIM);
   const [normalize, setNormalize] = useState<{
@@ -94,6 +109,10 @@ export default function ProcessScreen() {
   const [isDonationReminderVisible, setIsDonationReminderVisible] =
     useState(false);
   const [isDonationModalVisible, setIsDonationModalVisible] = useState(false);
+  // Model chosen in Settings; both screens read the same persisted value.
+  const [selectedModelId, setSelectedModelId] = useState<ModelId>(DEFAULT_MODEL_ID);
+  const { colorScheme } = useTheme();
+  const styles = useStyles(makeStyles);
 
   const timeHandler = (totalSeconds: number) => {
     const h = Math.floor(totalSeconds / 3600);
@@ -104,6 +123,23 @@ export default function ProcessScreen() {
     if (m > 0) return `${m}m:${s}s`;
     return `${s}s`;
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    getSettings()
+      .then((settings) => {
+        if (cancelled) return;
+        const stored = settings.selectedModel as ModelId;
+        setSelectedModelId(stored in MODELS ? stored : DEFAULT_MODEL_ID);
+      })
+      .catch(() => {
+        // Fall back to the bundled default; processing must never be blocked
+        // by a settings read failure.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!fileuri) {
@@ -149,7 +185,8 @@ export default function ProcessScreen() {
     // Reuse a previously denoised result for the same input + settings
     // instead of re-running the whole pipeline from scratch.
     const cacheKey = buildCacheKey(originalFile, {
-      attenLimDb,
+      strength,
+      modelId: selectedModelId,
       normalize,
       silenceTrim: effectiveSilenceTrim,
     });
@@ -171,6 +208,9 @@ export default function ProcessScreen() {
     setEta(null);
     setDenoisedFile(null);
     try {
+      // ONNX inference is driven from JS. A foreground service + partial wake
+      // lock keeps that JS thread alive when the user leaves the app mid-pass.
+      await startBackgroundProcessing();
       const startTime = Date.now();
 
       // ---- Layer 1: decoded PCM (input identity only) ----
@@ -239,8 +279,16 @@ export default function ProcessScreen() {
       // Only the silence-trim settings changed? Reuse the previously denoised
       // PCM and just re-apply the (cheap) WAV wrap + trim — no ONNX pass at
       // all. Trim off = re-wrap the denoised audio at full length.
-      const denoiseKey = buildDenoiseKey(originalFile, { attenLimDb, normalize });
+      const denoiseKey = buildDenoiseKey(originalFile, {
+        strength,
+        modelId: selectedModelId,
+        normalize,
+      });
       let denoisedPcmFile: fs.File;
+      // Rate of the denoised PCM. Equals the model's native rate, which is not
+      // always 48 kHz (the 16 kHz model would otherwise be written as a 3x
+      // fast WAV).
+      let denoisedRate = getModel(selectedModelId).sampleRate;
       const cachedDenoise = await lookupDenoisedPCM(denoiseKey);
       if (cachedDenoise) {
         denoisedPcmFile = cachedDenoise;
@@ -248,52 +296,53 @@ export default function ProcessScreen() {
         setProgressText("Reusing denoised audio...");
       } else {
         setProgressText("Optimizing AI model...");
-        const denoiser = await getDenoiser();
+        const engine = await getEngine(selectedModelId);
+        const model = getModel(selectedModelId);
 
         setProgressText("Removing noise...");
         setProgress(0);
         const model_startTime = Date.now();
 
-        const targetRate = 48000;
-        const hopSize = 512;
-        const fftSize = 960;
-        denoiser.setupStreaming(attenLimDb);
+        // Resample to the selected model's native rate; a 16 kHz model must not
+        // be fed 48 kHz audio, and the reverse would silently lose bandwidth.
+        const targetRate = engine.sampleRate;
+        denoisedRate = targetRate;
+        // Models impose an algorithmic delay; trim it once so the written PCM
+        // lines up with the source instead of drifting ahead of the video.
+        const alignmentDelay = engine.alignmentDelaySamples;
 
         denoisedPcmFile = new fs.File(fs.Paths.cache, stagePcmPath("stage_dn"));
 
-        let inputBuffer = new Float32Array(fftSize);
+        let inputBuffer: Float32Array = new Float32Array(alignmentDelay);
         let processedInputSamples = 0;
         let firstWrite = true;
         let outputSamplesSkipped = 0;
+        let gainPending = normalize.toggle;
         const samplesPerChunk = sampleRate * 5; // 5s chunks for better responsiveness
 
         await readPCMChunks(
           pcmFile,
           samplesPerChunk,
           async (chunk, inputSamples) => {
-            if (normalize.toggle) {
+            if (gainPending) {
               for (let i = 0; i < chunk.length; i++) chunk[i] *= globalGain;
             }
 
-            const combined = new Float32Array(inputBuffer.length + chunk.length);
+            const combined: Float32Array = new Float32Array(
+              inputBuffer.length + chunk.length,
+            );
             combined.set(inputBuffer);
             combined.set(chunk, inputBuffer.length);
 
-            const numFrames = Math.floor(combined.length / hopSize);
-            const processLen = numFrames * hopSize;
-            const toProcess = combined.subarray(0, processLen);
-            inputBuffer = combined.slice(processLen);
+            // The engine consumes whole model chunks and returns exactly as
+            // many samples as it was given, so the leftover tail carries over.
+            const streamStep = await engine.denoiseStream(combined);
+            inputBuffer = streamStep.rest;
 
-            const denoisedOutput = new Float32Array(processLen);
-            for (let i = 0; i < processLen; i += hopSize) {
-              const frame = toProcess.subarray(i, i + hopSize);
-              await denoiser.processFrame(frame, denoisedOutput, i);
-            }
-
-            let finalOutputChunk = denoisedOutput;
-            if (outputSamplesSkipped < fftSize) {
+            let finalOutputChunk = streamStep.pcm;
+            if (outputSamplesSkipped < alignmentDelay) {
               const skip = Math.min(
-                fftSize - outputSamplesSkipped,
+                alignmentDelay - outputSamplesSkipped,
                 finalOutputChunk.length,
               );
               finalOutputChunk = finalOutputChunk.subarray(skip);
@@ -325,22 +374,20 @@ export default function ProcessScreen() {
         );
 
         if (inputBuffer.length > 0) {
-          const padded = new Float32Array(hopSize);
-          padded.set(inputBuffer);
-          const outBuf = new Float32Array(hopSize);
-          const outFrame = await denoiser.processFrame(padded, outBuf);
-          let finalFrame = outFrame.subarray(0, inputBuffer.length);
-          if (outputSamplesSkipped < fftSize) {
-            const skip = Math.min(
-              fftSize - outputSamplesSkipped,
-              finalFrame.length,
-            );
+          // Flush the carry-over without padding a whole chunk of silence into
+          // the output: ask for exactly the remaining samples.
+          const finalStep = await engine.denoiseFinal(inputBuffer);
+          let finalFrame = finalStep.pcm;
+          if (outputSamplesSkipped < alignmentDelay) {
+            const skip = Math.min(alignmentDelay - outputSamplesSkipped, finalFrame.length);
             finalFrame = finalFrame.subarray(skip);
           }
           if (finalFrame.length > 0) {
             await writePCMChunk(denoisedPcmFile, finalFrame, !firstWrite);
           }
         }
+
+        void model;
 
         try {
           await storeDenoisedPCM(denoiseKey, denoisedPcmFile);
@@ -353,7 +400,11 @@ export default function ProcessScreen() {
       setProgressText("Finalizing media...");
 
       const originalBase = filename.split(".").slice(0, -1).join(".");
-      const wavResult = await PCMtoWav(denoisedPcmFile, 48000, effectiveSilenceTrim);
+      const wavResult = await PCMtoWav(
+        denoisedPcmFile,
+        denoisedRate,
+        effectiveSilenceTrim,
+      );
       let outputFile: fs.File;
       if (isFileTypeVideo) {
         // Mux against the cache temp WAV, then discard it — only the final MP4
@@ -405,6 +456,7 @@ export default function ProcessScreen() {
       setIsErrorModalVisible(true);
       trackAppError(err, { context: "handleDenoise" });
     } finally {
+      await stopBackgroundProcessing().catch(() => {});
       setDenoising(false);
       setProgressText("");
       setEta(null);
@@ -426,7 +478,7 @@ export default function ProcessScreen() {
   if (isLoading) {
     return (
       <SafeAreaView style={[theme.Styles.container, theme.Styles.centered]}>
-        <Host matchContents colorScheme="dark">
+        <Host matchContents colorScheme={colorScheme}>
           <LoadingIndicator color={theme.COLORS.primary} />
         </Host>
         <Text style={styles.loadingText}>Loading media...</Text>
@@ -470,9 +522,15 @@ export default function ProcessScreen() {
           </View>
         </View>
 
+        <ModelSelector
+          value={selectedModelId}
+          onChange={setSelectedModelId}
+          disabled={denoising}
+        />
+
         <AdvanceSettings
-          attenLimDb={attenLimDb}
-          onAttenLimDbChange={setAttenLimDb}
+          strength={strength}
+          onStrengthChange={setStrength}
           normalize={normalize}
           onNormalizeChange={setNormalize}
           silenceTrim={silenceTrim}
@@ -527,6 +585,10 @@ export default function ProcessScreen() {
               <SaveButton
                 file={denoisedFile}
                 label="Save to Gallery"
+                saveCategory={{
+                  kind: "Denoised",
+                  media: isFileTypeVideo ? "Video" : "Audio",
+                }}
                 style={styles.saveBtn}
                 onError={(err) => {
                   setError(err);
@@ -544,14 +606,30 @@ export default function ProcessScreen() {
           <TouchableOpacity
             style={[
               theme.Styles.button,
-              denoising && theme.Styles.disabledButton,
               styles.mainActionBtn,
+              denoising && styles.processingActionBtn,
             ]}
             onPress={handleDenoise}
             disabled={denoising}
+            accessibilityRole="button"
+            accessibilityLabel={
+              denoising ? `Processing, ${progress}% complete` : "Start Deep Denoising"
+            }
+            accessibilityState={{ disabled: denoising, busy: denoising }}
           >
+            {denoising && (
+              <View
+                pointerEvents="none"
+                style={[styles.processingFill, { width: `${progress}%` }]}
+              />
+            )}
+            <View style={styles.mainActionContent}>
             {denoising ? (
-              <Host matchContents colorScheme="dark">
+              <Host
+                matchContents
+                style={styles.processingIndicator}
+                colorScheme={colorScheme}
+              >
                 <LoadingIndicator
                   color={theme.COLORS.background}
                 />
@@ -565,8 +643,9 @@ export default function ProcessScreen() {
               />
             )}
             <Text style={theme.Styles.buttonText}>
-              {denoising ? "Processing..." : "Start Deep Denoising"}
+              {denoising ? `${progressText || "Processing..."}  ${progress}%` : "Start Deep Denoising"}
             </Text>
+            </View>
           </TouchableOpacity>
         ) : (
           <View style={styles.postProcessActions}>
@@ -626,7 +705,7 @@ export default function ProcessScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   headerContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -794,6 +873,31 @@ const styles = StyleSheet.create({
   mainActionBtn: {
     borderRadius: 20,
     height: 60,
+    overflow: "hidden",
+    position: "relative",
+  },
+  processingActionBtn: {
+    backgroundColor: theme.COLORS.border,
+  },
+  processingFill: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    backgroundColor: theme.COLORS.primary,
+  },
+  mainActionContent: {
+    zIndex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  processingIndicator: {
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
   },
   postProcessActions: {
     flexDirection: "row",

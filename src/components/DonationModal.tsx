@@ -10,6 +10,7 @@ import {
   Text,
   TouchableOpacity,
 } from "react-native";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface DonationModalProps {
   visible: boolean;
@@ -17,6 +18,8 @@ interface DonationModalProps {
 }
 
 export default function DonationModal({ visible, onClose }: DonationModalProps) {
+  const styles = useStyles(makeStyles);
+
   const openLink = (url: string) => {
     Linking.openURL(url);
   };
@@ -96,7 +99,7 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",

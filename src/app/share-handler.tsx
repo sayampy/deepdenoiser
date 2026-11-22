@@ -6,6 +6,8 @@ import { useIncomingShare } from "expo-sharing";
 import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import { useEffect, useState } from "react";
 import { StyleSheet, Text, View } from "react-native";
+import { useTheme } from "@/src/context/ThemeContext";
+import { useStyles } from "@/src/hooks/useStyles";
 
 export default function ShareHandler() {
   const { resolvedSharedPayloads, isResolving, clearSharedPayloads, error: shareError } = useIncomingShare();
@@ -14,6 +16,8 @@ export default function ShareHandler() {
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
   const [isCopying, setIsCopying] = useState(false);
+  const { colorScheme } = useTheme();
+  const styles = useStyles(makeStyles);
 
   useEffect(() => {
     if (!isResolving) {
@@ -76,7 +80,7 @@ export default function ShareHandler() {
 
   return (
     <View style={[theme.Styles.container, styles.centered]}>
-      <Host matchContents colorScheme="dark">
+      <Host matchContents colorScheme={colorScheme}>
         <LoadingIndicator color={theme.COLORS.primary} />
       </Host>
       <Text style={styles.loadingText}>
@@ -100,7 +104,7 @@ export default function ShareHandler() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   centered: {
     justifyContent: "center",
     alignItems: "center",

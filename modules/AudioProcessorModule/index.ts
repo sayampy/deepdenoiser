@@ -70,6 +70,39 @@ export async function copyFile(
   return await AudioProcessorModule.copyFile(sourceUri, destUri);
 }
 
+export async function saveFileToTree(
+  sourceUri: string,
+  treeUri: string,
+  directoryNames: string[],
+  fileName: string,
+  mimeType: string | null,
+): Promise<string> {
+  return await AudioProcessorModule.saveFileToTree(
+    sourceUri,
+    treeUri,
+    directoryNames,
+    fileName,
+    mimeType,
+  );
+}
+
 export async function getFileSize(path: string): Promise<number> {
   return await AudioProcessorModule.getFileSize(path);
+}
+
+export async function sha256File(path: string): Promise<string> {
+  return await AudioProcessorModule.sha256File(path);
+}
+
+/** Keep the process alive (foreground service + wake lock) during long work. */
+export async function startBackgroundProcessing(): Promise<void> {
+  // Older dev-client builds may not expose these yet — never break denoising
+  // just because the foreground-service module is unavailable.
+  if (typeof AudioProcessorModule.startBackgroundProcessing !== "function") return;
+  await AudioProcessorModule.startBackgroundProcessing();
+}
+
+export async function stopBackgroundProcessing(): Promise<void> {
+  if (typeof AudioProcessorModule.stopBackgroundProcessing !== "function") return;
+  await AudioProcessorModule.stopBackgroundProcessing();
 }

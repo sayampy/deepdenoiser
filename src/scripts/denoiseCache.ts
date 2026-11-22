@@ -37,6 +37,18 @@ function importsDir(): fs.Directory {
   return dir;
 }
 
+/**
+ * Durable storage for cached pipeline intermediates (decoded + denoised PCM).
+ *
+ * Kept out of Paths.cache on purpose: cache entries must never outlive their
+ * bytes, so anything registered in an index lives here instead.
+ */
+function intermediatesDir(): fs.Directory {
+  const dir = new fs.Directory(fs.Paths.document, "intermediates");
+  if (!dir.exists) dir.create({ idempotent: true, intermediates: true });
+  return dir;
+}
+
 export function outputDir(): fs.Directory {
   const dir = new fs.Directory(fs.Paths.document, OUTPUTS_DIR_NAME);
   if (!dir.exists) dir.create({ idempotent: true, intermediates: true });
@@ -121,10 +133,24 @@ export async function importToDocuments(
  * Moves a finished output file into the persistent outputs directory.
  * Returns the relocated File.
  */
+/**
+ * Move a finished output into durable storage under a stable name.
+ *
+ * The destination may already exist (re-running the same file with different
+ * settings targets the same name). `move` with overwrite replaces it in one
+ * step, so a crash between delete and write can no longer leave the output
+ * directory holding a half-state, and any cache index still pointing at the old
+ * path is invalidated by storeCachedOutput afterwards.
+ */
 export async function placeOutput(source: fs.File, name: string): Promise<fs.File> {
+  if (!source.exists) {
+    throw new Error(`Finished output is missing (${source.name}); the denoise step failed.`);
+  }
   const dest = new fs.File(outputDir(), sanitizeFileName(name));
-  if (dest.exists) dest.delete();
-  await source.move(dest);
+  await source.move(dest, { overwrite: true });
+  if (!dest.exists) {
+    throw new Error(`Could not store the output file (${dest.name}).`);
+  }
   return dest;
 }
 
@@ -149,7 +175,7 @@ async function readJsonIndex<T>(fileName: string): Promise<Record<string, T>> {
 
 async function writeJsonIndex<T>(fileName: string, index: Record<string, T>): Promise<void> {
   try {
-    new fs.File(fs.Paths.document, fileName).write(JSON.stringify(index), {
+    new fs.File(fs.Paths.document, fileName).writeSync(JSON.stringify(index), {
       encoding: "utf8",
     });
   } catch (error) {
@@ -198,7 +224,8 @@ async function writeIndex(index: CacheIndex): Promise<void> {
 export function buildCacheKey(
   input: fs.File,
   settings: {
-    attenLimDb: number;
+    strength: number;
+    modelId: string;
     normalize: { toggle: boolean; targetRMS: number; maxPeakDb: number };
     silenceTrim: {
       enabled: boolean;
@@ -215,7 +242,8 @@ export function buildCacheKey(
     input.name,
     input.size,
     input.modificationTime,
-    settings.attenLimDb,
+    settings.modelId,
+    settings.strength,
     settings.normalize.toggle,
     settings.normalize.targetRMS,
     settings.normalize.maxPeakDb,
@@ -270,7 +298,7 @@ export async function storeCachedOutput(key: string, file: fs.File): Promise<voi
 //  - decode layer:  input identity (name+size+mtime) -> decoded PCM at the
 //                   SOURCE sample rate. Skipping it saves the MediaExtractor
 //                   + MediaCodec decode on every re-run.
-//  - denoise layer: decode identity + attenLimDb + normalize -> denoised PCM
+//  - denoise layer: decode identity + model id + strength + normalize -> denoised PCM
 //                   at 48 kHz. Skipping it saves the entire ONNX pass; only
 //                   the cheap native WAV wrap + silence trim is re-applied, so
 //                   toggling trim on/off (or changing its settings) no longer
@@ -311,14 +339,18 @@ export function buildDecodeKey(input: fs.File): string {
 export function buildDenoiseKey(
   input: fs.File,
   settings: {
-    attenLimDb: number;
+    strength: number;
+    modelId: string;
     normalize: { toggle: boolean; targetRMS: number; maxPeakDb: number };
   },
 ): string {
   return [
-    "dn-v1",
+    // Bumped to dn-v2: keys now include the model id and strength, so results
+    // produced by a different model or slider position are never reused.
+    "dn-v2",
     buildInputIdentity(input),
-    settings.attenLimDb,
+    settings.modelId,
+    settings.strength,
     settings.normalize.toggle,
     settings.normalize.targetRMS,
     settings.normalize.maxPeakDb,
@@ -345,13 +377,26 @@ export async function lookupDecodedPCM(
   return { file, sampleRate: entry.sampleRate };
 }
 
+/**
+ * Promote decoded PCM into durable storage (see storeDenoisedPCM for why the
+ * OS cache directory is not safe to index).
+ */
 export async function storeDecodedPCM(
   key: string,
   file: fs.File,
   sampleRate: number,
 ): Promise<void> {
   const index = await readJsonIndex<DecodeEntry>(DECODE_INDEX_NAME);
-  index[key] = { path: file.uri, sampleRate, createdAt: Date.now() };
+
+  const target = new fs.File(intermediatesDir(), `${key.slice(0, 16)}_dec.pcm`);
+  if (target.exists) target.delete();
+  await file.copy(target, { overwrite: true });
+
+  if (!target.exists || (target.size ?? 0) === 0) {
+    throw new Error("Decoded PCM could not be stored durably");
+  }
+
+  index[key] = { path: target.uri, sampleRate, createdAt: Date.now() };
   pruneOldest(index, MAX_CACHED_DECODES);
   await writeJsonIndex(DECODE_INDEX_NAME, index);
 }
@@ -369,9 +414,32 @@ export async function lookupDenoisedPCM(key: string): Promise<fs.File | null> {
   return file;
 }
 
+/**
+ * Promote a staged denoised PCM into durable storage.
+ *
+ * The staged file lives in the OS cache, which Android may evict at any time
+ * (or the user may clear). Registering the cache path directly used to make a
+ * later "Try Again" resolve to a file that no longer existed, which surfaced as
+ * "File does not exist" from readPCMChunks/PCMtoWav. Copying into documents
+ * first means a cached entry only ever points at a file we control.
+ */
 export async function storeDenoisedPCM(key: string, file: fs.File): Promise<void> {
   const index = await readJsonIndex<DenoiseEntry>(DENOISE_INDEX_NAME);
-  index[key] = { path: file.uri, createdAt: Date.now() };
+
+  const target = new fs.File(intermediatesDir(), `${key.slice(0, 16)}_den.pcm`);
+  if (target.exists) target.delete();
+  await file.copy(target, { overwrite: true });
+
+  if (!target.exists || (target.size ?? 0) === 0) {
+    throw new Error("Denoised PCM could not be stored durably");
+  }
+
+  // Invalidate older entries pointing at the same path (key collisions).
+  for (const [otherKey, entry] of Object.entries(index)) {
+    if (otherKey !== key && entry.path === target.uri) delete index[otherKey];
+  }
+
+  index[key] = { path: target.uri, createdAt: Date.now() };
   pruneOldest(index, MAX_CACHED_DENOISES);
   await writeJsonIndex(DENOISE_INDEX_NAME, index);
 }

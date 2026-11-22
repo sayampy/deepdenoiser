@@ -12,6 +12,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useTheme } from "@/src/context/ThemeContext";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface DonationReminderModalProps {
   visible: boolean;
@@ -26,6 +28,8 @@ export default function DonationReminderModal({
 }: DonationReminderModalProps) {
   const [neverAgain, setNeverAgain] = useState(false);
   const [showRoast, setShowRoast] = useState(false);
+  const { colorScheme } = useTheme();
+  const styles = useStyles(makeStyles);
 
   const handleNeverAgainToggle = async (value: boolean) => {
     setNeverAgain(value);
@@ -84,16 +88,10 @@ export default function DonationReminderModal({
 
             <View style={styles.neverAgainRow}>
               <Text style={styles.neverAgainText}>Never show again</Text>
-              <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
+              <Host matchContents style={{ width: 52, height: 32 }} colorScheme={colorScheme}>
                 <Switch
                   value={neverAgain}
                   onCheckedChange={handleNeverAgainToggle}
-                  colors={{
-                    uncheckedTrackColor: theme.COLORS.border,
-                    checkedTrackColor: theme.COLORS.primary + "60",
-                    checkedThumbColor: theme.COLORS.primary,
-                    uncheckedThumbColor: theme.COLORS.subtext,
-                  }}
                 />
               </Host>
             </View>
@@ -110,7 +108,7 @@ export default function DonationReminderModal({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",

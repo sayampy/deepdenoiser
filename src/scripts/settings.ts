@@ -1,5 +1,10 @@
 import { File, Paths } from "expo-file-system";
 
+export type ThemePalette = "cyan" | "ocean" | "emerald" | "violet" | "amber";
+export type ThemeMode = "system" | "light" | "dark";
+export type AudioExportFormat = "wav" | "mp3" | "m4a";
+export type VideoExportFormat = "original" | "compressed";
+
 export interface AppSettings {
   analytics: boolean;
   crashlytics: boolean;
@@ -7,6 +12,25 @@ export interface AppSettings {
   donationReminder: boolean;
   denoiseCount: number;
   lastDonationPromptDate: string;
+  selectedModel: string;
+  /** Model used most recently, retained so a delete never strands the app. */
+  lastUsedModel: string;
+  modelConsentAsked: boolean;
+  saveDirectoryUri: string | null;
+  /** Format used when saving audio to the device. */
+  exportFormat: AudioExportFormat;
+  /** MP3 bitrate in kbps (96, 128, 192, 256 or 320). */
+  mp3Bitrate: number;
+  /** AAC / M4A bitrate in kbps (96, 128, 192 or 256). */
+  m4aBitrate: number;
+  /** Format used when saving video to the device. */
+  videoExportFormat: VideoExportFormat;
+  /** Whether to use Android 12+ wallpaper dynamic colors (Material You). */
+  useSystemTheme: boolean;
+  /** Static theme fallback palette when dynamic colors are off. */
+  themePalette: ThemePalette;
+  /** Light / dark / follow-system appearance. */
+  themeMode: ThemeMode;
 }
 
 const SETTINGS_FILE_NAME = "app_settings.json";
@@ -18,6 +42,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   donationReminder: true,
   denoiseCount: 0,
   lastDonationPromptDate: "",
+  selectedModel: "deepfilternet3",
+  lastUsedModel: "deepfilternet3",
+  modelConsentAsked: false,
+  saveDirectoryUri: null,
+  exportFormat: "wav",
+  mp3Bitrate: 128,
+  m4aBitrate: 192,
+  videoExportFormat: "original",
+  useSystemTheme: true,
+  themePalette: "cyan",
+  themeMode: "system",
 };
 
 export async function getSettings(): Promise<AppSettings> {
@@ -34,20 +69,27 @@ export async function getSettings(): Promise<AppSettings> {
   }
 }
 
-export async function updateSettings(newSettings: Partial<AppSettings>): Promise<AppSettings> {
-  const currentSettings = await getSettings();
-  const updatedSettings = { ...currentSettings, ...newSettings };
-  try {
-    const file = new File(Paths.document, SETTINGS_FILE_NAME);
-    if (!file.exists) {
-      file.create();
+// Settings are one JSON file, so read-modify-write must be serialized: two
+// concurrent updates could otherwise both read the same snapshot and lose one.
+let writeQueue: Promise<unknown> = Promise.resolve();
+
+export function updateSettings(newSettings: Partial<AppSettings>): Promise<AppSettings> {
+  const task = writeQueue.then(async () => {
+    const currentSettings = await getSettings();
+    const updatedSettings = { ...currentSettings, ...newSettings };
+    try {
+      const file = new File(Paths.document, SETTINGS_FILE_NAME);
+      if (!file.exists) {
+        file.create();
+      }
+      await file.write(JSON.stringify(updatedSettings));
+    } catch (error) {
+      console.error("Error saving settings:", error);
     }
-    await file.write(JSON.stringify(updatedSettings));
     return updatedSettings;
-  } catch (error) {
-    console.error("Error saving settings:", error);
-    return updatedSettings;
-  }
+  });
+  writeQueue = task.catch(() => {});
+  return task;
 }
 
 function todayDateString(): string {
