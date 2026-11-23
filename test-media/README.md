@@ -25,7 +25,10 @@ Objective smoke check after exporting a denoised WAV (measure a silent gap
 between synthetic speech bursts — lower is better):
 
 ```sh
-ffmpeg -v error -i <denoised.wav> -af "atrim=0.2:0.5,astats=metadata=1" -f null -
+ffmpeg -hide_banner -i <denoised.wav> -af "atrim=0.2:0.5,astats=metadata=1" -f null - 2>&1 | grep RMS
 ```
+
+Baseline for both noisy fixtures in that 0.2–0.5 s gap: about **-24.6 dB RMS**.
+A working denoiser should push it markedly lower (e.g. below -35 dB).
 
 Then pick the file from the app's Home screen (or share it to the app).
