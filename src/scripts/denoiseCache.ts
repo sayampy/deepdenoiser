@@ -237,7 +237,9 @@ export function buildCacheKey(
 ): string {
   const modelSignature = `${metadata.hop_size}-${metadata.fft_size}`;
   return [
-    "v1",
+    // v2: invalidates final outputs produced before the streaming frame-offset
+    // fix (those files were silent/corrupt).
+    "v2",
     modelSignature,
     input.name,
     input.size,
@@ -345,9 +347,9 @@ export function buildDenoiseKey(
   },
 ): string {
   return [
-    // Bumped to dn-v2: keys now include the model id and strength, so results
-    // produced by a different model or slider position are never reused.
-    "dn-v2",
+    // v3: invalidates denoised PCM written before the streaming frame-offset
+    // fix; v2 added the model id and strength to the key.
+    "dn-v3",
     buildInputIdentity(input),
     settings.modelId,
     settings.strength,

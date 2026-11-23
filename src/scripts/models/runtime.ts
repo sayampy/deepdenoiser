@@ -176,7 +176,10 @@ class DeepFilterNetEngine implements DenoiseEngine {
     const out = new Float32Array(consumed);
     for (let i = 0; i < frames; i++) {
       const frame = pcm.subarray(i * hop, (i + 1) * hop);
-      await this.net.processFrame(frame, out, i);
+      // processFrame's third argument is a SAMPLE offset into `out`, not a
+      // frame index. Writing at `i` packed every frame into the first few
+      // hundred samples and produced effectively silent output.
+      await this.net.processFrame(frame, out, i * hop);
       if (i % 64 === 0) options.onProgress?.(i / frames);
     }
     // The model imposes a fixed delay, so the matching dry signal is the input

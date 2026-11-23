@@ -8,7 +8,7 @@ import ShareBtn from "@/src/components/shareBtn";
 import SilenceTrimSettingsBlock from "@/src/components/silenceTrimSettings";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
-import { PCMtoWav, writePCMChunk } from "@/src/scripts/formatHandler";
+import { PCMtoWav, resample, writePCMChunk } from "@/src/scripts/formatHandler";
 import { DEFAULT_MODEL_ID, type ModelId, MODELS } from "@/src/scripts/models/registry";
 import { getEngine, type StreamStep } from "@/src/scripts/models/runtime";
 import ModelSelector from "@/src/components/ModelSelector";
@@ -25,6 +25,7 @@ import Feather from "@expo/vector-icons/Feather";
 import {
   AudioDataEvent,
   RecordingConfig,
+  useAudioDevices,
   useAudioRecorder,
 } from "@siteed/audio-studio";
 import * as fs from "expo-file-system";
@@ -34,6 +35,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Modal,
   PermissionsAndroid,
   Platform,
   Pressable,
@@ -137,6 +139,13 @@ export default function RecordingScreen() {
     isPaused,
     durationMs,
   } = useAudioRecorder();
+  const {
+    devices: audioDevices,
+    currentDevice,
+    selectDevice,
+    resetToDefaultDevice,
+    refreshDevices,
+  } = useAudioDevices();
   const styles = useStyles(makeStyles);
 
   const [denoiserReady, setDenoiserReady] = useState(false);
@@ -162,9 +171,15 @@ export default function RecordingScreen() {
   const [silenceTrim, setSilenceTrim] =
     useState<SilenceTrimSettings>(DEFAULT_SILENCE_TRIM);
   const [selectedModelId, setSelectedModelId] = useState<ModelId>(DEFAULT_MODEL_ID);
+  const [micPickerVisible, setMicPickerVisible] = useState(false);
 
   const engineRef = useRef<RecordingEngine | null>(null);
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
+  /** Denoised samples produced but not yet written (chunked models lag input). */
+  const outputQueueRef = useRef<Float32Array>(new Float32Array(0));
+  /** Running sample counts for the original and denoised staged PCM files. */
+  const inputSamplesWrittenRef = useRef(0);
+  const denSamplesWrittenRef = useRef(0);
   const outputPaddingRemainingRef = useRef(0);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
   const processingErrorRef = useRef<Error | null>(null);
@@ -193,6 +208,22 @@ export default function RecordingScreen() {
     if (processingErrorRef.current) {
       throw processingErrorRef.current;
     }
+  };
+
+  /**
+   * Write denoised samples in lockstep with the original capture. Chunked
+   * models (MossFormer) emit slightly fewer samples than they consume at the
+   * start of a stream, so produced samples are queued and only written as the
+   * original file grows. Any residual lag is padded at finalization.
+   */
+  const flushDenoisedOutput = async (file: fs.File, inputSamplesWritten: number) => {
+    const queued = outputQueueRef.current;
+    const owed = inputSamplesWritten - denSamplesWrittenRef.current;
+    if (queued.length === 0 || owed <= 0) return;
+    const count = Math.min(queued.length, owed);
+    await writePCMChunk(file, queued.subarray(0, count), true);
+    denSamplesWrittenRef.current += count;
+    outputQueueRef.current = queued.subarray(count).slice();
   };
 
   useEffect(() => {
@@ -237,12 +268,11 @@ export default function RecordingScreen() {
       try {
         const settings = await getSettings();
         const stored = settings.selectedModel;
-        // Fall back to the bundled model when the stored id is unknown (e.g.
-        // written by a newer build, or a model later removed from the registry),
-        // and when it runs at a rate the 48 kHz recorder cannot feed.
-        const storedModel = stored in MODELS ? (stored as ModelId) : DEFAULT_MODEL_ID;
+        // Fall back to the bundled model only when the stored id is unknown.
+        // Non-48 kHz models are supported: the stream is resampled around the
+        // engine and back to the recorder rate before it is written.
         const modelId: ModelId =
-          MODELS[storedModel].sampleRate === SAMPLE_RATE ? storedModel : DEFAULT_MODEL_ID;
+          stored in MODELS ? (stored as ModelId) : DEFAULT_MODEL_ID;
         setSelectedModelId(modelId);
         const engine = await getEngine(modelId);
         engineRef.current = engine;
@@ -336,6 +366,7 @@ export default function RecordingScreen() {
           const origFile = originalPcmFileRef.current;
           if (origFile) {
             await writePCMChunk(origFile, float32Data, true);
+            inputSamplesWrittenRef.current += float32Data.length;
           }
 
           // 2. Denoise (or passthrough) and save
@@ -373,24 +404,51 @@ export default function RecordingScreen() {
                   resetStreamIfSupported(engine);
                 }
                 const streamInput = audioBufferRef.current;
-                const step = await engine.denoiseStream(combined, {
+                const engineRate = engine.sampleRate;
+                // The recorder always captures at 48 kHz. Models at other rates
+                // (e.g. MossFormerGAN 16K) are fed resampled audio and their
+                // output is resampled straight back, so both staged PCM files
+                // stay in the source domain and sample-for-sample aligned.
+                const modelInput =
+                  engineRate === SAMPLE_RATE
+                    ? combined
+                    : resample(combined, SAMPLE_RATE, engineRate);
+                const step = await engine.denoiseStream(modelInput, {
                   strength,
                 });
-                rest = step.rest;
-                // Samples this call actually took in (what the padding trim
-                // is relative to), computed from the tail it handed back.
+                const consumedModel = modelInput.length - step.rest.length;
                 const consumed =
-                  combined.length - (rest.length - streamInput.length);
-                ({ remainingPadding: outputPaddingRemainingRef.current, pcm: output } =
-                  trimAlignmentPadding(
-                    step,
-                    streamInput.length,
-                    consumed,
-                    outputPaddingRemainingRef.current,
-                  ));
+                  engineRate === SAMPLE_RATE
+                    ? consumedModel
+                    : Math.round((consumedModel * SAMPLE_RATE) / engineRate);
+                rest = combined.subarray(Math.min(consumed, combined.length));
+                const outputAtModelRate = step.pcm;
+                const trimmed = trimAlignmentPadding(
+                  { pcm: outputAtModelRate, rest: step.rest },
+                  engineRate === SAMPLE_RATE
+                    ? streamInput.length
+                    : Math.round((streamInput.length * engineRate) / SAMPLE_RATE),
+                  consumedModel,
+                  outputPaddingRemainingRef.current,
+                );
+                outputPaddingRemainingRef.current = trimmed.remainingPadding;
+                output =
+                  engineRate === SAMPLE_RATE
+                    ? trimmed.pcm
+                    : resample(trimmed.pcm, engineRate, SAMPLE_RATE);
               }
               wasPassthroughRef.current = passthrough;
-              await writePCMChunk(denFile, output, true);
+              // Queue produced samples, then write only as many as the
+              // original file has grown. This absorbs the small startup lag of
+              // overlapping chunk models without drifting the two files.
+              if (output.length > 0) {
+                const queued = outputQueueRef.current;
+                const merged = new Float32Array(queued.length + output.length);
+                merged.set(queued);
+                merged.set(output, queued.length);
+                outputQueueRef.current = merged;
+              }
+              await flushDenoisedOutput(denFile, inputSamplesWrittenRef.current);
 
               // Store leftovers for next chunk
               audioBufferRef.current = new Float32Array(rest);
@@ -414,6 +472,24 @@ export default function RecordingScreen() {
       .finally(() => {
         queueDepthRef.current = Math.max(0, queueDepthRef.current - 1);
       });
+  };
+
+  const chooseAudioDevice = async (id: string | null) => {
+    try {
+      const ok = id
+        ? await selectDevice(id)
+        : await resetToDefaultDevice();
+      if (!ok) {
+        Alert.alert("Microphone", "Could not switch to that input device.");
+      } else {
+        setMicPickerVisible(false);
+      }
+    } catch (err) {
+      trackAppError(err instanceof Error ? err : new Error(String(err)), {
+        context: "selectAudioDevice",
+      });
+      Alert.alert("Microphone", "Could not switch to that input device.");
+    }
   };
 
   const startRecording = async () => {
@@ -445,6 +521,9 @@ export default function RecordingScreen() {
       processingQueueRef.current = Promise.resolve();
       passthroughModeRef.current = false;
       wasPassthroughRef.current = false;
+      inputSamplesWrittenRef.current = 0;
+      denSamplesWrittenRef.current = 0;
+      outputQueueRef.current = new Float32Array(0);
 
       // Reset denoiser states for new recording
       const engine = engineRef.current;
@@ -517,16 +596,43 @@ export default function RecordingScreen() {
         // into the tail of the file.
         if (audioBufferRef.current.length > 0 && engineRef.current) {
           const pending = audioBufferRef.current;
-          const step = await engineRef.current.denoiseFinal(pending);
+          const engineRate = engineRef.current.sampleRate;
+          const modelPending =
+            engineRate === SAMPLE_RATE
+              ? pending
+              : resample(pending, SAMPLE_RATE, engineRate);
+          const step = await engineRef.current.denoiseFinal(modelPending);
           const { pcm } = trimAlignmentPadding(
             step,
-            pending.length,
-            pending.length,
+            modelPending.length,
+            modelPending.length,
             outputPaddingRemainingRef.current,
           );
           outputPaddingRemainingRef.current = 0;
-          await writePCMChunk(denPcm, pcm, true);
+          const finalPcm =
+            engineRate === SAMPLE_RATE
+              ? pcm
+              : resample(pcm, engineRate, SAMPLE_RATE);
+          const queued = outputQueueRef.current;
+          const merged = new Float32Array(queued.length + finalPcm.length);
+          merged.set(queued);
+          merged.set(finalPcm, queued.length);
+          outputQueueRef.current = merged;
           audioBufferRef.current = new Float32Array(0);
+        }
+        // Flush everything the chunked model produced, then pad any residual
+        // startup lag so the denoised file matches the original length exactly.
+        await flushDenoisedOutput(denPcm, inputSamplesWrittenRef.current);
+        const pendingOutput = outputQueueRef.current;
+        if (pendingOutput.length > 0) {
+          await writePCMChunk(denPcm, pendingOutput, true);
+          denSamplesWrittenRef.current += pendingOutput.length;
+          outputQueueRef.current = new Float32Array(0);
+        }
+        const shortBy = inputSamplesWrittenRef.current - denSamplesWrittenRef.current;
+        if (shortBy > 0) {
+          await writePCMChunk(denPcm, new Float32Array(shortBy), true);
+          denSamplesWrittenRef.current += shortBy;
         }
 
         // Ensure the staged PCM survived the whole recording before wrapping.
@@ -575,7 +681,7 @@ export default function RecordingScreen() {
         // (the toggle-off case must be honored, so disabled => no trim map).
         const denWavResult = await PCMtoWav(
           denPcm,
-          engineRef.current?.sampleRate ?? SAMPLE_RATE,
+          SAMPLE_RATE,
           silenceTrim.enabled ? silenceTrim : undefined,
         );
         const denWav = denWavResult.file;
@@ -681,8 +787,25 @@ export default function RecordingScreen() {
                   value={selectedModelId}
                   onChange={setSelectedModelId}
                   disabled={isRecording || isFinalizing}
-                  requiredSampleRate={SAMPLE_RATE}
                 />
+
+                <TouchableOpacity
+                  style={styles.micSourceButton}
+                  onPress={() => {
+                    void refreshDevices();
+                    setMicPickerVisible(true);
+                  }}
+                  disabled={isFinalizing}
+                >
+                  <Feather name="mic" size={18} color={theme.COLORS.primary} />
+                  <View style={styles.micSourceText}>
+                    <Text style={styles.micSourceLabel}>Microphone source</Text>
+                    <Text style={styles.micSourceValue} numberOfLines={1}>
+                      {currentDevice?.name ?? "System default"}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={theme.COLORS.subtext} />
+                </TouchableOpacity>
 
                 <View style={styles.settingsDivider} />
 
@@ -891,6 +1014,56 @@ export default function RecordingScreen() {
         error={error}
         onClose={() => setIsErrorModalVisible(false)}
       />
+      <Modal
+        visible={micPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMicPickerVisible(false)}
+      >
+        <Pressable
+          style={styles.micModalOverlay}
+          onPress={() => setMicPickerVisible(false)}
+        >
+          <Pressable style={styles.micModalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.micModalTitle}>Choose microphone source</Text>
+            <TouchableOpacity
+              style={styles.micModalRow}
+              onPress={() => void chooseAudioDevice(null)}
+            >
+              <Feather
+                name={currentDevice?.isDefault !== false ? "check" : "circle"}
+                size={18}
+                color={theme.COLORS.primary}
+              />
+              <Text style={styles.micModalRowText}>System default</Text>
+            </TouchableOpacity>
+            {audioDevices
+              .filter((device) => device.isAvailable)
+              .map((device) => (
+                <TouchableOpacity
+                  key={device.id}
+                  style={styles.micModalRow}
+                  onPress={() => void chooseAudioDevice(device.id)}
+                >
+                  <Feather
+                    name={currentDevice?.id === device.id ? "check" : "circle"}
+                    size={18}
+                    color={theme.COLORS.primary}
+                  />
+                  <Text style={styles.micModalRowText} numberOfLines={1}>
+                    {device.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            <TouchableOpacity
+              style={styles.micModalClose}
+              onPress={() => setMicPickerVisible(false)}
+            >
+              <Text style={styles.micModalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1106,5 +1279,71 @@ const makeStyles = () => StyleSheet.create({
     borderRadius: 20,
     flexDirection: "row",
     gap: 12,
+  },
+  micSourceButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: theme.COLORS.surface,
+    borderWidth: 1,
+    borderColor: theme.COLORS.border,
+  },
+  micSourceText: {
+    flex: 1,
+  },
+  micSourceLabel: {
+    fontSize: theme.FONT_SIZE.small,
+    color: theme.COLORS.subtext,
+  },
+  micSourceValue: {
+    fontSize: theme.FONT_SIZE.body,
+    color: theme.COLORS.text,
+    fontWeight: "600",
+  },
+  micModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  micModalCard: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "75%",
+    backgroundColor: theme.COLORS.surface,
+    borderRadius: 20,
+    padding: 20,
+  },
+  micModalTitle: {
+    fontSize: theme.FONT_SIZE.heading,
+    fontWeight: "700",
+    color: theme.COLORS.text,
+    marginBottom: 16,
+  },
+  micModalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+  },
+  micModalRowText: {
+    flex: 1,
+    fontSize: theme.FONT_SIZE.body,
+    color: theme.COLORS.text,
+  },
+  micModalClose: {
+    marginTop: 12,
+    alignItems: "center",
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: theme.COLORS.primary,
+  },
+  micModalCloseText: {
+    color: theme.COLORS.background,
+    fontWeight: "700",
   },
 });

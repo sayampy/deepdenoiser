@@ -151,13 +151,15 @@ const makeStyles = () => StyleSheet.create({
     height: 56,
   },
   upiIcon: {
+    width: 40,
     height: 20,
+    marginLeft: 12,
     marginRight: 5,
   },
   upiText: {
     fontSize: theme.FONT_SIZE.body,
     fontWeight: "600",
-    color: theme.COLORS.surface,
+    color: "#111827",
     marginRight: 25,
   },
   closeButton: {
