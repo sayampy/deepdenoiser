@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { COLORS, FONT_SIZE, SPACING } from '../constants/theme';
+import * as InAppUpdates from '@app/in-app-updates';
 import AudioProcessorModule from '../../modules/AudioProcessorModule/src/AudioProcessorModule';
 import { getSettings } from '../scripts/settings';
 import { useTheme } from '@/src/context/ThemeContext';
@@ -57,8 +58,7 @@ export default function UpdateModal() {
 
       const currentVersion = Constants.expoConfig?.version || '0.0.0';
       if (isPlayStore) {
-        const { checkForUpdate } = await import('expo-in-app-updates');
-        const result = await checkForUpdate();
+        const result = await InAppUpdates.checkForUpdate();
         if (result.updateAvailable) {
           setUpdateInfo({
             version: result.storeVersion ?? currentVersion,
@@ -106,8 +106,7 @@ export default function UpdateModal() {
 
     try {
       if (isPlayStore) {
-        const { startUpdate } = await import('expo-in-app-updates');
-        const started = await startUpdate(false);
+        const started = await InAppUpdates.startUpdate(false);
         if (!started) {
           throw new Error('Google Play could not start the in-app update');
         }

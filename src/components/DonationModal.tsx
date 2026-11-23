@@ -39,17 +39,6 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
           <Text style={styles.modalTitle}>Support Development</Text>
 
           <TouchableOpacity
-            style={styles.donationButton}
-            onPress={() => openLink("https://ko-fi.com/sayampy")}
-          >
-            <Image
-              source={require("@/assets/images/support_me_on_kofi.png")}
-              contentFit="contain"
-              style={styles.kofiImage}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={[styles.donationButton, styles.githubButton]}
             onPress={() => openLink("https://github.com/sponsors/sayampy")}
           >
@@ -65,7 +54,9 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
           <TouchableOpacity
             style={[styles.donationButton, styles.upiButton]}
             onPress={() =>
-              openLink("upi://pay?pa=sayampy.code@oksbi&pn=Sayampy&cu=INR")
+              openLink(
+                `upi://pay?pa=${encodeURIComponent("sayam.11@superyes")}&pn=Sayampy&cu=INR`,
+              )
             }
           >
             <Image
@@ -135,10 +126,6 @@ const makeStyles = () => StyleSheet.create({
     marginBottom: 16,
     alignItems: "center",
     justifyContent: "center",
-  },
-  kofiImage: {
-    width: "100%",
-    height: "100%",
   },
   githubButton: {
     backgroundColor: "#24292e",

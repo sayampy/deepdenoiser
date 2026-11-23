@@ -28,6 +28,7 @@
       "./plugins/withOnnxruntime",
       "./plugins/withLargeHeap",
       "./plugins/withApkInstallPermission",
+      "./plugins/withDistributionAutolinking",
       "expo-router",
       "expo-dev-client",
       [

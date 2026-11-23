@@ -117,9 +117,31 @@ export default function AboutScreen() {
               Open Source Licenses
             </Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              theme.Styles.button,
+              theme.Styles.buttonSecondary,
+              styles.linkButton,
+            ]}
+            onPress={() =>
+              openLink(
+                "https://github.com/sayampy/deepdenoiser/blob/master/PRIVACY%20POLICY.md",
+              )
+            }
+          >
+            <Feather name="shield" size={20} color={theme.COLORS.primary} />
+            <Text
+              style={[
+                theme.Styles.buttonText,
+                theme.Styles.buttonTextSecondary,
+                { marginLeft: 10 },
+              ]}
+            >
+              Privacy Policy
+            </Text>
+          </TouchableOpacity>
         </View>
-
-
 
         <Text style={styles.sectionTitle}>Preferences</Text>
         <View style={styles.linkContainer}>

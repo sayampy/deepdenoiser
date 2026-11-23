@@ -4,6 +4,9 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@app/in-app-updates": [
+        "./src/scripts/updates/inAppUpdates.ts"
       ]
     }
   },

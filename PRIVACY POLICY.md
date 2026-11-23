@@ -17,6 +17,7 @@ The app does use third-party services that may collect information used to ident
 Link to the privacy policy of third-party service providers used by the app
 
 *   [Google Play Services](https://www.google.com/policies/privacy/)
+*   [Aptabase](https://aptabase.com/privacy) — privacy-first, anonymous usage analytics used to understand which features are used and which crashes occur. No audio, filenames, or personal identifiers are sent.
 
 **Log Data**
 

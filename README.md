@@ -29,9 +29,6 @@
 </p>
 <h2 align="center">Support This Project</h2>
 <p align="middle">
-  <a href="https://ko-fi.com/sayampy">
-    <img src="https://img.shields.io/badge/Support-Ko--fi-F16061?style=for-the-badge&logo=kofi&logoColor=white" alt="Ko-fi" />
-  </a>
   <a href="https://github.com/sponsors/sayampy"><img src="https://img.shields.io/badge/Github%20Sponsors-ff69b4?style=for-the-badge&logo=github" alt="GitHub Sponsors" /></a>
 </p>
 
