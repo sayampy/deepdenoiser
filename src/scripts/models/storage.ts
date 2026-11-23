@@ -325,7 +325,7 @@ export async function importModelFile(
  * explicit EXPO_PUBLIC_MODEL_BASE_URL override wins, which allows pointing at
  * a CDN or a local server during testing.
  *
- * Layout: <base>/v<version>/<model id>.ort
+ * Layout for both sources: <base>/models-v<version>/<model id>.ort
  */
 const GITHUB_MODEL_BASE =
   "https://github.com/sayampy/deepdenoiser/releases/download";
@@ -333,7 +333,7 @@ const GITHUB_MODEL_BASE =
 function hostedUrl(model: ModelDescriptor): string | null {
   const override = process.env.EXPO_PUBLIC_MODEL_BASE_URL;
   if (override) {
-    return `${override.replace(/\/$/, "")}/${model.id}/${model.version}/${MODEL_FILE}`;
+    return `${override.replace(/\/$/, "")}/models-v${model.version}/${model.id}.ort`;
   }
   return `${GITHUB_MODEL_BASE}/models-v${model.version}/${model.id}.ort`;
 }

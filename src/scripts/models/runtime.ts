@@ -111,16 +111,19 @@ export function getEngine(id: ModelId): Promise<DenoiseEngine> {
     }
     let modelPath: string = state.path;
 
-    // Prefer a managed copy when one exists so downloads and the bundled asset
-    // follow the same code path; fall back to the packaged asset otherwise.
-    try {
-      const managed = await migrateBundledModel();
-      if (managed.status === "installed") {
-        state = managed;
-        modelPath = managed.path;
+    // Only the bundled DeepFilterNet3 asset has a managed copy to migrate.
+    // MossFormer models are always installed from a downloaded .ort file; the
+    // old unguarded call loaded the 13 MB DF3 weights into every engine.
+    if (id === "deepfilternet3") {
+      try {
+        const managed = await migrateBundledModel();
+        if (managed.status === "installed") {
+          state = managed;
+          modelPath = managed.path;
+        }
+      } catch (error) {
+        console.warn("Managed DF3 copy unavailable, using bundled asset:", error);
       }
-    } catch (error) {
-      console.warn(`Managed copy for ${id} unavailable, using bundled asset:`, error);
     }
 
     if (model.family === "deepfilternet") {

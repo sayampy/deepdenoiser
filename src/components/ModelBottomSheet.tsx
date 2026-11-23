@@ -14,6 +14,8 @@ import {
   setSelectedModel,
 } from "@/src/scripts/models/storage";
 import { releaseOtherEngines } from "@/src/scripts/models/runtime";
+import { useTheme } from "@/src/context/ThemeContext";
+import { setSystemBarTone } from "@/modules/DynamicColorModule";
 import Feather from "@expo/vector-icons/Feather";
 import * as DocumentPicker from "expo-document-picker";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -54,6 +56,12 @@ export default function ModelBottomSheet({
 }: ModelBottomSheetProps) {
   const insets = useSafeAreaInsets();
   const styles = useStyles(makeStyles);
+  const { palette, isDark } = useTheme();
+
+  useEffect(() => {
+    // A native Modal is a separate Android window; retint its bars on open.
+    if (visible) void setSystemBarTone(palette.background, isDark);
+  }, [visible, palette, isDark]);
   const [activeId, setActiveId] = useState<ModelId>(selectedModelId ?? "deepfilternet3");
   const [prevSelectedId, setPrevSelectedId] = useState(selectedModelId);
   if (selectedModelId !== prevSelectedId) {
