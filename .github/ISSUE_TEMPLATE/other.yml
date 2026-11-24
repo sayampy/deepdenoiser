@@ -1,0 +1,39 @@
+name: Something else
+description: Anything that does not fit the bug, media, crash, output, idea, or documentation templates.
+title: "[Other]: "
+labels: ["needs-info"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this only if none of the other templates fit. For help using the app, the Discussions tab is usually faster.
+
+  - type: textarea
+    id: topic
+    attributes:
+      label: What is this about?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: App version (if relevant)
+      placeholder: "1.5.0"
+    validations:
+      required: false
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the other issue templates and Discussions.
+          required: false

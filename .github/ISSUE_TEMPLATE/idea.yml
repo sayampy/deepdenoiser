@@ -1,6 +1,6 @@
-name: Feature request
+name: Idea or feature request
 description: Suggest a new model, format, control, or improvement.
-title: "[Feature]: "
+title: "[Idea]: "
 labels: ["enhancement"]
 body:
   - type: textarea
