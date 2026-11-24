@@ -91,7 +91,7 @@ const makeStyles = () => StyleSheet.create({
     bottom: 0,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "rgba(15, 23, 42, 0.5)",
+    backgroundColor: `${theme.COLORS.background}80`,
   },
   errorContainer: {
     justifyContent: "center",

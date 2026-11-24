@@ -3,17 +3,16 @@ import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
-import { Host, OutlinedTextField } from "@expo/ui/jetpack-compose";
 import React, { useMemo, useState } from "react";
 import {
   FlatList,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useTheme } from "@/src/context/ThemeContext";
 import { useStyles } from "@/src/hooks/useStyles";
 
 interface LicenseInfo {
@@ -33,7 +32,6 @@ const allLicenses = Object.entries(licensesData as Record<string, LicenseInfo>).
 export default function LicensesScreen() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState("");
-  const { colorScheme } = useTheme();
   const styles = useStyles(makeStyles);
 
   const filteredLicenses = useMemo(() => {
@@ -87,27 +85,21 @@ export default function LicensesScreen() {
       </View>
 
       <View style={styles.searchContainer}>
-        <Host style={{ flex: 1 }} colorScheme={colorScheme}>
-          <OutlinedTextField
-            singleLine
-            onValueChange={setSearchQuery}
-            keyboardOptions={{ imeAction: "search" }}
-            colors={{
-              focusedContainerColor: theme.COLORS.surface,
-              unfocusedContainerColor: theme.COLORS.surface,
-              focusedTextColor: theme.COLORS.text,
-              unfocusedTextColor: theme.COLORS.text,
-              focusedIndicatorColor: theme.COLORS.primary,
-              unfocusedIndicatorColor: theme.COLORS.border,
-              focusedPlaceholderColor: theme.COLORS.subtext,
-              unfocusedPlaceholderColor: theme.COLORS.subtext,
-            }}
-          >
-            <OutlinedTextField.Placeholder>
-              Search libraries...
-            </OutlinedTextField.Placeholder>
-          </OutlinedTextField>
-        </Host>
+        <Feather
+          name="search"
+          size={18}
+          color={theme.COLORS.subtext}
+          style={styles.searchIcon}
+        />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Search libraries..."
+          placeholderTextColor={theme.COLORS.subtext}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
         {searchQuery.length > 0 && (
           <TouchableOpacity onPress={() => setSearchQuery("")}>
             <Feather name="x" size={18} color={theme.COLORS.subtext} />
@@ -135,7 +127,6 @@ const makeStyles = () => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     marginBottom: theme.SPACING.medium,
-    marginTop: theme.SPACING.small,
   },
   backButton: {
     padding: 8,
@@ -145,8 +136,13 @@ const makeStyles = () => StyleSheet.create({
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: theme.SPACING.medium,
-    height: 56,
+    backgroundColor: theme.COLORS.surface,
+    borderWidth: 1,
+    borderColor: theme.COLORS.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    marginBottom: theme.SPACING.small,
+    height: 48,
   },
   searchIcon: {
     marginRight: 8,
@@ -158,6 +154,7 @@ const makeStyles = () => StyleSheet.create({
     height: "100%",
   },
   listContent: {
+    paddingTop: 0,
     paddingBottom: theme.SPACING.xlarge,
     gap: theme.SPACING.small,
   },

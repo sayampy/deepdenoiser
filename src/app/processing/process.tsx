@@ -12,7 +12,7 @@ import {
   acquireBackgroundProcessing,
   type BackgroundRelease,
 } from "@/src/scripts/backgroundProcessing";
-import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
+import { trackAppEvent } from "@/src/scripts/analytics";
 import { MODELS } from "@/src/scripts/models/registry";
 import { getEngine } from "@/src/scripts/models/runtime";
 import { isVideoFile } from "@/src/scripts/mediaFormats";
@@ -36,6 +36,7 @@ import {
   storeDenoisedPCM,
 } from "@/src/scripts/denoiseCache";
 import {
+  alignPCMToSampleCount,
   decodeToPCMFile,
   mergeAudioVideo,
   PCMtoWav,
@@ -71,6 +72,10 @@ import {
 } from "react-native-safe-area-context";
 import { useTheme } from "@/src/context/ThemeContext";
 import { useStyles } from "@/src/hooks/useStyles";
+
+// Outputs cached by older builds can carry model-alignment padding that the
+// new mux cannot see, so both cache layers are re-namespaced once.
+const AV_SYNC_CACHE_TAG = ":avsync1";
 
 export default function ProcessScreen() {
   const insets = useSafeAreaInsets();
@@ -177,16 +182,16 @@ export default function ProcessScreen() {
 
     // Reuse a previously denoised result for the same input + settings
     // instead of re-running the whole pipeline from scratch.
-    const cacheKey = buildCacheKey(originalFile, {
-      strength,
-      modelId: selectedModelId,
-      normalize,
-      silenceTrim: effectiveSilenceTrim,
-    });
+    const cacheKey =
+      buildCacheKey(originalFile, {
+        strength,
+        modelId: selectedModelId,
+        normalize,
+        silenceTrim: effectiveSilenceTrim,
+      }) + AV_SYNC_CACHE_TAG;
     try {
       const cached = await lookupCachedOutput(cacheKey);
       if (cached) {
-        trackAppEvent("denoise_cached_hit");
         setDenoisedFile(cached);
         setProcessingTime(0);
         return;
@@ -218,7 +223,6 @@ export default function ProcessScreen() {
       if (cachedDecode) {
         pcmFile = cachedDecode.file;
         sampleRate = cachedDecode.sampleRate;
-        trackAppEvent("denoise_decode_reused");
         setProgressText("Reusing cached audio...");
       } else {
         setProgressText("Extracting audio...");
@@ -274,11 +278,12 @@ export default function ProcessScreen() {
       // Only the silence-trim settings changed? Reuse the previously denoised
       // PCM and just re-apply the (cheap) WAV wrap + trim — no ONNX pass at
       // all. Trim off = re-wrap the denoised audio at full length.
-      const denoiseKey = buildDenoiseKey(originalFile, {
-        strength,
-        modelId: selectedModelId,
-        normalize,
-      });
+      const denoiseKey =
+        buildDenoiseKey(originalFile, {
+          strength,
+          modelId: selectedModelId,
+          normalize,
+        }) + AV_SYNC_CACHE_TAG;
       let denoisedPcmFile: fs.File;
       // Rate of the denoised PCM. Equals the model's native rate, which is not
       // always 48 kHz (the 16 kHz model would otherwise be written as a 3x
@@ -287,7 +292,6 @@ export default function ProcessScreen() {
       const cachedDenoise = await lookupDenoisedPCM(denoiseKey);
       if (cachedDenoise) {
         denoisedPcmFile = cachedDenoise;
-        trackAppEvent("denoise_model_reused");
         setProgressText("Reusing denoised audio...");
       } else {
         setProgressText("Optimizing AI model...");
@@ -317,6 +321,10 @@ export default function ProcessScreen() {
           engine.alignmentPrefixSamples ?? alignmentDelay,
         );
         let processedInputSamples = 0;
+        // `totalSamples` above counts SOURCE-rate samples; this counts samples
+        // at the model rate, i.e. exactly what the source becomes after the
+        // per-chunk resampling below.
+        let expectedSamplesAtModelRate = 0;
         let firstWrite = true;
         let outputSamplesSkipped = 0;
         let gainPending = normalize.toggle;
@@ -339,6 +347,7 @@ export default function ProcessScreen() {
             // The engine consumes whole model chunks and returns exactly as
             // many samples as it was given, so the leftover tail carries over.
             const streamStep = await engine.denoiseStream(combined);
+            expectedSamplesAtModelRate += chunk.length;
             inputBuffer = streamStep.rest;
 
             let finalOutputChunk = streamStep.pcm;
@@ -386,6 +395,11 @@ export default function ProcessScreen() {
         if (finalFrame.length > 0) {
           await writePCMChunk(denoisedPcmFile, finalFrame, !firstWrite);
         }
+
+        // The flush may emit a few samples more or fewer than the source had.
+        // Force sample-exact length so the audio timeline matches the decoded
+        // source — and therefore the video — instead of starting late.
+        await alignPCMToSampleCount(denoisedPcmFile, expectedSamplesAtModelRate);
 
         void model;
 
@@ -454,7 +468,6 @@ export default function ProcessScreen() {
       const err = error instanceof Error ? error : new Error(String(error));
       setError(err);
       setIsErrorModalVisible(true);
-      trackAppError(err, { context: "handleDenoise" });
     } finally {
       await releaseBackground?.();
       setDenoising(false);
@@ -562,7 +575,7 @@ export default function ProcessScreen() {
           <View style={styles.resultCard}>
             <View style={styles.resultHeader}>
               <View style={styles.resultBadge}>
-                <Feather name="check" size={12} color={theme.COLORS.white} />
+                <Feather name="check" size={12} color={theme.COLORS.background} />
                 <Text style={styles.resultBadgeText}>Cleaned</Text>
               </View>
               <View style={styles.timeStats}>
@@ -759,8 +772,8 @@ const makeStyles = () => StyleSheet.create({
   progressCard: {
     marginTop: 20,
     padding: 20,
-    borderColor: "rgba(0, 229, 255, 0.3)",
-    backgroundColor: theme.COLORS.surface, // "rgba(0, 229, 255, 0.02)",
+    borderColor: `${theme.COLORS.primary}4D`,
+    backgroundColor: theme.COLORS.surface,
   },
   progressHeader: {
     flexDirection: "row",
@@ -830,7 +843,7 @@ const makeStyles = () => StyleSheet.create({
     gap: 6,
   },
   resultBadgeText: {
-    color: theme.COLORS.white,
+    color: theme.COLORS.background,
     fontSize: 12,
     fontWeight: "800",
     textTransform: "uppercase",
@@ -868,7 +881,7 @@ const makeStyles = () => StyleSheet.create({
     paddingBottom: theme.SPACING.xlarge,
     backgroundColor: theme.COLORS.background,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.05)",
+    borderTopColor: theme.COLORS.outlineVariant,
   },
   mainActionBtn: {
     borderRadius: 20,

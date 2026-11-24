@@ -17,6 +17,8 @@ export interface AppSettings {
   lastUsedModel: string;
   modelConsentAsked: boolean;
   saveDirectoryUri: string | null;
+  /** Preferred microphone device id; null means the system default. */
+  preferredMicDeviceId?: string | null;
   /** Format used when saving audio to the device. */
   exportFormat: AudioExportFormat;
   /** MP3 bitrate in kbps (96, 128, 192, 256 or 320). */
@@ -46,6 +48,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   lastUsedModel: "deepfilternet3",
   modelConsentAsked: false,
   saveDirectoryUri: null,
+  preferredMicDeviceId: null,
   exportFormat: "wav",
   mp3Bitrate: 128,
   m4aBitrate: 192,

@@ -478,6 +478,29 @@ class MediaProcessor(private val context: Context) {
                     val buffer = ByteBuffer.allocate(bufferSize)
                     val bufferInfo = MediaCodec.BufferInfo()
 
+                    // ---- Timeline authority: the VIDEO track ----
+                    // Audio sample times only make sense relative to the video track.
+                    // The AAC encoder reports its own start time and the denoiser can
+                    // leave leading alignment padding, so writing audio timestamps
+                    // verbatim makes speech begin after the first video frame. Use one
+                    // constant offset (never a per-sample correction, which would break
+                    // per-track monotonicity) and stop at the end of the video so audio
+                    // can never extend past it.
+                    val videoDurationUs =
+                            if (videoFormat.containsKey(MediaFormat.KEY_DURATION)) {
+                                val duration = videoFormat.getLong(MediaFormat.KEY_DURATION)
+                                if (duration > 0) duration else Long.MAX_VALUE
+                            } else {
+                                Long.MAX_VALUE
+                            }
+                    // With a trim the video PTS is rebased by -trimStartUs, so its
+                    // output window is [0, trimEndUs - trimStartUs). The WAV was
+                    // physically trimmed to that same window.
+                    val trimmedWindowUs = trimEndUs - trimStartUs
+                    var videoStartUs: Long? = null
+                    var videoEndUs = Long.MAX_VALUE
+                    var audioTimestampOffsetUs: Long? = null
+
                     videoExtractor.selectTrack(videoTrack)
                     audioExtractor.selectTrack(audioTrack)
 
@@ -507,6 +530,12 @@ class MediaProcessor(private val context: Context) {
                                 videoEOS = true
                             } else {
                                 val sampleTimeUs = videoExtractor.sampleTime
+                                if (videoStartUs == null) {
+                                    videoStartUs = sampleTimeUs
+                                    if (!trimEnabled && videoDurationUs != Long.MAX_VALUE) {
+                                        videoEndUs = sampleTimeUs + videoDurationUs
+                                    }
+                                }
                                 if (trimEnabled) {
                                     if (sampleTimeUs < trimStartUs || sampleTimeUs > trimEndUs) {
                                         // Outside the trimmed window — drop.
@@ -540,9 +569,42 @@ class MediaProcessor(private val context: Context) {
                             if (sampleSize < 0) {
                                 audioEOS = true
                             } else {
+                                val audioTimeUs = audioExtractor.sampleTime
+                                if (trimEnabled) {
+                                    // Keep the existing trimmed window: audio was cut to
+                                    // [trimStartUs, trimEndUs] before the AAC step and the
+                                    // video PTS was rebased to start at zero. Only add the
+                                    // upper bound so audio cannot outlast the video.
+                                    if (audioTimeUs >= trimmedWindowUs) {
+                                        audioEOS = true
+                                        continue
+                                    }
+                                    bufferInfo.presentationTimeUs = audioTimeUs
+                                } else {
+                                    // Anchor audio sample 0 at video t=0 with a single
+                                    // constant offset, then cap at the video's end.
+                                    if (audioTimestampOffsetUs == null) {
+                                        audioTimestampOffsetUs =
+                                                (videoStartUs ?: 0L) - audioTimeUs
+                                    }
+                                    val adjustedUs = audioTimeUs + audioTimestampOffsetUs!!
+                                    if (adjustedUs < 0L) {
+                                        // Encoder padding ahead of the first frame: drop
+                                        // it instead of delaying all audible content.
+                                        if (!audioExtractor.advance()) audioEOS = true
+                                        continue
+                                    }
+                                    if (videoEndUs != Long.MAX_VALUE &&
+                                            adjustedUs >= videoEndUs
+                                    ) {
+                                        // Audio cannot extend past the video timeline.
+                                        audioEOS = true
+                                        continue
+                                    }
+                                    bufferInfo.presentationTimeUs = adjustedUs
+                                }
                                 bufferInfo.size = sampleSize
                                 bufferInfo.offset = 0
-                                bufferInfo.presentationTimeUs = audioExtractor.sampleTime
                                 bufferInfo.flags = audioExtractor.sampleFlags
                                 muxer.writeSampleData(audioMuxerTrack, buffer, bufferInfo)
                                 if (!audioExtractor.advance()) audioEOS = true

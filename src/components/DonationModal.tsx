@@ -45,7 +45,7 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
             <Feather
               name="github"
               size={24}
-              color="white"
+              color={theme.COLORS.white}
               style={styles.githubIcon}
             />
             <Text style={styles.githubText}>Sponsor on GitHub</Text>
@@ -138,29 +138,26 @@ const makeStyles = () => StyleSheet.create({
   githubText: {
     fontSize: theme.FONT_SIZE.body,
     fontWeight: "600",
-    color: "white",
-
+    color: theme.COLORS.white,
   },
   upiButton: {
-    backgroundColor: "orange",
+    backgroundColor: theme.COLORS.surfaceContainerHigh,
     borderRadius: 18,
     borderWidth: 1,
     borderColor: theme.COLORS.border,
     flexDirection: "row",
-    justifyContent: "space-between",
-    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
   upiIcon: {
     width: 40,
     height: 20,
-    marginLeft: 12,
-    marginRight: 5,
   },
   upiText: {
     fontSize: theme.FONT_SIZE.body,
     fontWeight: "600",
-    color: "#111827",
-    marginRight: 25,
+    color: theme.COLORS.text,
   },
   closeButton: {
     width: "100%",

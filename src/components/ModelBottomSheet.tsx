@@ -509,14 +509,14 @@ const makeStyles = () => StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "rgba(239, 68, 68, 0.12)",
+    backgroundColor: `${COLORS.error}1E`,
     paddingHorizontal: SPACING.medium,
     paddingVertical: SPACING.small,
     marginHorizontal: SPACING.medium,
     marginTop: SPACING.small,
     borderRadius: RADIUS.sm,
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.3)",
+    borderColor: `${COLORS.error}4D`,
   },
   errorText: {
     flex: 1,
@@ -625,12 +625,12 @@ const makeStyles = () => StyleSheet.create({
     fontWeight: "600",
   },
   rateWarningPill: {
-    backgroundColor: "rgba(245, 158, 11, 0.15)",
+    backgroundColor: `${COLORS.accent}26`,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: RADIUS.sm,
     borderWidth: 1,
-    borderColor: "rgba(245, 158, 11, 0.4)",
+    borderColor: `${COLORS.accent}66`,
   },
   rateWarningText: {
     fontSize: FONT_SIZE.xsmall,
@@ -711,7 +711,7 @@ const makeStyles = () => StyleSheet.create({
     borderWidth: 1,
   },
   selectBtnActive: {
-    backgroundColor: "rgba(0, 229, 255, 0.08)",
+    backgroundColor: `${COLORS.primary}14`,
     borderColor: COLORS.primary,
   },
   selectBtnInactive: {
@@ -731,11 +731,11 @@ const makeStyles = () => StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: RADIUS.md,
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    backgroundColor: `${COLORS.error}1A`,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.25)",
+    borderColor: `${COLORS.error}40`,
   },
   bottomImportSection: {
     alignItems: "center",
@@ -811,7 +811,7 @@ const makeStyles = () => StyleSheet.create({
     borderRadius: RADIUS.sm,
   },
   confirmDeleteText: {
-    color: COLORS.white,
+    color: COLORS.background,
     fontWeight: "700",
   },
 });

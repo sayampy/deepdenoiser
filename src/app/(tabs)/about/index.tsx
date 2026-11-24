@@ -30,10 +30,11 @@ export default function AboutScreen() {
   };
 
   return (
-    <View style={theme.Styles.container}>
+    <View style={styles.root}>
       <ScrollView
-        contentContainerStyle={theme.Styles.contentContainer}
+        contentContainerStyle={[theme.Styles.contentContainer, styles.pageContent]}
         showsVerticalScrollIndicator={false}
+        scrollEnabled={!settingsVisible}
       >
         <View
           style={[
@@ -180,22 +181,31 @@ export default function AboutScreen() {
             by Sayampy
           </Text>
         </View>
-
-        <DonationModal
-          visible={modalVisible}
-          onClose={() => setModalVisible(false)}
-        />
-
-        <SettingsSidebar
-          visible={settingsVisible}
-          onClose={() => setSettingsVisible(false)}
-        />
       </ScrollView>
+
+      <DonationModal
+        visible={modalVisible}
+        onClose={() => setModalVisible(false)}
+      />
+
+      <SettingsSidebar
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+      />
     </View>
   );
 }
 
 const makeStyles = () => StyleSheet.create({
+  // Screen root is unpadded so full-screen overlays can cover it edge-to-edge.
+  // The original container's horizontal padding moves to the scroll content.
+  root: {
+    flex: 1,
+    backgroundColor: theme.COLORS.background,
+  },
+  pageContent: {
+    paddingHorizontal: theme.SPACING.medium,
+  },
   brandRow: {
     position: "relative",
     alignItems: "center",

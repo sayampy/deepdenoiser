@@ -7,7 +7,8 @@ import SaveButton from "@/src/components/SaveButton";
 import ShareBtn from "@/src/components/shareBtn";
 import SilenceTrimSettingsBlock from "@/src/components/silenceTrimSettings";
 import * as theme from "@/src/constants/theme";
-import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
+import { useTheme } from "@/src/context/ThemeContext";
+import { trackAppEvent } from "@/src/scripts/analytics";
 import { PCMtoWav, resample, writePCMChunk } from "@/src/scripts/formatHandler";
 import { DEFAULT_MODEL_ID, type ModelId, MODELS } from "@/src/scripts/models/registry";
 import { getEngine, type StreamStep } from "@/src/scripts/models/runtime";
@@ -18,11 +19,13 @@ import {
   incrementDenoiseCount,
   markDonationPromptShown,
   shouldShowDonationReminder,
+  updateSettings,
 } from "@/src/scripts/settings";
 import type { SilenceTrimSettings } from "@/src/scripts/silenceTrim";
 import { DEFAULT_SILENCE_TRIM } from "@/src/scripts/silenceTrim";
 import Feather from "@expo/vector-icons/Feather";
 import {
+  type AudioDevice,
   AudioDataEvent,
   RecordingConfig,
   useAudioDevices,
@@ -30,7 +33,7 @@ import {
 } from "@siteed/audio-studio";
 import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
-import { useEffect, useRef, useState } from "react";
+import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -55,6 +58,43 @@ const MAX_QUEUED_CHUNKS = 90;
 const PASSTHROUGH_RESUME_AT = 30;
 /** Tiny sample-count mismatch still tolerated between the two staged PCM files. */
 const MAX_PCM_SAMPLE_DELTA = 16;
+
+type DeviceGroupKey = "builtin" | "wired" | "bluetooth" | "usb" | "other";
+type FeatherIconName = ComponentProps<typeof Feather>["name"];
+
+const DEVICE_GROUPS: { key: DeviceGroupKey; label: string; icon: FeatherIconName }[] = [
+  { key: "builtin", label: "Built-in", icon: "mic" },
+  { key: "wired", label: "Wired/Headset", icon: "headphones" },
+  { key: "bluetooth", label: "Bluetooth", icon: "bluetooth" },
+  { key: "usb", label: "USB", icon: "hard-drive" },
+  { key: "other", label: "Other", icon: "more-horizontal" },
+];
+
+/** Classify a native Android source label; anything unrecognised is "Other". */
+function deviceGroupKey(type: string | undefined): DeviceGroupKey {
+  const value = (type ?? "").toLowerCase();
+  if (value.includes("bluetooth") || value.includes("a2dp")) return "bluetooth";
+  if (value.includes("usb")) return "usb";
+  if (
+    value.includes("headset") ||
+    value.includes("headphone") ||
+    value.includes("wired") ||
+    value.includes("aux") ||
+    value.includes("3.5mm")
+  ) {
+    return "wired";
+  }
+  if (
+    value.includes("builtin") ||
+    value.includes("built-in") ||
+    value.includes("internal") ||
+    value.includes("microphone") ||
+    value === "mic"
+  ) {
+    return "builtin";
+  }
+  return "other";
+}
 
 /**
  * Android 13+ requires POST_NOTIFICATIONS before a foreground-service
@@ -141,10 +181,12 @@ export default function RecordingScreen() {
   const {
     devices: audioDevices,
     currentDevice,
+    loading: devicesLoading,
     selectDevice,
     resetToDefaultDevice,
     refreshDevices,
   } = useAudioDevices();
+  const { isDark } = useTheme();
   const styles = useStyles(makeStyles);
 
   const [denoiserReady, setDenoiserReady] = useState(false);
@@ -171,6 +213,38 @@ export default function RecordingScreen() {
     useState<SilenceTrimSettings>(DEFAULT_SILENCE_TRIM);
   const [selectedModelId, setSelectedModelId] = useState<ModelId>(DEFAULT_MODEL_ID);
   const [micPickerVisible, setMicPickerVisible] = useState(false);
+  /**
+   * Authoritative source for the picker UI. The library's getCurrentDevice()
+   * reflects Android's routing, which does not always change when a source is
+   * selected, so it cannot be used to decide which row shows as selected.
+   */
+  const [selectedMicId, setSelectedMicId] = useState<string | null>(null);
+
+  /** Remembered source across screens; null (or unset) means system default. */
+  const preferredMicIdRef = useRef<string | null>(null);
+  /** Restore the saved source once, after the device list has loaded. */
+  const preferenceAppliedRef = useRef(false);
+  /** Device id we already notified about, so a single loss alerts only once. */
+  const fallbackNotifiedRef = useRef<string | null>(null);
+
+  const availableDevices = useMemo(
+    () =>
+      audioDevices
+        .filter((device) => device.isAvailable)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name)),
+    [audioDevices],
+  );
+  const groupedDevices = useMemo(
+    () =>
+      DEVICE_GROUPS.map((group) => ({
+        ...group,
+        devices: availableDevices.filter(
+          (device: AudioDevice) => deviceGroupKey(device.type) === group.key,
+        ),
+      })).filter((group) => group.devices.length > 0),
+    [availableDevices],
+  );
 
   const engineRef = useRef<RecordingEngine | null>(null);
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
@@ -231,6 +305,74 @@ export default function RecordingScreen() {
   useEffect(() => {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
+
+  // Restore the remembered source once the device list is loaded. With no
+  // stored preference we deliberately leave the system's current source alone.
+  useEffect(() => {
+    if (preferenceAppliedRef.current || devicesLoading) return;
+    // An empty list can mean enumeration failed (e.g. an emulator with no mic).
+    // Never treat that as proof the remembered device was disconnected.
+    if (availableDevices.length === 0) return;
+    preferenceAppliedRef.current = true;
+    void (async () => {
+      try {
+        const settings = await getSettings();
+        const preferred = settings.preferredMicDeviceId ?? null;
+        preferredMicIdRef.current = preferred;
+        if (!preferred) return;
+        if (availableDevices.some((device) => device.id === preferred)) {
+          const ok = await selectDevice(preferred);
+          if (ok) setSelectedMicId(preferred);
+          if (!ok) {
+            console.warn("Could not restore preferred microphone:", preferred);
+          }
+          return;
+        }
+        // Remembered device is gone: fall back to default and forget it.
+        fallbackNotifiedRef.current = preferred;
+        const ok = await resetToDefaultDevice();
+        preferredMicIdRef.current = null;
+        setSelectedMicId(null);
+        await updateSettings({ preferredMicDeviceId: null });
+        if (!ok) {
+          console.warn("Could not reset to the default microphone");
+        }
+        Alert.alert(
+          "Microphone",
+          "Your saved microphone is no longer available. Switched to the system default.",
+        );
+      } catch (err) {
+        console.warn("Failed to restore microphone preference:", err);
+      }
+    })();
+  }, [availableDevices, devicesLoading, resetToDefaultDevice, selectDevice]);
+
+  // The library hook refreshes the device list when a source disappears. If the
+  // active/remembered non-default source vanishes mid-recording, fall back once
+  // and clear the preference so it is not restored on the next visit.
+  useEffect(() => {
+    if (!isRecording || devicesLoading) return;
+    // Only an explicit user choice is ours to restore. Android handles its own
+    // routing changes (headset plugged in, BT SCO active, etc.) without help.
+    const trackedId = preferredMicIdRef.current;
+    if (!trackedId || fallbackNotifiedRef.current === trackedId) return;
+    if (availableDevices.some((device) => device.id === trackedId)) return;
+    fallbackNotifiedRef.current = trackedId;
+    void (async () => {
+      try {
+        await resetToDefaultDevice();
+        preferredMicIdRef.current = null;
+        setSelectedMicId(null);
+        await updateSettings({ preferredMicDeviceId: null });
+        Alert.alert(
+          "Microphone",
+          "The selected microphone was disconnected. Switched to the system default.",
+        );
+      } catch (err) {
+        console.warn("Failed to fall back to the default microphone:", err);
+      }
+    })();
+  }, [availableDevices, devicesLoading, isRecording, resetToDefaultDevice]);
 
   useEffect(() => {
     if (isPaused) {
@@ -477,14 +619,17 @@ export default function RecordingScreen() {
         ? await selectDevice(id)
         : await resetToDefaultDevice();
       if (!ok) {
+        console.warn("Failed to select the audio input device");
         Alert.alert("Microphone", "Could not switch to that input device.");
-      } else {
-        setMicPickerVisible(false);
+        return;
       }
+      preferredMicIdRef.current = id;
+      setSelectedMicId(id);
+      fallbackNotifiedRef.current = null;
+      await updateSettings({ preferredMicDeviceId: id });
+      setMicPickerVisible(false);
     } catch (err) {
-      trackAppError(err instanceof Error ? err : new Error(String(err)), {
-        context: "selectAudioDevice",
-      });
+      console.warn("Failed to switch microphone:", err);
       Alert.alert("Microphone", "Could not switch to that input device.");
     }
   };
@@ -572,7 +717,7 @@ export default function RecordingScreen() {
     } catch (error) {
       isStoppingRef.current = false;
       const err = error instanceof Error ? error : new Error(String(error));
-      trackAppError(err, { context: "startRecording" });
+      console.error("Error starting recording:", err);
       setError(err);
       setIsErrorModalVisible(true);
     }
@@ -700,7 +845,7 @@ export default function RecordingScreen() {
       }
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
-      trackAppError(err, { context: "stopRecording" });
+      console.error("Error stopping recording:", err);
       setError(err);
       setIsErrorModalVisible(true);
     } finally {
@@ -730,6 +875,119 @@ export default function RecordingScreen() {
     })();
   }, [finalDenoisedWav]);
 
+  // Prefer the user's explicit choice; fall back to the native device only
+  // when no choice has been made in this app.
+  const effectiveMicId =
+    selectedMicId ??
+    (currentDevice && currentDevice.isDefault === false ? currentDevice.id : null);
+  const defaultMicSelected = effectiveMicId === null;
+  const selectedMicName =
+    availableDevices.find((device) => device.id === effectiveMicId)?.name ??
+    currentDevice?.name;
+
+  const micSourceControl = (
+    <>
+      <TouchableOpacity
+        style={styles.micSourceButton}
+        onPress={() => {
+          void refreshDevices();
+          setMicPickerVisible(true);
+        }}
+        disabled={isFinalizing}
+      >
+        <Feather name="mic" size={18} color={theme.COLORS.primary} />
+        <View style={styles.micSourceText}>
+          <Text style={styles.micSourceLabel}>Microphone source</Text>
+          <Text style={styles.micSourceValue} numberOfLines={1}>
+            {defaultMicSelected ? "System default" : selectedMicName ?? "Selected microphone"}
+          </Text>
+        </View>
+        <Feather name="chevron-right" size={18} color={theme.COLORS.subtext} />
+      </TouchableOpacity>
+      {(isRecording || isPaused) && (
+        <Text style={styles.micSwitchHint}>
+          You can switch microphones while recording.
+        </Text>
+      )}
+    </>
+  );
+
+  // Recording controls live directly under the timer so starting/stopping is
+  // always one tap without scrolling past the model and settings controls.
+  const recordControls = isFinalizing || finalOriginalWav ? null : (
+    !isRecording && !isPaused ? (
+      <Pressable
+        style={({ pressed }) => [
+          styles.recordButton,
+          { opacity: pressed ? 0.9 : 1 },
+        ]}
+        onPress={startRecording}
+        android_ripple={{
+          color: isDark ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.1)",
+          borderless: true,
+          radius: 70,
+        }}
+      >
+        <View style={styles.recordButtonInner}>
+          <Feather name="mic" size={40} color={theme.COLORS.white} />
+        </View>
+        <Text style={styles.buttonLabel}>Tap to Start</Text>
+      </Pressable>
+    ) : (
+      <View style={styles.activeControls}>
+        <Pressable
+          style={({ pressed }) => [
+            styles.controlCircle,
+            {
+              backgroundColor: isDark
+                ? "rgba(255, 255, 255, 0.1)"
+                : theme.COLORS.surfaceContainer,
+              opacity: pressed ? 0.7 : 1,
+            },
+          ]}
+          onPress={isPaused ? resumeRecording : pauseRecording}
+          android_ripple={{
+            color: isDark ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.15)",
+            borderless: true,
+            radius: 32,
+          }}
+        >
+          <Feather
+            name={isPaused ? "play" : "pause"}
+            size={28}
+            color={theme.COLORS.text}
+          />
+        </Pressable>
+
+        <Pressable
+          style={({ pressed }) => [
+            styles.stopButton,
+            {
+              backgroundColor: isDark
+                ? "rgba(255, 255, 255, 0.05)"
+                : theme.COLORS.surfaceContainer,
+              opacity: pressed ? 0.8 : 1,
+            },
+          ]}
+          onPress={stopRecording}
+          android_ripple={{
+            color: isDark ? "rgba(255, 255, 255, 0.2)" : "rgba(0, 0, 0, 0.15)",
+            borderless: true,
+            radius: 50,
+          }}
+        >
+          <View style={styles.stopButtonInner}>
+            <Feather
+              name="square"
+              size={32}
+              color={theme.COLORS.white}
+            />
+          </View>
+        </Pressable>
+      </View>
+    )
+  );
+
   return (
     <SafeAreaView style={theme.Styles.container}>
       <View style={styles.header}>
@@ -741,7 +999,7 @@ export default function RecordingScreen() {
           ]}
           disabled={isRecording}
           android_ripple={{
-            color: "rgba(255, 255, 255, 0.1)",
+            color: isDark ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)",
             borderless: true,
             radius: 24,
           }}
@@ -775,6 +1033,8 @@ export default function RecordingScreen() {
           </View>
         )}
 
+        <View style={styles.topControls}>{recordControls}</View>
+
         {isFinalizing ? (
           <View style={styles.finalizingContainer}>
             <ActivityIndicator size="large" color={theme.COLORS.primary} />
@@ -798,23 +1058,7 @@ export default function RecordingScreen() {
                   disabled={isRecording || isFinalizing}
                 />
 
-                <TouchableOpacity
-                  style={styles.micSourceButton}
-                  onPress={() => {
-                    void refreshDevices();
-                    setMicPickerVisible(true);
-                  }}
-                  disabled={isFinalizing}
-                >
-                  <Feather name="mic" size={18} color={theme.COLORS.primary} />
-                  <View style={styles.micSourceText}>
-                    <Text style={styles.micSourceLabel}>Microphone source</Text>
-                    <Text style={styles.micSourceValue} numberOfLines={1}>
-                      {currentDevice?.name ?? "System default"}
-                    </Text>
-                  </View>
-                  <Feather name="chevron-right" size={18} color={theme.COLORS.subtext} />
-                </TouchableOpacity>
+                {micSourceControl}
 
                 <View style={styles.settingsDivider} />
 
@@ -837,70 +1081,10 @@ export default function RecordingScreen() {
               </View>
             ) : null}
 
-            {!isRecording && !isPaused ? (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.recordButton,
-                  { opacity: pressed ? 0.9 : 1 },
-                ]}
-                onPress={startRecording}
-                android_ripple={{
-                  color: "rgba(255, 255, 255, 0.2)",
-                  borderless: true,
-                  radius: 70,
-                }}
-              >
-                <View style={styles.recordButtonInner}>
-                  <Feather name="mic" size={40} color={theme.COLORS.white} />
-                </View>
-                <Text style={styles.buttonLabel}>Tap to Start</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.activeControls}>
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.controlCircle,
-                    {
-                      backgroundColor: "rgba(255, 255, 255, 0.1)",
-                      opacity: pressed ? 0.7 : 1,
-                    },
-                  ]}
-                  onPress={isPaused ? resumeRecording : pauseRecording}
-                  android_ripple={{
-                    color: "rgba(255, 255, 255, 0.2)",
-                    borderless: true,
-                    radius: 32,
-                  }}
-                >
-                  <Feather
-                    name={isPaused ? "play" : "pause"}
-                    size={28}
-                    color={theme.COLORS.text}
-                  />
-                </Pressable>
-
-                <Pressable
-                  style={({ pressed }) => [
-                    styles.stopButton,
-                    { opacity: pressed ? 0.8 : 1 },
-                  ]}
-                  onPress={stopRecording}
-                  android_ripple={{
-                    color: "rgba(255, 255, 255, 0.2)",
-                    borderless: true,
-                    radius: 50,
-                  }}
-                >
-                  <View style={styles.stopButtonInner}>
-                    <Feather
-                      name="square"
-                      size={32}
-                      color={theme.COLORS.white}
-                    />
-                  </View>
-                </Pressable>
-              </View>
+            {(isRecording || isPaused) && (
+              <View style={styles.micSourceRecording}>{micSourceControl}</View>
             )}
+
           </View>
         ) : (
           <View style={styles.resultsContainer}>
@@ -1034,36 +1218,96 @@ export default function RecordingScreen() {
           onPress={() => setMicPickerVisible(false)}
         >
           <Pressable style={styles.micModalCard} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.micModalTitle}>Choose microphone source</Text>
-            <TouchableOpacity
-              style={styles.micModalRow}
-              onPress={() => void chooseAudioDevice(null)}
-            >
-              <Feather
-                name={currentDevice?.isDefault !== false ? "check" : "circle"}
-                size={18}
-                color={theme.COLORS.primary}
-              />
-              <Text style={styles.micModalRowText}>System default</Text>
-            </TouchableOpacity>
-            {audioDevices
-              .filter((device) => device.isAvailable)
-              .map((device) => (
-                <TouchableOpacity
-                  key={device.id}
-                  style={styles.micModalRow}
-                  onPress={() => void chooseAudioDevice(device.id)}
-                >
+            <View style={styles.micModalHeader}>
+              <Text style={styles.micModalTitle}>Microphone source</Text>
+              <TouchableOpacity
+                style={styles.micModalRefresh}
+                onPress={() => {
+                  void refreshDevices();
+                }}
+                disabled={devicesLoading}
+              >
+                {devicesLoading ? (
+                  <ActivityIndicator size="small" color={theme.COLORS.primary} />
+                ) : (
                   <Feather
-                    name={currentDevice?.id === device.id ? "check" : "circle"}
-                    size={18}
+                    name="refresh-cw"
+                    size={16}
                     color={theme.COLORS.primary}
                   />
-                  <Text style={styles.micModalRowText} numberOfLines={1}>
-                    {device.name}
+                )}
+                <Text style={styles.micModalRefreshText}>Refresh</Text>
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.micModalList}>
+              <TouchableOpacity
+                style={styles.micModalRow}
+                onPress={() => void chooseAudioDevice(null)}
+              >
+                <Feather
+                  name={defaultMicSelected ? "check" : "circle"}
+                  size={18}
+                  color={theme.COLORS.primary}
+                />
+                <Feather name="mic" size={18} color={theme.COLORS.subtext} />
+                <Text style={styles.micModalRowText}>System default</Text>
+                {defaultMicSelected && (
+                  <View style={styles.connectedBadge}>
+                    <Text style={styles.connectedBadgeText}>Connected</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <View style={styles.micModalRowDivider} />
+
+              {groupedDevices.length === 0 ? (
+                <View style={styles.micModalEmpty}>
+                  <Feather name="mic-off" size={28} color={theme.COLORS.subtext} />
+                  <Text style={styles.micModalEmptyTitle}>No microphones found</Text>
+                  <Text style={styles.micModalEmptyHint}>
+                    Connect a microphone or tap Refresh to look again.
                   </Text>
-                </TouchableOpacity>
-              ))}
+                </View>
+              ) : (
+                groupedDevices.map((group) => (
+                  <View key={group.key} style={styles.micModalGroup}>
+                    <View style={styles.micModalGroupHeader}>
+                      <Feather
+                        name={group.icon}
+                        size={15}
+                        color={theme.COLORS.subtext}
+                      />
+                      <Text style={styles.micModalGroupTitle}>{group.label}</Text>
+                    </View>
+                    {group.devices.map((device) => {
+                      const active = effectiveMicId === device.id;
+                      return (
+                        <TouchableOpacity
+                          key={device.id}
+                          style={styles.micModalRow}
+                          onPress={() => void chooseAudioDevice(device.id)}
+                        >
+                          <Feather
+                            name={active ? "check" : "circle"}
+                            size={18}
+                            color={theme.COLORS.primary}
+                          />
+                          <Text style={styles.micModalRowText} numberOfLines={1}>
+                            {device.name}
+                          </Text>
+                          {active && (
+                            <View style={styles.connectedBadge}>
+                              <Text style={styles.connectedBadgeText}>Connected</Text>
+                            </View>
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ))
+              )}
+            </ScrollView>
+
             <TouchableOpacity
               style={styles.micModalClose}
               onPress={() => setMicPickerVisible(false)}
@@ -1103,12 +1347,17 @@ const makeStyles = () => StyleSheet.create({
     paddingBottom: 100,
     // paddingHorizontal: theme.SPACING.medium,
   },
+  topControls: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
   timerContainer: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginTop: 60,
-    marginBottom: 20,
+    marginTop: 40,
+    marginBottom: 8,
     height: 100,
   },
   timerText: {
@@ -1166,7 +1415,7 @@ const makeStyles = () => StyleSheet.create({
 
   settingsDivider: {
     height: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: theme.COLORS.outlineVariant,
     marginVertical: 15,
   },
   recordButton: {
@@ -1209,7 +1458,7 @@ const makeStyles = () => StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: theme.COLORS.surfaceContainer,
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
@@ -1312,6 +1561,16 @@ const makeStyles = () => StyleSheet.create({
     color: theme.COLORS.text,
     fontWeight: "600",
   },
+  micSwitchHint: {
+    fontSize: theme.FONT_SIZE.xsmall,
+    color: theme.COLORS.subtext,
+    marginTop: 6,
+  },
+  micSourceRecording: {
+    width: "100%",
+    paddingHorizontal: theme.SPACING.medium,
+    marginBottom: 24,
+  },
   micModalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.6)",
@@ -1327,11 +1586,73 @@ const makeStyles = () => StyleSheet.create({
     borderRadius: 20,
     padding: 20,
   },
+  micModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
   micModalTitle: {
     fontSize: theme.FONT_SIZE.heading,
     fontWeight: "700",
     color: theme.COLORS.text,
-    marginBottom: 16,
+  },
+  micModalRefresh: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  micModalRefreshText: {
+    fontSize: theme.FONT_SIZE.small,
+    fontWeight: "600",
+    color: theme.COLORS.primary,
+  },
+  micModalList: {
+    maxHeight: 380,
+  },
+  micModalGroup: {
+    marginTop: 14,
+  },
+  micModalGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingBottom: 4,
+  },
+  micModalGroupTitle: {
+    fontSize: theme.FONT_SIZE.xsmall,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    color: theme.COLORS.subtext,
+  },
+  connectedBadge: {
+    backgroundColor: theme.COLORS.primaryContainer,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  connectedBadgeText: {
+    fontSize: theme.FONT_SIZE.xsmall,
+    fontWeight: "700",
+    color: theme.COLORS.onPrimaryContainer,
+  },
+  micModalEmpty: {
+    alignItems: "center",
+    paddingVertical: 28,
+    gap: 8,
+  },
+  micModalEmptyTitle: {
+    fontSize: theme.FONT_SIZE.body,
+    fontWeight: "700",
+    color: theme.COLORS.text,
+  },
+  micModalEmptyHint: {
+    fontSize: theme.FONT_SIZE.xsmall,
+    color: theme.COLORS.subtext,
+    textAlign: "center",
   },
   micModalRow: {
     flexDirection: "row",
@@ -1343,6 +1664,10 @@ const makeStyles = () => StyleSheet.create({
     flex: 1,
     fontSize: theme.FONT_SIZE.body,
     color: theme.COLORS.text,
+  },
+  micModalRowDivider: {
+    height: 1,
+    backgroundColor: theme.COLORS.outlineVariant,
   },
   micModalClose: {
     marginTop: 12,

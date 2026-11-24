@@ -294,7 +294,7 @@ const makeStyles = () => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: SPACING.medium,
-    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    backgroundColor: `${COLORS.error}1A`,
     padding: SPACING.small,
     borderRadius: 8,
   },
