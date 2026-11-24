@@ -16,6 +16,12 @@ import { trimToNativeConfig } from "./silenceTrim";
 
 const ILLEGAL_FS_CHARS = /[^a-zA-Z0-9._-]/g;
 
+/** Reusable polyphase sinc kernels for each resampling rate pair/phase. */
+const kernelCache = new Map<
+  string,
+  Map<number, { offsets: number[]; weights: Float32Array; sum: number }>
+>();
+
 /** Result of PCMtoWav: the wrapped WAV plus the silence-trim window. */
 export interface WavResult {
   file: fs.File;
@@ -126,7 +132,12 @@ export async function PCMtoWav(
 }
 
 /**
- * Resamples an Int16Array or Float32Array from inputRate to outputRate using linear interpolation.
+ * Resamples an Int16Array or Float32Array from inputRate to outputRate.
+ *
+ * A windowed-sinc kernel is used instead of plain linear interpolation. Linear
+ * interpolation has no anti-alias filter: decimating 48 kHz to a 16 kHz model
+ * folds the whole 16-24 kHz band into the speech band, and upsampling back
+ * leaves spectral images that are audible as chirping/metallic artifacts.
  */
 export function resample(
   input: Int16Array | Float32Array,
@@ -143,24 +154,60 @@ export function resample(
   const ratio = inputRate / outputRate;
   const outputLength = Math.round(input.length / ratio);
   const output = new Float32Array(outputLength);
-
   const isInt16 = input instanceof Int16Array;
+  // Cutoff at 90% of the destination Nyquist, expressed in input samples.
+  const cutoff = Math.min(0.5, 0.45 / ratio);
+  const half = 24;
+  const sample = (idx: number): number => {
+    if (idx < 0 || idx >= input.length) return 0;
+    return isInt16 ? input[idx] / 32768.0 : input[idx];
+  };
+
+  // The sinc weights only depend on the fractional position, which takes a
+  // handful of values for common rates (3 for 48k<->16k). Cache them instead
+  // of evaluating two trig functions per tap per output sample.
+  const rateKey = `${inputRate}:${outputRate}`;
+  let kernels = kernelCache.get(rateKey);
+  if (!kernels) {
+    kernels = new Map<number, { offsets: number[]; weights: Float32Array; sum: number }>();
+    kernelCache.set(rateKey, kernels);
+  }
 
   for (let i = 0; i < outputLength; i++) {
     const pos = i * ratio;
-    const index = Math.floor(pos);
-    const fraction = pos - index;
-
-    let s1, s2;
-    if (isInt16) {
-      s1 = input[index] / 32768.0;
-      s2 = index + 1 < input.length ? input[index + 1] / 32768.0 : s1;
-    } else {
-      s1 = input[index];
-      s2 = index + 1 < input.length ? input[index + 1] : s1;
+    const center = Math.round(pos);
+    const fraction = pos - Math.floor(pos);
+    // Fine quantisation keeps fractions that straddle 0.5 in separate
+    // buckets: the sinc argument flips from -fraction to 1-fraction there.
+    const phase = Math.round(fraction * 1_000_000);
+    let kernel = kernels.get(phase);
+    if (!kernel) {
+      const offsets: number[] = [];
+      const weights: number[] = [];
+      let sum = 0;
+      const phaseFraction = phase / 1_000_000;
+      const centerShift = Math.round(phaseFraction) - phaseFraction;
+      for (let k = -half; k <= half; k++) {
+        const d = centerShift + k;
+        const sinc = d === 0
+          ? 2 * cutoff
+          : Math.sin(2 * Math.PI * cutoff * d) / (Math.PI * d);
+        // Hamming window keeps the sinc's long sidelobes from ringing.
+        const window = 0.54 - 0.46 * Math.cos((2 * Math.PI * (k + half)) / (2 * half));
+        const weight = sinc * window;
+        offsets.push(k);
+        weights.push(weight);
+        sum += weight;
+      }
+      kernel = { offsets, weights: new Float32Array(weights), sum };
+      kernels.set(phase, kernel);
     }
-
-    output[i] = s1 * (1 - fraction) + s2 * fraction;
+    let acc = 0;
+    for (let t = 0; t < kernel.offsets.length; t++) {
+      const idx = center + kernel.offsets[t];
+      if (idx >= 0 && idx < input.length) acc += sample(idx) * kernel.weights[t];
+    }
+    output[i] = kernel.sum !== 0 ? acc / kernel.sum : sample(center);
   }
 
   return output;

@@ -20,7 +20,15 @@ import { getSettings, updateSettings } from "../settings";
 import { sha256File } from "@/modules/AudioProcessorModule";
 
 const MODELS_DIR = "models";
-const MODEL_FILE = "model.ort";
+
+/**
+ * ORT infers the model format from the file extension: `.ort` is the optimised
+ * ORT format, `.onnx` is a plain ONNX graph. A model published as ONNX must be
+ * stored with that extension or session creation fails verification.
+ */
+function modelFileName(model: ModelDescriptor): string {
+  return model.artifactUrl?.endsWith(".onnx") ? "model.onnx" : "model.ort";
+}
 
 export type InstallState =
   | { status: "installed"; path: string; bytes: number }
@@ -36,7 +44,7 @@ function modelDir(model: ModelDescriptor): Directory {
 }
 
 function modelFile(model: ModelDescriptor): File {
-  return new File(modelDir(model), MODEL_FILE);
+  return new File(modelDir(model), modelFileName(model));
 }
 
 /** Describe whether a model is ready to run, and where its weights are. */
@@ -195,7 +203,7 @@ async function verifyAndPromote(
 
   const dir = modelDir(model);
   if (!dir.exists) dir.create({ intermediates: true });
-  const target = new File(dir, MODEL_FILE);
+  const target = new File(dir, modelFileName(model));
   if (target.exists) target.delete();
   partial.move(target);
   return { status: "installed", path: target.uri, bytes: target.size ?? 0 };
@@ -231,7 +239,7 @@ export async function downloadModel(
       });
       const dir = modelDir(model);
       if (!dir.exists) dir.create({ intermediates: true });
-      const partial = new File(dir, `${MODEL_FILE}.part`);
+      const partial = new File(dir, `${modelFileName(model)}.part`);
       if (partial.exists) partial.delete();
       await staged.copy(partial);
       options.onProgress?.({
@@ -251,7 +259,7 @@ export async function downloadModel(
   const dir = modelDir(model);
   if (!dir.exists) dir.create({ intermediates: true });
 
-  const partial = new File(dir, `${MODEL_FILE}.part`);
+  const partial = new File(dir, `${modelFileName(model)}.part`);
   if (partial.exists) partial.delete();
   // The existing install is only replaced once the new file has been verified,
   // so a failed or corrupt download never costs the user a working model.
@@ -302,7 +310,7 @@ export async function importModelFile(
   const dir = modelDir(model);
   if (!dir.exists) dir.create({ intermediates: true });
 
-  const partial = new File(dir, `${MODEL_FILE}.part`);
+  const partial = new File(dir, `${modelFileName(model)}.part`);
   if (partial.exists) partial.delete();
 
   try {
@@ -333,7 +341,12 @@ const GITHUB_MODEL_BASE =
 function hostedUrl(model: ModelDescriptor): string | null {
   const override = process.env.EXPO_PUBLIC_MODEL_BASE_URL;
   if (override) {
-    return `${override.replace(/\/$/, "")}/models-v${model.version}/${model.id}.ort`;
+    // Keep the artifact's real extension: ORT infers the model format from it.
+    const extension = model.artifactUrl?.endsWith(".onnx") ? ".onnx" : ".ort";
+    return `${override.replace(/\/$/, "")}/models-v${model.version}/${model.id}${extension}`;
+  }
+  if (model.artifactUrl) {
+    return model.artifactUrl;
   }
   return `${GITHUB_MODEL_BASE}/models-v${model.version}/${model.id}.ort`;
 }

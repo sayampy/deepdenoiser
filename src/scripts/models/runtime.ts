@@ -3,7 +3,7 @@
  *
  * One entry point for "denoise this PCM buffer with the selected model",
  * regardless of whether the underlying network is DeepFilterNet's recurrent
- * frame model or a MossFormer chunked spectrogram model.
+ * frame model or GTCRN's streaming STFT model.
  *
  * Sessions are cached per model id because each `InferenceSession` holds
  * native resources; creating one per run leaked sessions until the app ran
@@ -13,8 +13,8 @@
  */
 
 import { DeepFilterNet } from "../Denoiser";
+import { GtcrnAdapter } from "./gtcrn";
 import { MODELS, type ModelDescriptor, type ModelId } from "./registry";
-import { MossFormerAdapter } from "./mossformer";
 import { getInstallState, migrateBundledModel } from "./storage";
 import { applyStrength, strengthToMix } from "./strength";
 
@@ -43,6 +43,12 @@ export interface DenoiseEngine {
   /** Samples of algorithmic delay to drop from the start of the output. */
   readonly alignmentDelaySamples: number;
   /**
+   * Silence to prepend to the input so that delay is real rather than just a
+   * trim. Recurrent models need it; a streaming STFT whose delay is created by
+   * its own withheld first hop does not (defaults to alignmentDelaySamples).
+   */
+  readonly alignmentPrefixSamples?: number;
+  /**
    * Denoise a growing stream.
    *
    * `pcm` is the carried-over remainder plus the newly arrived audio. The
@@ -51,10 +57,16 @@ export interface DenoiseEngine {
    * always equals the input consumed, so timestamps stay aligned.
    */
   denoiseStream(pcm: Float32Array, options?: DenoiseOptions): Promise<StreamStep>;
-  /** Flush the trailing remainder; returns output of the same length. */
+  /**
+   * Flush the trailing remainder. A model with a one-hop delay emits its
+   * withheld output here, so the returned buffer can carry that alignment
+   * prefix; callers trim the model's delay once across the whole stream.
+   */
   denoiseFinal(rest: Float32Array, options?: DenoiseOptions): Promise<StreamStep>;
   /** Denoise a complete buffer in one call. */
   denoise(pcm: Float32Array, options?: DenoiseOptions): Promise<Float32Array>;
+  /** Clear recurrent/overlap state before a new file or recording. */
+  resetStream?(): void;
   /** Free native resources. */
   release(): Promise<void>;
 }
@@ -112,8 +124,8 @@ export function getEngine(id: ModelId): Promise<DenoiseEngine> {
     let modelPath: string = state.path;
 
     // Only the bundled DeepFilterNet3 asset has a managed copy to migrate.
-    // MossFormer models are always installed from a downloaded .ort file; the
-    // old unguarded call loaded the 13 MB DF3 weights into every engine.
+    // GTCRN is installed from a downloaded artifact; the old unguarded call
+    // loaded the 13 MB DF3 weights into every engine.
     if (id === "deepfilternet3") {
       try {
         const managed = await migrateBundledModel();
@@ -131,10 +143,13 @@ export function getEngine(id: ModelId): Promise<DenoiseEngine> {
       await net.loadModel(modelPath);
       return new DeepFilterNetEngine(id, net, model);
     }
+    if (model.family === "gtcrn") {
+      const adapter = new GtcrnAdapter(model);
+      await adapter.load(modelPath);
+      return adapter;
+    }
 
-    const adapter = new MossFormerAdapter(model);
-    await adapter.load(modelPath);
-    return adapter;
+    throw new Error(`No runtime adapter for model family: ${model.family}`);
   })();
 
   engines.set(id, created);
@@ -156,6 +171,21 @@ function delaySignal(signal: Float32Array, delay: number): Float32Array {
 class DeepFilterNetEngine implements DenoiseEngine {
   readonly sampleRate: number;
   readonly alignmentDelaySamples: number;
+  readonly alignmentPrefixSamples: number;
+  private streamActive = false;
+
+  /** DF3 is recurrent: state must survive across stream calls. */
+  private ensureStreaming(): void {
+    if (!this.streamActive) {
+      this.net.setupStreaming();
+      this.streamActive = true;
+    }
+  }
+
+  resetStream(): void {
+    this.net.resetStates();
+    this.streamActive = false;
+  }
 
   constructor(
     readonly modelId: ModelId,
@@ -164,6 +194,7 @@ class DeepFilterNetEngine implements DenoiseEngine {
   ) {
     this.sampleRate = model.sampleRate;
     this.alignmentDelaySamples = net.alignmentDelaySamples;
+    this.alignmentPrefixSamples = net.alignmentDelaySamples;
   }
 
   async denoiseStream(
@@ -175,7 +206,7 @@ class DeepFilterNetEngine implements DenoiseEngine {
     const consumed = frames * hop;
     if (frames === 0) return { pcm: new Float32Array(0), rest: pcm };
 
-    this.net.setupStreaming();
+    this.ensureStreaming();
     const out = new Float32Array(consumed);
     for (let i = 0; i < frames; i++) {
       const frame = pcm.subarray(i * hop, (i + 1) * hop);
@@ -202,7 +233,7 @@ class DeepFilterNetEngine implements DenoiseEngine {
     // the original length so no trailing zeros reach the output.
     const padded = new Float32Array(hop);
     padded.set(rest.subarray(0, Math.min(rest.length, hop)));
-    this.net.setupStreaming();
+    this.ensureStreaming();
     const out = new Float32Array(hop);
     await this.net.processFrame(padded, out, 0);
     const delayed = delaySignal(padded, this.alignmentDelaySamples);
@@ -214,6 +245,7 @@ class DeepFilterNetEngine implements DenoiseEngine {
   }
 
   async denoise(pcm: Float32Array, options: DenoiseOptions = {}): Promise<Float32Array> {
+    this.resetStream();
     const { pcm: head, rest } = await this.denoiseStream(pcm, options);
     const { pcm: tail } = await this.denoiseFinal(rest, options);
     const out = new Float32Array(head.length + tail.length);
@@ -224,6 +256,7 @@ class DeepFilterNetEngine implements DenoiseEngine {
   }
 
   async release(): Promise<void> {
+    this.streamActive = false;
     await this.net.release();
   }
 }

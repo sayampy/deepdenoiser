@@ -5,6 +5,7 @@ import * as theme from "@/src/constants/theme";
 import { importToDocuments, cleanupTempCache } from "@/src/scripts/denoiseCache";
 import { AppSettings, getSettings } from "@/src/scripts/settings";
 import { getSaveDirectoryName } from "@/src/scripts/saveDestinations";
+import { isSupportedMediaFile, isVideoFile } from "@/src/scripts/mediaFormats";
 import Feather from "@expo/vector-icons/Feather";
 
 import * as DocumentPicker from "expo-document-picker";
@@ -111,16 +112,25 @@ export default function HomeScreen() {
 
   const handleImportFile = async () => {
     try {
+      // Show all files: Android reports MKV/TS/Ogg MIME types inconsistently,
+      // so filtering on audio/* and video/* hides otherwise decodable files.
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["audio/*", "video/*"],
+        type: "*/*",
         copyToCacheDirectory: true,
       });
 
       if (result.canceled) return;
 
       if (result.assets && result.assets.length > 0) {
-        setIsLoading(true);
         const asset = result.assets[0];
+        if (!isSupportedMediaFile(asset.name)) {
+          Alert.alert(
+            "Unsupported file",
+            "Choose an audio or video file supported by Android MediaCodec (MP3, M4A, WAV, FLAC, Ogg, AAC, AMR, MP4, MOV, 3GP, WebM, MKV, TS, AVI, MPEG).",
+          );
+          return;
+        }
+        setIsLoading(true);
         const imported = await importToDocuments(asset.uri, asset.name);
         try {
           new fs.File(asset.uri).delete();
@@ -130,7 +140,7 @@ export default function HomeScreen() {
         setTempFile({
           uri: imported.uri,
           name: asset.name,
-          type: asset.mimeType?.startsWith("audio") ? "Audio" : "Video",
+          type: isVideoFile(asset.name, asset.mimeType) ? "Video" : "Audio",
         });
         setIsLoading(false);
       }

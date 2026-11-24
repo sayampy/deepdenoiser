@@ -89,13 +89,12 @@ type RecordingEngine = Awaited<ReturnType<typeof getEngine>>;
 /**
  * Clear a denoiser's per-run stream state.
  *
- * Only the MossFormer adapter keeps overlap state across `denoiseStream`
- * calls; DeepFilterNet is stateless between calls because the engine calls
- * `setupStreaming()` on every stream/final step, so no reset is needed there.
+ * GTCRN keeps STFT/cache state and DeepFilterNet keeps recurrent state across
+ * `denoiseStream` calls, so both must be cleared when the stream is interrupted
+ * by raw-passthrough chunks.
  */
 function resetStreamIfSupported(engine: RecordingEngine | null): void {
-  // `resetStream` is adapter-specific: it exists on MossFormerAdapter but is
-  // not part of the DenoiseEngine contract, so probe for it.
+  // `resetStream` is optional on the DenoiseEngine contract; probe for it.
   const maybe = engine as
     | (RecordingEngine & { resetStream?: () => void })
     | null;
@@ -212,8 +211,8 @@ export default function RecordingScreen() {
 
   /**
    * Write denoised samples in lockstep with the original capture. Chunked
-   * models (MossFormer) emit slightly fewer samples than they consume at the
-   * start of a stream, so produced samples are queued and only written as the
+   * models with a one-hop start-up delay (GTCRN) emit slightly fewer samples
+   * than they consume, so produced samples are queued and only written as the
    * original file grows. Any residual lag is padded at finalization.
    */
   const flushDenoisedOutput = async (file: fs.File, inputSamplesWritten: number) => {
@@ -397,16 +396,14 @@ export default function RecordingScreen() {
                 // If the previous chunk was written raw, the model's recurrent
                 // state corresponds to audio seconds behind the current chunk.
                 // Reset it so denoising resumes from a clean state instead of
-                // a stale one. DeepFilterNet is stateful too, but it only
-                // commits that state inside denoiseStream() (via
-                // setupStreaming), so the call below already resets it.
+                // a stale one.
                 if (wasPassthroughRef.current) {
                   resetStreamIfSupported(engine);
                 }
                 const streamInput = audioBufferRef.current;
                 const engineRate = engine.sampleRate;
                 // The recorder always captures at 48 kHz. Models at other rates
-                // (e.g. MossFormerGAN 16K) are fed resampled audio and their
+                // (e.g. GTCRN 16K) are fed resampled audio and their
                 // output is resampled straight back, so both staged PCM files
                 // stay in the source domain and sample-for-sample aligned.
                 const modelInput =
@@ -530,9 +527,19 @@ export default function RecordingScreen() {
       resetStreamIfSupported(engine);
       // Prefix the stream with the model's algorithmic delay so the delayed
       // output lines up with the original file after the head is trimmed.
-      const alignmentPadding = engineRef.current?.alignmentDelaySamples ?? 0;
+      // The staged PCM files and audioBufferRef are at the recorder rate (48k),
+      // while alignmentDelaySamples is in the model's own rate — convert for
+      // the input prefix but keep the output trim counter in model samples.
+      const engineForDelay = engineRef.current;
+      const alignmentDelayModel = engineForDelay?.alignmentDelaySamples ?? 0;
+      // Some models create their delay in the output buffer instead of needing
+      // silence fed in; only prepend what the engine actually requires.
+      const prefixModel = engineForDelay?.alignmentPrefixSamples ?? alignmentDelayModel;
+      const alignmentPadding = Math.round(
+        (prefixModel * SAMPLE_RATE) / (engineForDelay?.sampleRate ?? SAMPLE_RATE),
+      );
       audioBufferRef.current = new Float32Array(alignmentPadding);
-      outputPaddingRemainingRef.current = alignmentPadding;
+      outputPaddingRemainingRef.current = alignmentDelayModel;
 
       const config: RecordingConfig = {
         sampleRate: SAMPLE_RATE,
@@ -594,7 +601,9 @@ export default function RecordingScreen() {
         // Handle any remaining samples in the buffer. The engine returns
         // exactly as many samples as it was given, so no chunk padding leaks
         // into the tail of the file.
-        if (audioBufferRef.current.length > 0 && engineRef.current) {
+        // Flush unconditionally: with a one-hop-delayed model the last hop's
+        // output is still owed even when no raw samples remain in the buffer.
+        if (engineRef.current) {
           const pending = audioBufferRef.current;
           const engineRate = engineRef.current.sampleRate;
           const modelPending =

@@ -390,7 +390,10 @@ export async function storeDecodedPCM(
 ): Promise<void> {
   const index = await readJsonIndex<DecodeEntry>(DECODE_INDEX_NAME);
 
-  const target = new fs.File(intermediatesDir(), `${key.slice(0, 16)}_dec.pcm`);
+  const target = new fs.File(
+    intermediatesDir(),
+    `${sanitizeFileName(key.slice(0, 16))}_dec.pcm`,
+  );
   if (target.exists) target.delete();
   await file.copy(target, { overwrite: true });
 
@@ -428,7 +431,10 @@ export async function lookupDenoisedPCM(key: string): Promise<fs.File | null> {
 export async function storeDenoisedPCM(key: string, file: fs.File): Promise<void> {
   const index = await readJsonIndex<DenoiseEntry>(DENOISE_INDEX_NAME);
 
-  const target = new fs.File(intermediatesDir(), `${key.slice(0, 16)}_den.pcm`);
+  const target = new fs.File(
+    intermediatesDir(),
+    `${sanitizeFileName(key.slice(0, 16))}_den.pcm`,
+  );
   if (target.exists) target.delete();
   await file.copy(target, { overwrite: true });
 

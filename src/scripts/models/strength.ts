@@ -4,8 +4,8 @@
  * The DeepFilterNet graph shipped in this app exposes no attenuation input
  * (its inputs are `input_frame` plus the recurrent state tensors), so the old
  * "attenuation limit" slider was bound to a tensor nothing consumed — every
- * value produced identical audio. MossFormer's exported graphs likewise return
- * a full mask.
+ * value produced identical audio. GTCRN's exported graph likewise returns a
+ * full enhanced spectrum rather than an attenuation scalar.
  *
  * Strength is therefore applied as a post-inference mix between the model
  * output and the delayed dry signal:

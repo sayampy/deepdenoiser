@@ -9,12 +9,13 @@ import ShareBtn from "@/src/components/shareBtn";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import {
-  startBackgroundProcessing,
-  stopBackgroundProcessing,
-} from "@/modules/AudioProcessorModule";
+  acquireBackgroundProcessing,
+  type BackgroundRelease,
+} from "@/src/scripts/backgroundProcessing";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
 import { MODELS } from "@/src/scripts/models/registry";
 import { getEngine } from "@/src/scripts/models/runtime";
+import { isVideoFile } from "@/src/scripts/mediaFormats";
 import { DEFAULT_STRENGTH } from "@/src/scripts/models/strength";
 import {
   DEFAULT_MODEL_ID,
@@ -152,15 +153,7 @@ export default function ProcessScreen() {
         setIsLoading(true);
         const inputFile = new fs.File(fileuri);
         setOriginalFile(inputFile);
-        const isVideo =
-          !!inputFile.type?.startsWith("video") ||
-          filename.toLowerCase().endsWith(".mp4") ||
-          filename.toLowerCase().endsWith(".mov") ||
-          filename.toLowerCase().endsWith(".mkv") ||
-          filename.toLowerCase().endsWith(".avi") ||
-          filename.toLowerCase().endsWith(".m4v") ||
-          filename.toLowerCase().endsWith(".webm");
-        setIsFileTypeVideo(isVideo);
+        setIsFileTypeVideo(isVideoFile(filename, inputFile.type));
       } catch (error) {
         console.error("Error preparing file:", error);
         setError(error instanceof Error ? error : new Error(String(error)));
@@ -207,10 +200,12 @@ export default function ProcessScreen() {
     setProgressText("Initializing...");
     setEta(null);
     setDenoisedFile(null);
+    // One shared foreground service for every in-flight pass. Released in the
+    // finally block below, so leaving the app mid-denoise keeps the JS thread
+    // alive until the output is cached and written.
+    let releaseBackground: BackgroundRelease | null = null;
     try {
-      // ONNX inference is driven from JS. A foreground service + partial wake
-      // lock keeps that JS thread alive when the user leaves the app mid-pass.
-      await startBackgroundProcessing();
+      releaseBackground = await acquireBackgroundProcessing();
       const startTime = Date.now();
 
       // ---- Layer 1: decoded PCM (input identity only) ----
@@ -298,6 +293,9 @@ export default function ProcessScreen() {
         setProgressText("Optimizing AI model...");
         const engine = await getEngine(selectedModelId);
         const model = getModel(selectedModelId);
+        // Engines are cached process-wide. Clear recurrent/overlap state so a
+        // new file never inherits the tail of the previous one.
+        engine.resetStream?.();
 
         setProgressText("Removing noise...");
         setProgress(0);
@@ -313,7 +311,11 @@ export default function ProcessScreen() {
 
         denoisedPcmFile = new fs.File(fs.Paths.cache, stagePcmPath("stage_dn"));
 
-        let inputBuffer: Float32Array = new Float32Array(alignmentDelay);
+        // Recurrent models need real input silence to absorb their delay;
+        // a streaming STFT carries its own leading zeros in the output.
+        let inputBuffer: Float32Array = new Float32Array(
+          engine.alignmentPrefixSamples ?? alignmentDelay,
+        );
         let processedInputSamples = 0;
         let firstWrite = true;
         let outputSamplesSkipped = 0;
@@ -373,18 +375,16 @@ export default function ProcessScreen() {
           targetRate,
         );
 
-        if (inputBuffer.length > 0) {
-          // Flush the carry-over without padding a whole chunk of silence into
-          // the output: ask for exactly the remaining samples.
-          const finalStep = await engine.denoiseFinal(inputBuffer);
-          let finalFrame = finalStep.pcm;
-          if (outputSamplesSkipped < alignmentDelay) {
-            const skip = Math.min(alignmentDelay - outputSamplesSkipped, finalFrame.length);
-            finalFrame = finalFrame.subarray(skip);
-          }
-          if (finalFrame.length > 0) {
-            await writePCMChunk(denoisedPcmFile, finalFrame, !firstWrite);
-          }
+        // Always flush, even with no carry-over: a one-hop-delayed model still
+        // owes the last hop's output before the PCM file is complete.
+        const finalStep = await engine.denoiseFinal(inputBuffer);
+        let finalFrame = finalStep.pcm;
+        if (outputSamplesSkipped < alignmentDelay) {
+          const skip = Math.min(alignmentDelay - outputSamplesSkipped, finalFrame.length);
+          finalFrame = finalFrame.subarray(skip);
+        }
+        if (finalFrame.length > 0) {
+          await writePCMChunk(denoisedPcmFile, finalFrame, !firstWrite);
         }
 
         void model;
@@ -456,7 +456,7 @@ export default function ProcessScreen() {
       setIsErrorModalVisible(true);
       trackAppError(err, { context: "handleDenoise" });
     } finally {
-      await stopBackgroundProcessing().catch(() => {});
+      await releaseBackground?.();
       setDenoising(false);
       setProgressText("");
       setEta(null);

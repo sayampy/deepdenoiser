@@ -1,33 +1,59 @@
 # On-device inference performance notes
 
-Baseline (SDK 57 tree): DeepFilterNet3 runs with `["xnnpack","cpu"]`, graph
-optimization `all`, `interOpNumThreads: 1`, `intraOpNumThreads: 4`;
-`processFrame()` already reuses its 12 named state tensors. MossFormer runs
-CPU-only with `intraOpNumThreads: 2` and has its own JS radix-2 FFT. Three
-denoise cache layers (final / decode / denoise PCM) avoid repeat work.
+Current models:
 
-## Ranked speedup ideas
+- **GTCRN** — 16 kHz streaming STFT model, 535,638-byte ONNX artifact, 512/256
+  STFT, three carried cache tensors. Its frontend mirrors sherpa-onnx's
+  `OnlineSpeechDenoiser`; a local parity check against the official Python API
+  matched to 5.7e-7 max absolute sample error on an 8 s noisy clip. Host CPU RTF
+  measured 0.071 (≈14× faster than real time). This is the model to use for live
+  recording and for general broadband/white-noise removal on low-end devices.
+- **DeepFilterNet3** — 48 kHz recurrent speech model, bundled, 13 MB. Runs with
+  `["xnnpack","cpu"]`, graph optimisation `all`, `interOpNumThreads: 1`, and
+  device-scaled `intraOpNumThreads` (1/2/4). `processFrame()` reuses its 12
+  named state tensors and writes into the caller's destination buffer. State now
+  survives across stream calls (it used to be reset on every 5 s read and every
+  100 ms recording chunk).
+
+MossFormer was removed: its committed adapter had multiple provable correctness
+bugs (real mask read as complex pairs, overlap stitching dropping a full stride
+per window, 2048-point FFT used with 1920-point bin layout), and even correct
+inference ran slower than real time on mid-range phones. GTCRN replaces it for
+general-purpose enhancement.
+
+Three denoise cache layers (final / decode / denoise PCM) avoid repeat work on
+file processing.
+
+## Ranked speedup ideas (remaining)
 
 | # | Idea | Expected gain | Effort / risk |
 |---|---|---|---|
-| 1 | Sweep `intraOpNumThreads` at 1/2/4/8 on real devices | 1.2–2x on big cores | Trivial; watch thermal throttling. No thread-affinity control (`extra` options are WASM/Node-only). |
-| 2 | Enable XNNPACK for MossFormer (currently CPU-only) | ~1.2–2x on GRU/conv-heavy graphs | One-line A/B; small numeric drift, re-check quality. NNAPI stays off per project directive. |
-| 3 | Remove per-frame JSI/tensor churn in `runDenoiseLoop` | 5–20% on long files | Reuse preallocated input/output tensors and drop `Promise.all` for a single feed. `session.run()` per frame is unavoidable — IOBinding is unavailable. |
-| 4 | int8 static/dynamic quantization of conv/GRU weights | 2–4x smaller, ~1.5–3x faster CPU | Needs re-export + calibration. **Must bump `version`/`bytes`/`sha256` in `src/scripts/models/registry.ts` and cache prefixes (`"v1"`/`"dn-v2"`) in `denoiseCache.ts`** — cache keys currently use only geometry, so a quantized model with the same shape would silently reuse stale WAVs. fp16 gives no CPU gain on ARM. |
-| 5 | Precompute FFT twiddles / NEON DSP for MossFormer STFT | 1.3–3x of the JS DSP portion | `mossformer.ts` recomputes `cos`/`sin` in the inner loop. Same math = low quality risk; profile JS STFT separately from ORT time. |
-| 6 | Reduce 75% chunk overlap for MossFormer | up to ~33% fewer inferences | High seam-artifact risk; only with cross-fade + PESQ/STOI validation. |
+| 1 | Sweep device thread counts on real hardware (already adaptive at 1/2/4) | up to ~1.5x | Trivial. Watch thermal throttling; `extra` options are WASM/Node-only in ORT-RN. |
+| 2 | Remove per-frame JSI/tensor churn in `runDenoiseLoop` | 5–20% on long files | Reuse preallocated tensors. `session.run()` per frame is unavoidable — IOBinding is unavailable. |
+| 3 | int8 quantisation of DF3 conv weights | ~2x smaller file, little/no CPU speed gain | Published DF3 INT8 RTF 0.018 vs 0.017 fp32; GRU blocks full quantisation. Would need version/hash + cache-key bumps. |
+| 4 | Low-lookahead DF2/DF3 `_ll` exports | latency 40 ms → ~10 ms | Requires new ONNX artifact; no speed change. |
 
-## Hard constraints (ORT React Native 1.24.3, still npm `latest` as of 2026-11)
+fp16 gives no CPU gain on ARM. NNAPI stays off per project directive (GRU
+support is driver-dependent and can silently fall back or return zeros).
 
+## Hard constraints (ORT React Native 1.24.3, npm `latest` as of 2026-11)
+
+- ORT infers format from the file extension: a plain ONNX graph MUST be saved
+  as `.onnx`, not `.ort` (`.ort` means the optimised ORT format). Storing the
+  upstream GTCRN `.onnx` as `model.ort` produced `ORT model verification
+  failed` on device; `modelFileName()` in `storage.ts` now preserves it.
 - No IOBinding → no zero-copy feed/fetch.
-- No batch dimension (input `[512]`, static batch=1) and 12-state recurrent graph → no batching or parallel frames.
+- No batch dimension for DF3 (input `[512]`, static batch=1) and 12-state
+  recurrent graph → no batching or parallel frames.
 - No Worker API in RN; JSI worklets cannot host ORT → no worker parallelism.
-- `extra` session options (thread affinities/optimization overrides) are WebAssembly/Node-only.
-- ORT Mobile is not exposed; NNAPI GRU support is device-dependent and disabled by project directive.
+- `extra` session options (thread affinities/optimisation overrides) are
+  WebAssembly/Node-only.
+- ORT Mobile is not exposed; GPU delegates are not available to this app.
 
 ## Measurement protocol
 
 Instrument `performance.now()` around `session.run()` and the JS transform
 stages; report RTF = inference seconds / audio seconds over a fixed 60 s clip,
-3 warm runs, on low/mid/high devices, plus PESQ/STOI for any quantization or
-overlap change. Re-verify cache invalidation after every artifact change.
+3 warm runs, on low/mid/high devices. Any artifact change must bump
+`version`/`bytes`/`sha256` in `src/scripts/models/registry.ts` and the cache
+prefixes in `denoiseCache.ts`, otherwise stale cached WAVs are reused.

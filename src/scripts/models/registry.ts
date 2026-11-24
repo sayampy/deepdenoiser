@@ -5,23 +5,22 @@
  *
  *  - DeepFilterNet3 is a recurrent frame-by-frame model (512-sample hops,
  *    stateful tensors that must be reset per run).
- *  - MossFormer2_SE_48K and MossFormerGAN_SE_16K are chunked spectrogram-mask
- *    models with their own sample rates, STFT parameters and fixed chunk
- *    shapes.
+ *  - GTCRN is a tiny streaming STFT model with explicit cache tensors and a
+ *    256-sample hop, fast enough for live recording.
  *
  * Forcing those into one API is what makes model selection brittle, so each
  * entry declares its contract as data and the runtime adapters
  * (`src/scripts/models/`) interpret it.
  */
 
-export type ModelId = "deepfilternet3" | "mossformer2_se_48k" | "mossformergan_se_16k";
+export type ModelId = "deepfilternet3" | "gtcrn";
 
-export type ModelFamily = "deepfilternet" | "mossformer";
+export type ModelFamily = "deepfilternet" | "gtcrn";
 
 /** How the adapter must feed audio to the session. */
 export interface StreamingContract {
-  /** "frame" = recurrent stateful model, "chunk" = independent windowed passes. */
-  mode: "frame" | "chunk";
+  /** All current models are stateful frame/hop models. */
+  mode: "frame";
   /** Samples consumed per inference call (frame size or chunk size). */
   chunkSamples: number;
   /** Start-up padding so the model has context before the first real sample. */
@@ -53,6 +52,12 @@ export interface ModelDescriptor {
   sampleRate: number;
   /** Bumped when the hosted artifact changes so downloads can be invalidated. */
   version: string;
+  /**
+   * Optional exact artifact URL. Models whose weights are published by the
+   * upstream project use it instead of this repo's release assets; an
+   * EXPO_PUBLIC_MODEL_BASE_URL override still wins.
+   */
+  artifactUrl?: string;
   /** Expected byte size of the artifact, used to detect truncated downloads. */
   bytes: number;
   /** SHA-256 of the artifact; the download is rejected when it does not match. */
@@ -65,7 +70,7 @@ export interface ModelDescriptor {
   streaming: StreamingContract;
   spectrum: SpectrumContract | null;
   /** Rough CPU cost class, shown in the picker as a speed label. */
-  cost: "fast" | "slow" | "slowest";
+  cost: "fast" | "slowest";
   /** What the model is intended for, shown in the picker as a purpose label. */
   purpose: "speech" | "general";
   /** Notes surfaced in the model detail sheet. */
@@ -96,67 +101,45 @@ export const MODELS: Record<ModelId, ModelDescriptor> = {
     purpose: "speech",
     notes: ["Bundled with the app, so no download is needed."],
   },
-  mossformer2_se_48k: {
-    id: "mossformer2_se_48k",
-    name: "MossFormer2 SE 48K",
-    description: "48 kHz general-purpose enhancement. Needs a one-time download.",
-    family: "mossformer",
-    sampleRate: 48000,
+  gtcrn: {
+    id: "gtcrn",
+    name: "GTCRN",
+    description:
+      "Tiny 16 kHz denoiser. ~0.5 MB, runs far faster than real time on CPU.",
+    family: "gtcrn",
+    sampleRate: 16000,
     version: "1",
-    bytes: 228773224,
-    sha256: "7a8e34ffeacba8c0ae374dc0b273edd50b0542b40bb19e42985783826b01f719",
-    source: "alibabasglab/MossFormer2_SE_48K (ClearerVoice-Studio)",
-    license: "Apache-2.0",
+    artifactUrl:
+      "https://github.com/k2-fsa/sherpa-onnx/releases/download/speech-enhancement-models/gtcrn_simple.onnx",
+    bytes: 535638,
+    sha256:
+      "e77603ac0c23dac3227dd2d7135b3a585cbee2679048aecfa886657d3ae1b534",
+    source: "Xiaobin-Rong/GTCRN (sherpa-onnx streaming export)",
+    license: "MIT",
     bundled: false,
     streaming: {
-      mode: "chunk",
-      chunkSamples: 4 * 48000,
-      lookaheadSamples: 0,
-      alignmentDelaySamples: 0,
+      mode: "frame",
+      // Streaming STFT: 512-sample window, 256-sample hop, cache carried
+      // between hops. One hop of overlap-add latency (16 ms at 16 kHz).
+      chunkSamples: 256,
+      lookaheadSamples: 512,
+      alignmentDelaySamples: 256,
     },
     spectrum: {
-      fftSize: 1920,
-      windowLength: 1920,
-      hopLength: 384,
-      bins: 961,
+      fftSize: 512,
+      windowLength: 512,
+      hopLength: 256,
+      bins: 257,
       compression: 1,
       centered: false,
     },
-    cost: "slow",
-    purpose: "general",
-    notes: ["Runs in 4 s chunks; expect several times real time on mid-range phones."],
-  },
-  mossformergan_se_16k: {
-    id: "mossformergan_se_16k",
-    name: "MossFormerGAN SE 16K",
-    description: "16 kHz general-purpose enhancement. Needs a one-time download.",
-    family: "mossformer",
-    sampleRate: 16000,
-    version: "1",
-    bytes: 30447888,
-    sha256: "8372424e296265459d578e8a9527f294667e83e92f24386e6a60c276d9588acd",
-    source: "alibabasglab/MossFormerGAN_SE_16K (ClearerVoice-Studio)",
-    license: "Apache-2.0",
-    bundled: false,
-    streaming: {
-      mode: "chunk",
-      // 201 frames * hop 100 with centring = 20100 samples; the fixed square
-      // attention grid is why this cannot vary.
-      chunkSamples: 20100,
-      lookaheadSamples: 0,
-      alignmentDelaySamples: 0,
-    },
-    spectrum: {
-      fftSize: 400,
-      windowLength: 400,
-      hopLength: 100,
-      bins: 201,
-      compression: 0.3,
-      centered: true,
-    },
     cost: "fast",
     purpose: "general",
-    notes: ["Resamples to 16 kHz, so highs are lost compared with the 48 kHz models."],
+    notes: [
+      "About 0.5 MB and 48k parameters — the fastest model here.",
+      "Resamples to 16 kHz, so highs are lost compared with the 48 kHz models.",
+      "Ideal for live recording and low-end devices.",
+    ],
   },
 };
 

@@ -172,11 +172,9 @@ export default function ModelBottomSheet({
 
       const file = picked.assets[0];
       // Choose target model based on file name or prompt
-      const targetId: ModelId = file.name.toLowerCase().includes("mossformergan")
-        ? "mossformergan_se_16k"
-        : file.name.toLowerCase().includes("mossformer2")
-          ? "mossformer2_se_48k"
-          : "mossformer2_se_48k";
+      // GTCRN is the only downloadable model; a manually picked artifact is
+      // always imported as that model (it is verified by bytes + SHA-256).
+      const targetId: ModelId = "gtcrn";
 
       setRows((prev) => ({ ...prev, [targetId]: { kind: "downloading", fraction: 0 } }));
       await importModelFile(targetId, file.uri);
@@ -300,7 +298,7 @@ export default function ModelBottomSheet({
                     <View style={styles.badgePill}>
                       <Feather name="zap" size={12} color={COLORS.subtext} />
                       <Text style={styles.badgeText}>
-                        {model.cost === "fast" ? "Fastest" : model.cost === "slow" ? "Balanced" : "Deep SE"}
+                        {model.cost === "fast" ? "Fastest" : "Deep SE"}
                       </Text>
                     </View>
 

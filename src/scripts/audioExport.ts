@@ -266,27 +266,7 @@ export async function prepareExport(
   return encodeWavToMp3(source, cached, bitrate, onProgress);
 }
 
-/** MIME type for a file, derived from its extension when the OS does not know. */
-export function mimeForFile(file: File): string | null {
-  if (file.type && file.type.includes("/")) return file.type;
-  const extension = file.name.toLowerCase().split(".").pop() ?? "";
-  switch (extension) {
-    case "mp3":
-      return "audio/mpeg";
-    case "wav":
-      return "audio/wav";
-    case "m4a":
-      return "audio/mp4";
-    case "mp4":
-      return "video/mp4";
-    case "webm":
-      return "video/webm";
-    case "mkv":
-      return "video/x-matroska";
-    default:
-      return null;
-  }
-}
+export { mimeForFile } from "./mediaFormats";
 
 /** RFC-2396-safe base name, so File() never throws on '#' or '%' in a title. */
 function safeStem(name: string): string {
