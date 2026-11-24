@@ -131,7 +131,7 @@ export default function AdvanceSettings({
             </View>
           )}
 
-          <View style={{ height: 1, backgroundColor: "rgba(255, 255, 255, 0.05)", marginVertical: 15 }} />
+          <View style={{ height: 1, backgroundColor: theme.COLORS.outlineVariant, marginVertical: 15 }} />
 
           <CustomSlider
             label="Denoising strength"
@@ -145,7 +145,7 @@ export default function AdvanceSettings({
 
           {showSilenceTrim && (
             <>
-              <View style={{ height: 1, backgroundColor: "rgba(255, 255, 255, 0.05)", marginVertical: 15 }} />
+              <View style={{ height: 1, backgroundColor: theme.COLORS.outlineVariant, marginVertical: 15 }} />
               <SilenceTrimSettingsBlock
                 settings={silenceTrim}
                 onChange={onSilenceTrimChange}
@@ -182,7 +182,7 @@ const makeStyles = () => StyleSheet.create({
     paddingHorizontal: theme.SPACING.medium,
     paddingBottom: theme.SPACING.medium,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.05)",
+    borderTopColor: theme.COLORS.outlineVariant,
   },
   settingItem: {
     marginTop: theme.SPACING.small,

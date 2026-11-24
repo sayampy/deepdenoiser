@@ -19,7 +19,6 @@ import { InferenceSession, Tensor } from "onnxruntime-react-native";
 
 import type { ModelDescriptor, ModelId } from "./registry";
 import type { DenoiseEngine, DenoiseOptions, StreamStep } from "./runtime";
-import { preferredIntraOpThreads } from "./sessionOptions";
 import { applyStrength, strengthToMix } from "./strength";
 
 const HOP = 256;
@@ -75,6 +74,10 @@ export class GtcrnAdapter implements DenoiseEngine {
   private convTensor!: Tensor;
   private traTensor!: Tensor;
   private interTensor!: Tensor;
+  /** Input tensor reused every hop (ORT-RN copies its buffer into native memory). */
+  private mixTensor!: Tensor;
+  /** Zero-filled hop used to flush the final overlap-add tail. */
+  private readonly zeroHop = new Float32Array(HOP);
 
   constructor(model: ModelDescriptor) {
     this.modelId = model.id;
@@ -105,7 +108,14 @@ export class GtcrnAdapter implements DenoiseEngine {
       executionProviders: ["xnnpack", "cpu"],
       graphOptimizationLevel: "all",
       interOpNumThreads: 1,
-      intraOpNumThreads: preferredIntraOpThreads(),
+      // GTCRN is a tiny graph (~300 nodes: 14 GRU, 18 ScatterND and ~200
+      // Transpose/Slice/Reshape/Gather/Unsqueeze/Concat) of which XNNPACK can
+      // accelerate only the handful of Conv/MatMul nodes. The rest runs on the
+      // CPU EP, so extra intra-op threads buy nothing and add per-hop barrier
+      // cost on 62.5 calls/second. Host measurements: 0.487 ms/hop at 1 thread
+      // vs 0.509 ms at 4 and 0.745 ms at 8. Phones are even more sensitive to
+      // that scheduling overhead, so keep this model strictly single-threaded.
+      intraOpNumThreads: 1,
     };
     try {
       this.session = await InferenceSession.create(path, options);
@@ -127,6 +137,7 @@ export class GtcrnAdapter implements DenoiseEngine {
     this.convTensor = new Tensor("float32", this.convCache, CONV_CACHE_SHAPE);
     this.traTensor = new Tensor("float32", this.traCache, TRA_CACHE_SHAPE);
     this.interTensor = new Tensor("float32", this.interCache, INTER_CACHE_SHAPE);
+    this.mixTensor = new Tensor("float32", this.spec, [1, BINS, 1, 2]);
     this.resetStream();
   }
 
@@ -188,13 +199,14 @@ export class GtcrnAdapter implements DenoiseEngine {
     const produced = new Float32Array((paddedHops + 1) * HOP);
     for (let i = 0; i < paddedHops; i++) {
       const from = i * HOP;
-      const full = new Float32Array(HOP);
+      this.zeroHop.fill(0);
       if (from < pending.length) {
-        full.set(pending.subarray(from, Math.min(from + HOP, pending.length)));
+        this.zeroHop.set(pending.subarray(from, Math.min(from + HOP, pending.length)));
       }
-      await this.processHop(full, produced, i * HOP);
+      await this.processHop(this.zeroHop, produced, i * HOP);
     }
-    await this.processHop(new Float32Array(HOP), produced, paddedHops * HOP);
+    this.zeroHop.fill(0);
+    await this.processHop(this.zeroHop, produced, paddedHops * HOP);
 
     // produced[0..HOP) is the withheld stream hop (or leading silence), then
     // the remainder's samples. Callers trim alignmentDelaySamples from the
@@ -249,7 +261,7 @@ export class GtcrnAdapter implements DenoiseEngine {
     }
 
     const results = await this.session.run({
-      mix: new Tensor("float32", this.spec, [1, BINS, 1, 2]),
+      mix: this.mixTensor,
       conv_cache: this.convTensor,
       tra_cache: this.traTensor,
       inter_cache: this.interTensor,

@@ -350,6 +350,80 @@ export async function writePCMChunk(
   await file.write(new Uint8Array(pcmChunk.buffer), { append });
 }
 
+/**
+ * Force a raw 16-bit mono PCM file to an exact sample count.
+ *
+ * A streaming denoiser's final flush can emit a few samples more or fewer than
+ * the source contained. Those surplus samples are the model's alignment
+ * padding at the HEAD of the stream, so they must be dropped — otherwise the
+ * audible content is shifted later than the source (and than the video track).
+ * If the engine came up short, silence is appended so the timeline still ends
+ * exactly where the source did.
+ *
+ * Copy through a staging file in bounded chunks: the PCM can be hundreds of
+ * megabytes, and rewriting the same file in place cannot shrink it.
+ */
+export async function alignPCMToSampleCount(
+  file: fs.File,
+  targetSamples: number,
+): Promise<void> {
+  if (!file.exists) throw new Error(`Audio data is missing (${file.name}).`);
+
+  const size = file.size ?? 0;
+  if (size % 2 !== 0) {
+    throw new Error(`Invalid PCM data in ${file.name}: odd byte count.`);
+  }
+  const target = Math.floor(targetSamples);
+  if (target < 0) throw new Error("Invalid target sample count.");
+
+  const currentSamples = size / 2;
+  if (currentSamples === target) return;
+
+  const skipBytes = currentSamples > target ? (currentSamples - target) * 2 : 0;
+  const targetBytes = target * 2;
+  const aligned = new fs.File(
+    fs.Paths.cache,
+    `aligned_${Date.now()}_${Math.random().toString(36).slice(2)}.pcm`,
+  );
+  const source = file.open();
+  try {
+    source.offset = skipBytes;
+    let written = 0;
+    const chunkBytes = 256 * 1024;
+    while (written < targetBytes) {
+      const length = Math.min(chunkBytes, targetBytes - written);
+      const bytes = source.readBytesSync(length);
+      if (bytes.byteLength === 0) break;
+      await aligned.write(bytes, { append: written > 0 });
+      written += bytes.byteLength;
+    }
+    // Denoiser produced fewer samples than the source: pad the tail so the
+    // timeline keeps its original length.
+    while (written < targetBytes) {
+      const length = Math.min(chunkBytes, targetBytes - written);
+      await aligned.write(new Uint8Array(length), { append: true });
+      written += length;
+    }
+  } finally {
+    source.close();
+  }
+
+  try {
+    // Atomic swap for the stage/cache file the caller still holds a reference
+    // to; the `File` object keeps pointing at the same path after the move.
+    await aligned.move(file, { overwrite: true });
+  } catch (error) {
+    if (aligned.exists) {
+      try {
+        aligned.delete();
+      } catch {
+        // Ignore cleanup failure; the caller reports the original move error.
+      }
+    }
+    throw error;
+  }
+}
+
 export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
   const outputFile = new fs.File(fs.Paths.cache, `processed_${Date.now()}.pcm`);
 

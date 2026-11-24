@@ -127,7 +127,7 @@ const makeStyles = () => StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(0, 229, 255, 0.2)",
+    borderColor: `${COLORS.primary}33`,
   },
   textContainer: {
     flex: 1,
@@ -144,12 +144,12 @@ const makeStyles = () => StyleSheet.create({
     color: COLORS.text,
   },
   rateBadge: {
-    backgroundColor: "rgba(0, 229, 255, 0.12)",
+    backgroundColor: `${COLORS.primary}1E`,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: RADIUS.full,
     borderWidth: 1,
-    borderColor: "rgba(0, 229, 255, 0.25)",
+    borderColor: `${COLORS.primary}40`,
   },
   rateBadgeText: {
     fontSize: FONT_SIZE.xsmall - 2,

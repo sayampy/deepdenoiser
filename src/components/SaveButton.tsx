@@ -128,7 +128,7 @@ export default function SaveButton({
       <Feather
         name={saving ? "clock" : saved ? "check" : "download"}
         size={18}
-        color={saved ? theme.COLORS.white : theme.COLORS.background}
+        color={theme.COLORS.background}
       />
       <Text style={[styles.text, saved && styles.savedText]}>
         {encoding !== null
@@ -159,6 +159,6 @@ const makeStyles = () => StyleSheet.create({
     fontSize: 14,
   },
   savedText: {
-    color: theme.COLORS.white,
+    color: theme.COLORS.background,
   },
 });

@@ -1,15 +1,17 @@
 import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
+import Constants from "expo-constants";
 import * as Linking from "expo-linking";
 import React, { useState } from "react";
 import {
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View
+  View,
 } from "react-native";
 import { useStyles } from "@/src/hooks/useStyles";
 
@@ -19,84 +21,165 @@ interface ErrorModalProps {
   onClose: () => void;
 }
 
+interface ErrorInterpretation {
+  title: string;
+  description: string;
+  icon: "cpu" | "mic-off" | "file" | "video-off" | "activity" | "lock" | "alert-circle" | "film" | "save";
+  /** GitHub issue form that best matches this failure. */
+  template: string;
+}
+
+const ISSUE_BASE = "https://github.com/sayampy/deepdenoiser/issues/new";
+
 export default function ErrorModal({ visible, error, onClose }: ErrorModalProps) {
   const [showDetails, setShowDetails] = useState(false);
+  const [copied, setCopied] = useState(false);
   const styles = useStyles(makeStyles);
 
   if (!error) return null;
 
-  const interpretError = (err: Error) => {
+  const interpretError = (err: Error): ErrorInterpretation => {
     const msg = err.message.toLowerCase();
     const stack = err.stack?.toLowerCase() || "";
+
     if (msg.includes("out of memory") || msg.includes("allocation failed") || stack.includes("outofmemory")) {
       return {
         title: "Out of Memory",
-        description: "Your device ran out of RAM. This usually happens with very large files. Try closing other apps or processing a shorter clip.",
-        icon: "cpu" as const,
+        description:
+          "Your device ran out of RAM. Close other apps, try a shorter clip, or use the smaller GTCRN model and retry.",
+        icon: "cpu",
+        template: "crash_performance.yml",
       };
     }
-    if (msg.includes("no audio track") || stack.includes("no audio track")) {
+    if (msg.includes("permission") && (msg.includes("denied") || msg.includes("grant"))) {
+      return {
+        title: "Permission Denied",
+        description:
+          "Open Android Settings → Apps → DeepDenoiser → Permissions and allow file and microphone access, then try again.",
+        icon: "lock",
+        template: "bug_report.yml",
+      };
+    }
+    if (msg.includes("no audio track") || msg.includes("no audio stream")) {
       return {
         title: "No Audio Track Found",
-        description: "Make sure the file is not corrupted and has an audio track",
-        icon: "mic-off" as const,
+        description:
+          "This file has no audio stream. Check that the file is complete and not corrupted, then pick a different file.",
+        icon: "mic-off",
+        template: "media_decoding.yml",
       };
     }
-    if (msg.includes("illegal character") || stack.includes("illegal character")) {
+    if (msg.includes("illegal character") || msg.includes("uri syntax")) {
       return {
-        title: "Illegal Character in Filename",
-        description: "rename the file with a valid filename without any ascii symbols",
-        icon: "file" as const,
+        title: "Invalid Filename",
+        description:
+          "The filename contains characters Android cannot open. Rename the file using only letters, numbers, dashes and underscores.",
+        icon: "file",
+        template: "bug_report.yml",
       };
     }
-
-    if (msg.includes("decoder") || msg.includes("mediacodec") || msg.includes("transcode failed") || msg.includes("format")) {
+    if (
+      msg.includes("decoder") ||
+      msg.includes("mediacodec") ||
+      msg.includes("transcode failed") ||
+      msg.includes("failed to add the track") ||
+      msg.includes("muxer") ||
+      msg.includes("format")
+    ) {
       return {
         title: "Media Decoding Failed",
-        description: "Your device's hardware (MediaCodec) couldn't process this file format or resolution. Try a different file format (like .mp3 or .mp4).",
-        icon: "video-off" as const,
+        description:
+          "This phone's hardware decoder could not handle the file's codec or resolution. Converting it to MP4 (H.264 + AAC) usually fixes this.",
+        icon: "video-off",
+        template: "media_decoding.yml",
       };
     }
-
+    if (
+      msg.includes("sync") ||
+      msg.includes("audio starts late") ||
+      msg.includes("drift") ||
+      msg.includes("length")
+    ) {
+      return {
+        title: "Audio / Video Sync Issue",
+        description:
+          "The denoised audio did not line up with the video. Note roughly how large the offset was when you report it.",
+        icon: "film",
+        template: "av_sync_output.yml",
+      };
+    }
     if (msg.includes("onnx") || msg.includes("session") || msg.includes("model")) {
       return {
         title: "AI Model Error",
-        description: "The denoising model failed to initialize or run. This might be due to incompatible hardware acceleration.",
-        icon: "activity" as const,
+        description:
+          "The denoising model could not load or run. Try switching models under AI Model, or re-download the model.",
+        icon: "activity",
+        template: "bug_report.yml",
       };
     }
-
-    if (msg.includes("permission") && msg.includes("denied")) {
+    if (msg.includes("saving") || msg.includes("gallery") || msg.includes("media library")) {
       return {
-        title: "Permission Denied",
-        description: "The app doesn't have permission to access your files. Please check your app settings.",
-        icon: "lock" as const,
+        title: "Could Not Save File",
+        description:
+          "Check that storage permission is granted and that free space is available. You can also choose a custom save folder in Settings.",
+        icon: "save",
+        template: "bug_report.yml",
       };
     }
 
     return {
       title: "Something Went Wrong",
-      description: "An unexpected error occurred during processing. See details below for more information.",
-      icon: "alert-circle" as const,
+      description:
+        "An unexpected error occurred. Expand the technical details, copy the diagnostics, and include them in your report.",
+      icon: "alert-circle",
+      template: "bug_report.yml",
     };
   };
 
   const interpretation = interpretError(error);
 
+  const diagnostics = () => {
+    const version = Constants.expoConfig?.version ?? "unknown";
+    return [
+      `App version: ${version}`,
+      `Android version: ${Platform.Version}`,
+      `Error: ${error.message}`,
+      error.stack ? `Stack:\n${error.stack}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+  };
+
   const copyToClipboard = async () => {
-    const textToCopy = `Error: ${error.message}\n\nStack: ${error.stack}`;
-    await Clipboard.setStringAsync(textToCopy);
+    await Clipboard.setStringAsync(diagnostics());
+    setCopied(true);
   };
 
   const submitToGithub = () => {
     const title = encodeURIComponent(`[Bug]: ${interpretation.title}`);
     const body = encodeURIComponent(
-      `**Interpreted Error:**\n${interpretation.title}: ${interpretation.description}\n\n` +
-      `**Stack Trace:** (Paste Error Details)\n\n` +
-      `**Device Info:**\n(Please add your device model,RAM size and OS version here)`
+      [
+        "### What happened?",
+        interpretation.description,
+        "",
+        "### Steps to reproduce",
+        "1. ",
+        "2. ",
+        "",
+        "### Diagnostics (copied from the app)",
+        "```",
+        diagnostics(),
+        "```",
+        "",
+        "### Important",
+        "- Search existing issues before submitting.",
+        "- Do NOT upload your audio or video files — describe the file instead.",
+        "- Include your device model and RAM size.",
+      ].join("\n"),
     );
-    const url = `https://github.com/sayampy/deepdenoiser/issues/new?title=${title}&body=${body}`;
-    Linking.openURL(url);
+    void Linking.openURL(
+      `${ISSUE_BASE}?template=${interpretation.template}&title=${title}&body=${body}`,
+    );
   };
 
   return (
@@ -144,15 +227,18 @@ export default function ErrorModal({ visible, error, onClose }: ErrorModalProps)
             </View>
           )}
 
-          <TouchableOpacity style={styles.copyButton} onPress={copyToClipboard}>
+          <TouchableOpacity style={styles.copyButton} onPress={() => void copyToClipboard()}>
             <Feather name="copy" size={16} color={theme.COLORS.primary} />
-            <Text style={styles.copyButtonText}>Copy Error Details</Text>
+            <Text style={styles.copyButtonText}>
+              {copied ? "Diagnostics copied" : "Copy diagnostics (for your report)"}
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.divider} />
 
           <Text style={styles.githubHint}>
-            If you think it is a problem in the app, not your device:
+            If this looks like an app bug, report it with the matching template.{"\n"}
+            Include the copied diagnostics and exact steps — never upload your files.
           </Text>
 
           <TouchableOpacity style={styles.githubButton} onPress={submitToGithub}>
@@ -237,7 +323,7 @@ const makeStyles = () => StyleSheet.create({
     fontWeight: "600",
   },
   errorContainer: {
-    backgroundColor: "#00000040",
+    backgroundColor: `${theme.COLORS.border}40`,
     borderRadius: 12,
     padding: 12,
     maxHeight: 150,
@@ -251,7 +337,7 @@ const makeStyles = () => StyleSheet.create({
   errorText: {
     fontSize: 12,
     fontFamily: theme.FONTS?.mono || "monospace",
-    color: "#FFAAAA",
+    color: theme.COLORS.error,
   },
   copyButton: {
     flexDirection: "row",
@@ -274,11 +360,11 @@ const makeStyles = () => StyleSheet.create({
     marginBottom: 16,
   },
   githubHint: {
-    fontSize: theme.FONT_SIZE.xsmall,
+    fontSize: theme.FONT_SIZE.small,
     color: theme.COLORS.subtext,
     textAlign: "center",
     marginBottom: 12,
-    fontStyle: "italic",
+    lineHeight: 20,
   },
   githubButton: {
     flexDirection: "row",

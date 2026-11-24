@@ -223,7 +223,7 @@ const makeStyles = () => StyleSheet.create({
   },
   track: {
     height: 6,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: theme.COLORS.outlineVariant,
     borderRadius: 3,
     overflow: "hidden",
   },
@@ -236,7 +236,7 @@ const makeStyles = () => StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: theme.COLORS.white,
+    backgroundColor: theme.COLORS.text,
     marginLeft: -7,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
@@ -246,7 +246,7 @@ const makeStyles = () => StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: theme.COLORS.outlineVariant,
     marginVertical: 4,
   },
   fileNameContainer: {

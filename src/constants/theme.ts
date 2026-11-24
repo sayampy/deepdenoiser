@@ -387,10 +387,16 @@ function buildSharedStyles() {
 }
 
 let sharedStylesCache: ReturnType<typeof buildSharedStyles> | null = null;
+let sharedStylesSignature = "";
 
 export function getSharedStyles(): ReturnType<typeof buildSharedStyles> {
-  if (!sharedStylesCache) {
+  // Self-healing guard: Fast Refresh can drop the module-level cache reset in
+  // applyPalette(), which used to leave shared styles stuck on the previous
+  // theme. Rebuild whenever the live palette values differ from the cached ones.
+  const signature = Object.values(COLORS).join("|");
+  if (!sharedStylesCache || sharedStylesSignature !== signature) {
     sharedStylesCache = buildSharedStyles();
+    sharedStylesSignature = signature;
   }
   return sharedStylesCache;
 }

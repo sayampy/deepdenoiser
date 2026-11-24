@@ -21,6 +21,53 @@ per window, 2048-point FFT used with 1920-point bin layout), and even correct
 inference ran slower than real time on mid-range phones. GTCRN replaces it for
 general-purpose enhancement.
 
+## Why GTCRN felt "the same speed" as DeepFilterNet3 (2026-11-25)
+
+Examined the actual `gtcrn_simple.onnx` graph (535,638 bytes, inputs `mix`,
+`conv_cache`, `tra_cache`, `inter_cache`). Node histogram:
+
+```
+Transpose 61, Slice 40, Reshape 37, Gather 32, Add 30, Unsqueeze 23,
+Concat 22, ScatterND 18, PRelu 15, ReduceMean 14, GRU 14, Mul 14, Pow 12,
+MatMul 12, Conv 11, ConvTranspose 11, BatchNormalization 11, Squeeze 10, Pad 7
+```
+
+Only ~25 of ~300 nodes are operators XNNPACK can accelerate (Conv,
+ConvTranspose, MatMul). The recurrent/state work (14 GRU, 18 ScatterND) and a
+large tail of shape/index ops run on the CPU EP. Adding intra-op threads to a
+graph like this adds a barrier per hop and cannot pay for itself.
+
+Measured on one host with onnxruntime CPU EP, all-optimizations, zero inputs,
+20 warm-ups + 300 timed runs (`/tmp/opencode/gtcrn_simple.onnx`):
+
+| Model | Per call | Audio per call | RTF (ONNX only) |
+|---|---|---|---|
+| GTCRN, 1 thread | 0.487 ms | 16.0 ms (256 @ 16 kHz) | 0.030 |
+| GTCRN, 2 threads | 0.511 ms | 16.0 ms | 0.032 |
+| GTCRN, 4 threads | 0.509 ms | 16.0 ms | 0.032 |
+| GTCRN, 8 threads | 0.745 ms | 16.0 ms | 0.047 |
+| DeepFilterNet3 | 0.566 ms | 10.7 ms (512 @ 48 kHz) | 0.053 |
+
+The JS STFT/ISTFT front-end is not the bottleneck: a faithful copy of the
+`processHop` transform loop costs 0.0146 ms/hop on Node/V8 (RTF 0.0009),
+~30x less than the inference call.
+
+So GTCRN's graph really is ~1.75x faster per audio second than DeepFilterNet3
+on identical hardware. On a phone the gap is compressed because ORT-RN pays a
+JSI round-trip for every `session.run()` (62.5 calls/s for GTCRN vs 93.75 for
+DF3) and both adapters were using the same device-scaled thread count, which
+hurt the tiny graph far more than the large one.
+
+Changes made in `src/scripts/models/gtcrn.ts`:
+
+- `intraOpNumThreads: 1` for GTCRN (DeepFilterNet3 keeps the adaptive 1/2/4).
+- Reuse a preallocated `mix` `Tensor` instead of allocating one per hop.
+- Reuse a single zero-filled hop buffer when flushing the final overlap-add.
+
+Remaining levers need an artifact change (bump `version`/`bytes`/`sha256` and
+the cache prefixes): fuse the STFT into the graph, or re-export a graph with K
+unrolled hops so one `run()` covers ~K x 16 ms and the JSI cost is amortised.
+
 Three denoise cache layers (final / decode / denoise PCM) avoid repeat work on
 file processing.
 
