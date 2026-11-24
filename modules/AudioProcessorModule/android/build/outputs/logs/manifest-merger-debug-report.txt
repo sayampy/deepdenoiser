@@ -1,9 +1,37 @@
 -- Merging decision tree log ---
 manifest
-ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:1:1-2:12
-INJECTED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:1:1-2:12
+ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:1:1-13:12
+INJECTED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:1:1-13:12
 	package
 		INJECTED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:1:11-69
+uses-permission#android.permission.FOREGROUND_SERVICE
+ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:2:3-75
+	android:name
+		ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:2:20-72
+uses-permission#android.permission.FOREGROUND_SERVICE_DATA_SYNC
+ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:3:3-85
+	android:name
+		ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:3:20-82
+uses-permission#android.permission.WAKE_LOCK
+ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:4:3-66
+	android:name
+		ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:4:20-63
+uses-permission#android.permission.POST_NOTIFICATIONS
+ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:5:3-75
+	android:name
+		ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:5:20-72
+application
+ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:7:3-12:17
+service#expo.modules.audioprocessormodule.DenoiseForegroundService
+ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:8:5-11:50
+	android:exported
+		ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:10:7-31
+	android:foregroundServiceType
+		ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:11:7-47
+	android:name
+		ADDED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:9:7-80
 uses-sdk
 INJECTED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml reason: use-sdk injection requested
 INJECTED from /home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml

@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type ViewInstance,
   LayoutChangeEvent,
 } from "react-native";
 import Animated, {
@@ -16,6 +17,7 @@ import Animated, {
   Easing,
   runOnJS,
 } from "react-native-reanimated";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface InfoBubbleProps {
   text: string;
@@ -29,11 +31,12 @@ export default function InfoBubble({ text, children }: InfoBubbleProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [anchorPos, setAnchorPos] = useState({ x: 0, y: 0, w: 0, h: 0 });
   const [bubbleSize, setBubbleSize] = useState({ w: 0, h: 0 });
-  const anchorRef = useRef<View>(null);
+  const anchorRef = useRef<ViewInstance>(null);
 
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.9);
   const translateY = useSharedValue(10);
+  const styles = useStyles(makeStyles);
 
   const showBubble = () => {
     anchorRef.current?.measureInWindow((x, y, width, height) => {
@@ -143,7 +146,7 @@ export default function InfoBubble({ text, children }: InfoBubbleProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.4)",

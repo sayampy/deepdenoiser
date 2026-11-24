@@ -14,6 +14,7 @@ import Animated, {
   withSpring,
 } from "react-native-reanimated";
 import InfoBubble from "./InfoBubble";
+import { useStyles } from "@/src/hooks/useStyles";
 
 export interface CustomSliderProps {
   label: string;
@@ -42,6 +43,7 @@ const CustomSlider = ({
   const isPressed = useSharedValue(false);
 
   const progress = useSharedValue(0);
+  const styles = useStyles(makeStyles);
 
   // Update progress if value changes from outside (e.g. initial load)
   React.useEffect(() => {
@@ -171,7 +173,7 @@ const CustomSlider = ({
 
 export default CustomSlider;
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   settingItem: {
     marginTop: theme.SPACING.small,
   },

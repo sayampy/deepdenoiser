@@ -8,10 +8,19 @@ import {
 import * as fs from "expo-file-system";
 import { Asset, Album, requestPermissionsAsync } from "expo-media-library";
 import { trackAppEvent } from "./analytics";
+import type { SaveCategory } from "./saveDestinations";
+import { saveToChosenDirectory } from "./saveDestinations";
+import { getSettings } from "./settings";
 import type { SilenceTrimSettings } from "./silenceTrim";
 import { trimToNativeConfig } from "./silenceTrim";
 
 const ILLEGAL_FS_CHARS = /[^a-zA-Z0-9._-]/g;
+
+/** Reusable polyphase sinc kernels for each resampling rate pair/phase. */
+const kernelCache = new Map<
+  string,
+  Map<number, { offsets: number[]; weights: Float32Array; sum: number }>
+>();
 
 /** Result of PCMtoWav: the wrapped WAV plus the silence-trim window. */
 export interface WavResult {
@@ -123,7 +132,12 @@ export async function PCMtoWav(
 }
 
 /**
- * Resamples an Int16Array or Float32Array from inputRate to outputRate using linear interpolation.
+ * Resamples an Int16Array or Float32Array from inputRate to outputRate.
+ *
+ * A windowed-sinc kernel is used instead of plain linear interpolation. Linear
+ * interpolation has no anti-alias filter: decimating 48 kHz to a 16 kHz model
+ * folds the whole 16-24 kHz band into the speech band, and upsampling back
+ * leaves spectral images that are audible as chirping/metallic artifacts.
  */
 export function resample(
   input: Int16Array | Float32Array,
@@ -140,24 +154,60 @@ export function resample(
   const ratio = inputRate / outputRate;
   const outputLength = Math.round(input.length / ratio);
   const output = new Float32Array(outputLength);
-
   const isInt16 = input instanceof Int16Array;
+  // Cutoff at 90% of the destination Nyquist, expressed in input samples.
+  const cutoff = Math.min(0.5, 0.45 / ratio);
+  const half = 24;
+  const sample = (idx: number): number => {
+    if (idx < 0 || idx >= input.length) return 0;
+    return isInt16 ? input[idx] / 32768.0 : input[idx];
+  };
+
+  // The sinc weights only depend on the fractional position, which takes a
+  // handful of values for common rates (3 for 48k<->16k). Cache them instead
+  // of evaluating two trig functions per tap per output sample.
+  const rateKey = `${inputRate}:${outputRate}`;
+  let kernels = kernelCache.get(rateKey);
+  if (!kernels) {
+    kernels = new Map<number, { offsets: number[]; weights: Float32Array; sum: number }>();
+    kernelCache.set(rateKey, kernels);
+  }
 
   for (let i = 0; i < outputLength; i++) {
     const pos = i * ratio;
-    const index = Math.floor(pos);
-    const fraction = pos - index;
-
-    let s1, s2;
-    if (isInt16) {
-      s1 = input[index] / 32768.0;
-      s2 = index + 1 < input.length ? input[index + 1] / 32768.0 : s1;
-    } else {
-      s1 = input[index];
-      s2 = index + 1 < input.length ? input[index + 1] : s1;
+    const center = Math.round(pos);
+    const fraction = pos - Math.floor(pos);
+    // Fine quantisation keeps fractions that straddle 0.5 in separate
+    // buckets: the sinc argument flips from -fraction to 1-fraction there.
+    const phase = Math.round(fraction * 1_000_000);
+    let kernel = kernels.get(phase);
+    if (!kernel) {
+      const offsets: number[] = [];
+      const weights: number[] = [];
+      let sum = 0;
+      const phaseFraction = phase / 1_000_000;
+      const centerShift = Math.round(phaseFraction) - phaseFraction;
+      for (let k = -half; k <= half; k++) {
+        const d = centerShift + k;
+        const sinc = d === 0
+          ? 2 * cutoff
+          : Math.sin(2 * Math.PI * cutoff * d) / (Math.PI * d);
+        // Hamming window keeps the sinc's long sidelobes from ringing.
+        const window = 0.54 - 0.46 * Math.cos((2 * Math.PI * (k + half)) / (2 * half));
+        const weight = sinc * window;
+        offsets.push(k);
+        weights.push(weight);
+        sum += weight;
+      }
+      kernel = { offsets, weights: new Float32Array(weights), sum };
+      kernels.set(phase, kernel);
     }
-
-    output[i] = s1 * (1 - fraction) + s2 * fraction;
+    let acc = 0;
+    for (let t = 0; t < kernel.offsets.length; t++) {
+      const idx = center + kernel.offsets[t];
+      if (idx >= 0 && idx < input.length) acc += sample(idx) * kernel.weights[t];
+    }
+    output[i] = kernel.sum !== 0 ? acc / kernel.sum : sample(center);
   }
 
   return output;
@@ -184,7 +234,7 @@ export async function PCMtoArray(
     for (let offset = 0; offset < fileSize; offset += chunkSize) {
       const length = Math.min(chunkSize, fileSize - offset);
       handle.offset = offset;
-      const bytes = handle.readBytes(length);
+      const bytes = handle.readBytesSync(length);
       const chunk = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
       pcmArray.set(chunk, offset / 2);
     }
@@ -204,6 +254,17 @@ export async function PCMtoArray(
   return float32Array;
 }
 
+/**
+ * Stream a 16-bit mono PCM file in sample chunks.
+ *
+ * Hardened against the file-level failures that used to surface mid-pipeline:
+ *  - a vanished file is reported with its path instead of a bare ENOENT,
+ *  - an odd byte count is truncated to whole samples rather than producing a
+ *    misaligned Int16Array (which decodes as garbage and can crash the bridge),
+ *  - a short read (file truncated while we walk it) ends the loop cleanly
+ *    instead of feeding zero-length chunks to the caller,
+ *  - the handle is always closed, even when onChunk throws.
+ */
 export async function readPCMChunks(
   file: fs.File,
   chunkSize: number, // in samples
@@ -211,18 +272,42 @@ export async function readPCMChunks(
   inputRate?: number,
   targetRate?: number
 ): Promise<void> {
-  if (!file.exists) throw new Error("File does not exist");
+  if (!file.exists) {
+    throw new Error(`Audio data is missing (${file.name}). Please import the file again.`);
+  }
 
-  const fileSize = file.size;
+  let fileSize = file.size ?? 0;
+  if (fileSize === 0) {
+    throw new Error(`Audio data is empty (${file.name}). The file may still be transferring.`);
+  }
+  if (fileSize % 2 !== 0) {
+    // Odd length means a truncated write; drop the dangling byte.
+    console.warn(`PCM file ${file.name} has an odd byte count (${fileSize}); ignoring last byte.`);
+    fileSize -= 1;
+  }
+
   const handle = file.open();
   try {
     const bytesPerChunk = chunkSize * 2;
-    for (let offset = 0; offset < fileSize; offset += bytesPerChunk) {
+    let offset = 0;
+    while (offset < fileSize) {
       const length = Math.min(bytesPerChunk, fileSize - offset);
-      const inputSamples = length / 2;
       handle.offset = offset;
-      const bytes = handle.readBytes(length);
-      const pcmChunk = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 2);
+      const bytes = handle.readBytesSync(length);
+
+      if (!bytes || bytes.byteLength === 0) {
+        // The file shrank under us; stop rather than looping forever.
+        console.warn(`PCM read returned no data at offset ${offset} of ${file.name}.`);
+        break;
+      }
+
+      const sampleCount = Math.floor(bytes.byteLength / 2);
+      const pcmChunk = new Int16Array(
+        bytes.buffer,
+        bytes.byteOffset,
+        sampleCount,
+      );
+      const inputSamples = sampleCount;
 
       let floatChunk: Float32Array;
       if (inputRate && targetRate && inputRate !== targetRate) {
@@ -235,9 +320,14 @@ export async function readPCMChunks(
       }
 
       await onChunk(floatChunk, inputSamples);
+      offset += bytes.byteLength;
     }
   } finally {
-    handle.close();
+    try {
+      handle.close();
+    } catch (error) {
+      console.warn("Failed to close PCM handle:", error);
+    }
   }
 }
 
@@ -257,7 +347,7 @@ export async function writePCMChunk(
   // Write raw little-endian PCM bytes directly. The new expo-file-system
   // API writes Uint8Array without encoding, so we skip the base64 string
   // building that previously dominated the recording hot path.
-  file.write(new Uint8Array(pcmChunk.buffer), { append });
+  await file.write(new Uint8Array(pcmChunk.buffer), { append });
 }
 
 export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
@@ -293,10 +383,23 @@ export async function ArraytoPCM(f32array: Float32Array): Promise<fs.File> {
 
   return outputFile;
 }
-export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): Promise<boolean> {
-  const { status } = await requestPermissionsAsync();
-  if (status !== 'granted') return false;
+export async function saveToDevice(
+  file: fs.File,
+  albumName = "DeepDenoiser",
+  category?: SaveCategory,
+): Promise<void> {
+  const { saveDirectoryUri } = await getSettings();
+  if (saveDirectoryUri && category) {
+    const saved = await saveToChosenDirectory(file, category);
+    if (!saved) throw new Error("The selected save folder is no longer available.");
+    trackAppEvent("save_file");
+    return;
+  }
 
+  const { status } = await requestPermissionsAsync();
+  if (status !== "granted") {
+    throw new Error("Media library access is required to save files. Grant storage permission in Settings.");
+  }
   try {
     const album = await Album.get(albumName);
     if (album) {
@@ -305,43 +408,76 @@ export async function saveToDevice(file: fs.File, albumName = "DeepDenoiser"): P
       await Album.create(albumName, [file.uri]);
     }
     trackAppEvent("save_file");
-    return true;
   } catch (e) {
     console.error("Failed to save file to device:", e);
-    return false;
+    throw new Error(
+      `Failed to save file to device: ${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 }
+/**
+ * Remux a denoised audio track into the original video container.
+ *
+ * MediaMuxer cannot consume PCM in MP4, so the WAV is first transcoded to AAC.
+ * Each step is validated before the next begins: a transcode that produces no
+ * bytes used to surface much later as an opaque "Merge failed", and a mux that
+ * silently wrote nothing produced a 0-byte MP4 that downloaded as "corrupt".
+ */
 export async function mergeAudioVideo(
   video: fs.File,
   audio: fs.File,
   trim?: { startUs: number; endUs: number; trimmed: boolean },
 ): Promise<fs.File> {
+  let transcodedAudio: fs.File | null = null;
   try {
-    // Transcode the denoised WAV to AAC first, as MediaMuxer (MP4) often doesn't support PCM.
-    const transcodedAudio = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.m4a`);
+    if (!video.exists) {
+      throw new Error(`Source video is missing (${video.name}). Import it again.`);
+    }
+    if (!audio.exists) {
+      throw new Error(`Denoised audio is missing (${audio.name}). Run the denoise again.`);
+    }
+
+    transcodedAudio = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.m4a`);
     await extractAndTranscodeAudio(
       audio.uri,
-      transcodedAudio.uri.replace('file://', ''),
+      transcodedAudio.uri,
       128000, // 128kbps AAC
     );
+
+    if (!transcodedAudio.exists || (transcodedAudio.size ?? 0) === 0) {
+      throw new Error("Audio could not be encoded for the video container.");
+    }
 
     const outputFile = new fs.File(fs.Paths.cache, `denoised_${Date.now()}.mp4`);
     await mixAudioVideo(
       video.uri,
       transcodedAudio.uri,
-      outputFile.uri.replace('file://', ''),
+      outputFile.uri,
       trim && trim.trimmed
         ? { enabled: true, startUs: trim.startUs, endUs: trim.endUs }
         : undefined,
     );
+
+    if (!outputFile.exists || (outputFile.size ?? 0) === 0) {
+      throw new Error("Merging produced an empty video file.");
+    }
     return outputFile;
   } catch (error) {
     console.error("Failed to merge audio and video.", error);
-    throw new Error(
-      `Merge failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Merge failed: ${detail}`);
+  } finally {
+    // The AAC intermediate is never needed after a mux attempt.
+    if (transcodedAudio?.exists) {
+      try {
+        transcodedAudio.delete();
+      } catch (error) {
+        console.warn("Failed to delete intermediate AAC:", error);
+      }
+    }
   }
 }
+
 export function sanitizeFileName(name: string): string {
   return name
     .replaceAll(ILLEGAL_FS_CHARS, '_')

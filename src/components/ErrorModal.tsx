@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface ErrorModalProps {
   visible: boolean;
@@ -20,6 +21,7 @@ interface ErrorModalProps {
 
 export default function ErrorModal({ visible, error, onClose }: ErrorModalProps) {
   const [showDetails, setShowDetails] = useState(false);
+  const styles = useStyles(makeStyles);
 
   if (!error) return null;
 
@@ -176,7 +178,7 @@ export default function ErrorModal({ visible, error, onClose }: ErrorModalProps)
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.7)",

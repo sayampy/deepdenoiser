@@ -8,29 +8,36 @@ import ShareBtn from "@/src/components/shareBtn";
 import SilenceTrimSettingsBlock from "@/src/components/silenceTrimSettings";
 import * as theme from "@/src/constants/theme";
 import { trackAppError, trackAppEvent } from "@/src/scripts/analytics";
-import type { DeepFilterNet } from "@/src/scripts/Denoiser";
-import { getDenoiser } from "@/src/scripts/denoiserSingleton";
-import { PCMtoWav, writePCMChunk } from "@/src/scripts/formatHandler";
+import { PCMtoWav, resample, writePCMChunk } from "@/src/scripts/formatHandler";
+import { DEFAULT_MODEL_ID, type ModelId, MODELS } from "@/src/scripts/models/registry";
+import { getEngine, type StreamStep } from "@/src/scripts/models/runtime";
+import ModelSelector from "@/src/components/ModelSelector";
+import { DEFAULT_STRENGTH, STRENGTH_STEPS } from "@/src/scripts/models/strength";
 import {
+  getSettings,
   incrementDenoiseCount,
   markDonationPromptShown,
   shouldShowDonationReminder,
 } from "@/src/scripts/settings";
 import type { SilenceTrimSettings } from "@/src/scripts/silenceTrim";
 import { DEFAULT_SILENCE_TRIM } from "@/src/scripts/silenceTrim";
-import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
 import Feather from "@expo/vector-icons/Feather";
 import {
   AudioDataEvent,
   RecordingConfig,
+  useAudioDevices,
   useAudioRecorder,
 } from "@siteed/audio-studio";
 import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
+  Modal,
+  PermissionsAndroid,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -39,14 +46,86 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useStyles } from "@/src/hooks/useStyles";
 
 const SAMPLE_RATE = 48000;
-const HOP_SIZE = 512;
-const ALSTEPS = [0, 5, 10, 15, 20, 30, 40];
 /** Safety valve: max queued 100ms chunks (~9s) before falling back to raw PCM. */
 const MAX_QUEUED_CHUNKS = 90;
 /** Once in passthrough mode, stay there until the backlog drops below this. */
 const PASSTHROUGH_RESUME_AT = 30;
+/** Tiny sample-count mismatch still tolerated between the two staged PCM files. */
+const MAX_PCM_SAMPLE_DELTA = 16;
+
+/**
+ * Android 13+ requires POST_NOTIFICATIONS before a foreground-service
+ * notification can be shown. A denial must not block recording — the app just
+ * loses the background indicator.
+ */
+async function requestNotificationPermission(): Promise<void> {
+  if (Platform.OS !== "android" || Number(Platform.Version) < 33) return;
+  try {
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      {
+        title: "Recording notification",
+        message:
+          "Allow DeepDenoiser to show a notification while recording so it can keep running in the background.",
+        buttonNeutral: "Ask me later",
+        buttonNegative: "Cancel",
+        buttonPositive: "OK",
+      },
+    );
+    if (result !== PermissionsAndroid.RESULTS.GRANTED) {
+      console.warn("Notification permission not granted; background recording may be hidden.");
+    }
+  } catch (err) {
+    console.warn("Failed to request notification permission:", err);
+  }
+}
+
+/** Minimal engine surface this screen needs: the DenoiseEngine contract. */
+type RecordingEngine = Awaited<ReturnType<typeof getEngine>>;
+
+/**
+ * Clear a denoiser's per-run stream state.
+ *
+ * GTCRN keeps STFT/cache state and DeepFilterNet keeps recurrent state across
+ * `denoiseStream` calls, so both must be cleared when the stream is interrupted
+ * by raw-passthrough chunks.
+ */
+function resetStreamIfSupported(engine: RecordingEngine | null): void {
+  // `resetStream` is optional on the DenoiseEngine contract; probe for it.
+  const maybe = engine as
+    | (RecordingEngine & { resetStream?: () => void })
+    | null;
+  maybe?.resetStream?.();
+}
+
+/**
+ * Drop the leading algorithmic delay of the model from the written output.
+ *
+ * `remainingPadding` counts real samples (audio the denoiser was fed), so each
+ * call subtracts what it skipped. A chunked model returns output only for
+ * whole chunks and drops the unsettled overlap tail (`feedLength - consumed`),
+ * which shifts every later output sample; that shift is skipped first so only
+ * genuine output counts against the padding.
+ */
+function trimAlignmentPadding(
+  step: StreamStep,
+  feedLength: number,
+  consumed: number,
+  remainingPadding: number,
+): { remainingPadding: number; pcm: Float32Array<ArrayBufferLike> } {
+  let output: Float32Array<ArrayBufferLike> = step.pcm;
+  const shift = feedLength - consumed;
+  if (shift > 0) output = output.subarray(Math.min(shift, output.length));
+
+  const paddingToSkip = Math.min(remainingPadding, output.length);
+  return {
+    remainingPadding: remainingPadding - paddingToSkip,
+    pcm: output.subarray(paddingToSkip),
+  };
+}
 
 export default function RecordingScreen() {
   const router = useRouter();
@@ -59,6 +138,14 @@ export default function RecordingScreen() {
     isPaused,
     durationMs,
   } = useAudioRecorder();
+  const {
+    devices: audioDevices,
+    currentDevice,
+    selectDevice,
+    resetToDefaultDevice,
+    refreshDevices,
+  } = useAudioDevices();
+  const styles = useStyles(makeStyles);
 
   const [denoiserReady, setDenoiserReady] = useState(false);
 
@@ -79,13 +166,22 @@ export default function RecordingScreen() {
   const [isDonationReminderVisible, setIsDonationReminderVisible] =
     useState(false);
   const [isDonationModalVisible, setIsDonationModalVisible] = useState(false);
-  const [attenLimDb, setAttenLimDb] = useState(0);
+  const [strength, setStrength] = useState(DEFAULT_STRENGTH);
   const [silenceTrim, setSilenceTrim] =
     useState<SilenceTrimSettings>(DEFAULT_SILENCE_TRIM);
+  const [selectedModelId, setSelectedModelId] = useState<ModelId>(DEFAULT_MODEL_ID);
+  const [micPickerVisible, setMicPickerVisible] = useState(false);
 
-  const denoiserRef = useRef<DeepFilterNet | null>(null);
+  const engineRef = useRef<RecordingEngine | null>(null);
   const audioBufferRef = useRef<Float32Array>(new Float32Array(0));
+  /** Denoised samples produced but not yet written (chunked models lag input). */
+  const outputQueueRef = useRef<Float32Array>(new Float32Array(0));
+  /** Running sample counts for the original and denoised staged PCM files. */
+  const inputSamplesWrittenRef = useRef(0);
+  const denSamplesWrittenRef = useRef(0);
+  const outputPaddingRemainingRef = useRef(0);
   const processingQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const processingErrorRef = useRef<Error | null>(null);
   const queueDepthRef = useRef(0);
   const isStoppingRef = useRef(false);
   const isRecordingRef = useRef(isRecording);
@@ -108,6 +204,25 @@ export default function RecordingScreen() {
       if (processingQueueRef.current === chain) break;
       chain = processingQueueRef.current;
     }
+    if (processingErrorRef.current) {
+      throw processingErrorRef.current;
+    }
+  };
+
+  /**
+   * Write denoised samples in lockstep with the original capture. Chunked
+   * models with a one-hop start-up delay (GTCRN) emit slightly fewer samples
+   * than they consume, so produced samples are queued and only written as the
+   * original file grows. Any residual lag is padded at finalization.
+   */
+  const flushDenoisedOutput = async (file: fs.File, inputSamplesWritten: number) => {
+    const queued = outputQueueRef.current;
+    const owed = inputSamplesWritten - denSamplesWrittenRef.current;
+    if (queued.length === 0 || owed <= 0) return;
+    const count = Math.min(queued.length, owed);
+    await writePCMChunk(file, queued.subarray(0, count), true);
+    denSamplesWrittenRef.current += count;
+    outputQueueRef.current = queued.subarray(count).slice();
   };
 
   useEffect(() => {
@@ -124,11 +239,42 @@ export default function RecordingScreen() {
     }
   }, [isPaused, durationMs]);
 
+  // Reload the engine whenever the user picks a different model, so the next
+  // recording uses it without needing a screen remount.
   useEffect(() => {
-    const initDenoiser = async () => {
+    if (isRecording || isFinalizing) return;
+    let cancelled = false;
+    void (async () => {
       try {
-        const denoiser = await getDenoiser();
-        denoiserRef.current = denoiser;
+        const engine = await getEngine(selectedModelId);
+        if (cancelled) return;
+        engineRef.current = engine;
+        setDenoiserReady(true);
+      } catch (err) {
+        if (cancelled) return;
+        setDenoiserReady(false);
+        console.error("Failed to load selected model:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- engine reload only follows the selection
+  }, [selectedModelId]);
+
+  useEffect(() => {
+    const initEngine = async () => {
+      try {
+        const settings = await getSettings();
+        const stored = settings.selectedModel;
+        // Fall back to the bundled model only when the stored id is unknown.
+        // Non-48 kHz models are supported: the stream is resampled around the
+        // engine and back to the recorder rate before it is written.
+        const modelId: ModelId =
+          stored in MODELS ? (stored as ModelId) : DEFAULT_MODEL_ID;
+        setSelectedModelId(modelId);
+        const engine = await getEngine(modelId);
+        engineRef.current = engine;
         setDenoiserReady(true);
       } catch (err) {
         console.error("Failed to init denoiser:", err);
@@ -136,14 +282,15 @@ export default function RecordingScreen() {
         setIsErrorModalVisible(true);
       }
     };
-    initDenoiser();
+    initEngine();
 
     return () => {
-      // Stop any in-flight recording when leaving the screen. The ONNX session
-      // itself is shared via the singleton and intentionally NOT released here
-      // (releasing it was leaking/racing and caused crashes). isStoppingRef must
-      // be set so late stream events are dropped instead of appending to the
-      // processing queue after the screen is gone.
+      // Stop any in-flight recording when leaving the screen. Nothing is
+      // released here: the engine is cached process-wide so the next screen
+      // reuses the loaded session, and each new recording resets the stream
+      // state itself. isStoppingRef must be set so late stream events are
+      // dropped instead of appending to the processing queue after the screen
+      // is gone.
       isStoppingRef.current = true;
       if (isRecordingRef.current) {
         stopAudioRecording()
@@ -182,7 +329,7 @@ export default function RecordingScreen() {
   }, [isRecording, isPaused, pulseAnim]);
 
   const handleAudioStream = async (event: AudioDataEvent) => {
-    if (isPausedRef.current || !denoiserRef.current || isStoppingRef.current)
+    if (isPausedRef.current || !engineRef.current || isStoppingRef.current)
       return;
 
     // Copy buffer immediately — the source may reuse the underlying ArrayBuffer
@@ -211,57 +358,103 @@ export default function RecordingScreen() {
     processingQueueRef.current = processingQueueRef.current
       .then(async () => {
         try {
-          const denoiser = denoiserRef.current;
-          if (!denoiser) return;
+          const engine = engineRef.current;
+          if (!engine) return;
 
           // 1. Save original PCM
           const origFile = originalPcmFileRef.current;
           if (origFile) {
             await writePCMChunk(origFile, float32Data, true);
+            inputSamplesWrittenRef.current += float32Data.length;
           }
 
           // 2. Denoise (or passthrough) and save
           const denFile = denoisedPcmFileRef.current;
           if (denFile) {
-            // Combine with previous leftovers
+            // Combine with previous leftovers. The engine consumes whole model
+            // chunks of its own size and hands the unconsumed tail back as
+            // `rest`, so no frame arithmetic is needed here.
             const combined = new Float32Array(
               audioBufferRef.current.length + float32Data.length,
             );
             combined.set(audioBufferRef.current);
             combined.set(float32Data, audioBufferRef.current.length);
 
-            const numFrames = Math.floor(combined.length / HOP_SIZE);
-            const processableLength = numFrames * HOP_SIZE;
-            const leftovers = combined.subarray(processableLength);
-
-            if (numFrames > 0) {
-              const processData = combined.subarray(0, processableLength);
-              const denoisedOutput = new Float32Array(processableLength);
+            if (combined.length > 0) {
+              let output: Float32Array<ArrayBufferLike>;
+              let rest: Float32Array<ArrayBufferLike>;
 
               if (passthrough) {
-                denoisedOutput.set(processData);
+                // Write only the new samples, exactly like the original file
+                // above, so the two files stay sample-for-sample aligned.
+                // Keep the buffered leftovers (including the alignment prefix)
+                // for the next real denoise step, and leave the padding counter
+                // untouched: no output was produced, so none was consumed.
+                output = float32Data;
+                rest = audioBufferRef.current;
               } else {
                 // If the previous chunk was written raw, the model's recurrent
                 // state corresponds to audio seconds behind the current chunk.
                 // Reset it so denoising resumes from a clean state instead of
                 // a stale one.
                 if (wasPassthroughRef.current) {
-                  denoiser.setupStreaming(attenLimDb);
+                  resetStreamIfSupported(engine);
                 }
-                for (let i = 0; i < processableLength; i += HOP_SIZE) {
-                  const frame = processData.subarray(i, i + HOP_SIZE);
-                  await denoiser.processFrame(frame, denoisedOutput, i);
-                }
+                const streamInput = audioBufferRef.current;
+                const engineRate = engine.sampleRate;
+                // The recorder always captures at 48 kHz. Models at other rates
+                // (e.g. GTCRN 16K) are fed resampled audio and their
+                // output is resampled straight back, so both staged PCM files
+                // stay in the source domain and sample-for-sample aligned.
+                const modelInput =
+                  engineRate === SAMPLE_RATE
+                    ? combined
+                    : resample(combined, SAMPLE_RATE, engineRate);
+                const step = await engine.denoiseStream(modelInput, {
+                  strength,
+                });
+                const consumedModel = modelInput.length - step.rest.length;
+                const consumed =
+                  engineRate === SAMPLE_RATE
+                    ? consumedModel
+                    : Math.round((consumedModel * SAMPLE_RATE) / engineRate);
+                rest = combined.subarray(Math.min(consumed, combined.length));
+                const outputAtModelRate = step.pcm;
+                const trimmed = trimAlignmentPadding(
+                  { pcm: outputAtModelRate, rest: step.rest },
+                  engineRate === SAMPLE_RATE
+                    ? streamInput.length
+                    : Math.round((streamInput.length * engineRate) / SAMPLE_RATE),
+                  consumedModel,
+                  outputPaddingRemainingRef.current,
+                );
+                outputPaddingRemainingRef.current = trimmed.remainingPadding;
+                output =
+                  engineRate === SAMPLE_RATE
+                    ? trimmed.pcm
+                    : resample(trimmed.pcm, engineRate, SAMPLE_RATE);
               }
               wasPassthroughRef.current = passthrough;
-              await writePCMChunk(denFile, denoisedOutput, true);
-            }
+              // Queue produced samples, then write only as many as the
+              // original file has grown. This absorbs the small startup lag of
+              // overlapping chunk models without drifting the two files.
+              if (output.length > 0) {
+                const queued = outputQueueRef.current;
+                const merged = new Float32Array(queued.length + output.length);
+                merged.set(queued);
+                merged.set(output, queued.length);
+                outputQueueRef.current = merged;
+              }
+              await flushDenoisedOutput(denFile, inputSamplesWrittenRef.current);
 
-            // Store leftovers for next chunk
-            audioBufferRef.current = new Float32Array(leftovers);
+              // Store leftovers for next chunk
+              audioBufferRef.current = new Float32Array(rest);
+            }
           }
         } catch (err) {
           console.error("Error in audio stream processing:", err);
+          processingErrorRef.current ??=
+            err instanceof Error ? err : new Error(String(err));
         }
       })
       .catch((err) => {
@@ -270,10 +463,30 @@ export default function RecordingScreen() {
         // enqueued tasks run concurrently with in-flight ones and interleave
         // writes to the same PCM files.
         console.error("Error in recording processing queue:", err);
+        processingErrorRef.current ??=
+          err instanceof Error ? err : new Error(String(err));
       })
       .finally(() => {
         queueDepthRef.current = Math.max(0, queueDepthRef.current - 1);
       });
+  };
+
+  const chooseAudioDevice = async (id: string | null) => {
+    try {
+      const ok = id
+        ? await selectDevice(id)
+        : await resetToDefaultDevice();
+      if (!ok) {
+        Alert.alert("Microphone", "Could not switch to that input device.");
+      } else {
+        setMicPickerVisible(false);
+      }
+    } catch (err) {
+      trackAppError(err instanceof Error ? err : new Error(String(err)), {
+        context: "selectAudioDevice",
+      });
+      Alert.alert("Microphone", "Could not switch to that input device.");
+    }
   };
 
   const startRecording = async () => {
@@ -283,6 +496,12 @@ export default function RecordingScreen() {
         return;
       }
       trackAppEvent("start_recording");
+      isStoppingRef.current = true;
+      processingErrorRef.current = null;
+      // Drain prior work before installing the new files, so a late task from
+      // an earlier recording can never write into this session's PCM output.
+      await drainQueue();
+
       // Initialize files
       const timestamp = Date.now();
       const origPcm = new fs.File(fs.Paths.cache, `orig_${timestamp}.pcm`);
@@ -296,18 +515,31 @@ export default function RecordingScreen() {
 
       setFinalOriginalWav(null);
       setFinalDenoisedWav(null);
-      isStoppingRef.current = false;
-      audioBufferRef.current = new Float32Array(0);
-      // Ensure any previous recording's queue has fully drained before
-      // replacing the chain — otherwise old and new tasks would run
-      // interleaved against the same shared model state.
-      await drainQueue();
       processingQueueRef.current = Promise.resolve();
       passthroughModeRef.current = false;
       wasPassthroughRef.current = false;
+      inputSamplesWrittenRef.current = 0;
+      denSamplesWrittenRef.current = 0;
+      outputQueueRef.current = new Float32Array(0);
 
       // Reset denoiser states for new recording
-      denoiserRef.current?.setupStreaming(attenLimDb);
+      const engine = engineRef.current;
+      resetStreamIfSupported(engine);
+      // Prefix the stream with the model's algorithmic delay so the delayed
+      // output lines up with the original file after the head is trimmed.
+      // The staged PCM files and audioBufferRef are at the recorder rate (48k),
+      // while alignmentDelaySamples is in the model's own rate — convert for
+      // the input prefix but keep the output trim counter in model samples.
+      const engineForDelay = engineRef.current;
+      const alignmentDelayModel = engineForDelay?.alignmentDelaySamples ?? 0;
+      // Some models create their delay in the output buffer instead of needing
+      // silence fed in; only prepend what the engine actually requires.
+      const prefixModel = engineForDelay?.alignmentPrefixSamples ?? alignmentDelayModel;
+      const alignmentPadding = Math.round(
+        (prefixModel * SAMPLE_RATE) / (engineForDelay?.sampleRate ?? SAMPLE_RATE),
+      );
+      audioBufferRef.current = new Float32Array(alignmentPadding);
+      outputPaddingRemainingRef.current = alignmentDelayModel;
 
       const config: RecordingConfig = {
         sampleRate: SAMPLE_RATE,
@@ -317,11 +549,28 @@ export default function RecordingScreen() {
         streamFormat: "float32",
         onAudioStream: handleAudioStream,
         keepAwake: true,
-        showNotification: false,
+        showNotification: true,
+        notification: {
+          title: "DeepDenoiser recording",
+          text: "Recording and denoising audio in the background",
+          android: {
+            channelId: "deepdenoiser-recording",
+            channelName: "Recording",
+            channelDescription: "Active voice recording and denoising",
+            notificationId: 1001,
+            showPauseResumeActions: true,
+          },
+        },
       };
 
+      // Android 13+ needs POST_NOTIFICATIONS for the foreground-service
+      // notification. A denial only hides the indicator; recording continues.
+      await requestNotificationPermission();
+
+      isStoppingRef.current = false;
       await startAudioRecording(config);
     } catch (error) {
+      isStoppingRef.current = false;
       const err = error instanceof Error ? error : new Error(String(error));
       trackAppError(err, { context: "startRecording" });
       setError(err);
@@ -332,8 +581,12 @@ export default function RecordingScreen() {
   const stopRecording = async () => {
     try {
       setIsFinalizing(true);
-      isStoppingRef.current = true;
+      // Keep accepting stream events until the native recorder is fully
+      // stopped: chunks emitted between the tap and the native stop are already
+      // in the native WAV, so they must reach the denoised PCM too. Only then
+      // flip the ignore flag so no late event can enqueue a duplicate write.
       const result = await stopAudioRecording();
+      isStoppingRef.current = true;
 
       // Wait for all background processing to finish. drainQueue re-checks
       // until the chain is stable — a stream event racing the stop can append
@@ -345,27 +598,86 @@ export default function RecordingScreen() {
       const denPcm = denoisedPcmFileRef.current;
 
       if (origPcm && denPcm) {
-        // Handle any remaining samples in the buffer
-        if (audioBufferRef.current.length > 0 && denoiserRef.current) {
-          const leftovers = audioBufferRef.current;
-          const paddedFrame = new Float32Array(HOP_SIZE);
-          paddedFrame.set(leftovers);
-          const outBuf = new Float32Array(HOP_SIZE);
-          const outFrame = await denoiserRef.current.processFrame(
-            paddedFrame,
-            outBuf,
+        // Handle any remaining samples in the buffer. The engine returns
+        // exactly as many samples as it was given, so no chunk padding leaks
+        // into the tail of the file.
+        // Flush unconditionally: with a one-hop-delayed model the last hop's
+        // output is still owed even when no raw samples remain in the buffer.
+        if (engineRef.current) {
+          const pending = audioBufferRef.current;
+          const engineRate = engineRef.current.sampleRate;
+          const modelPending =
+            engineRate === SAMPLE_RATE
+              ? pending
+              : resample(pending, SAMPLE_RATE, engineRate);
+          const step = await engineRef.current.denoiseFinal(modelPending);
+          const { pcm } = trimAlignmentPadding(
+            step,
+            modelPending.length,
+            modelPending.length,
+            outputPaddingRemainingRef.current,
           );
-          await writePCMChunk(
-            denPcm,
-            outFrame.subarray(0, leftovers.length),
-            true,
-          );
+          outputPaddingRemainingRef.current = 0;
+          const finalPcm =
+            engineRate === SAMPLE_RATE
+              ? pcm
+              : resample(pcm, engineRate, SAMPLE_RATE);
+          const queued = outputQueueRef.current;
+          const merged = new Float32Array(queued.length + finalPcm.length);
+          merged.set(queued);
+          merged.set(finalPcm, queued.length);
+          outputQueueRef.current = merged;
           audioBufferRef.current = new Float32Array(0);
         }
+        // Flush everything the chunked model produced, then pad any residual
+        // startup lag so the denoised file matches the original length exactly.
+        await flushDenoisedOutput(denPcm, inputSamplesWrittenRef.current);
+        const pendingOutput = outputQueueRef.current;
+        if (pendingOutput.length > 0) {
+          await writePCMChunk(denPcm, pendingOutput, true);
+          denSamplesWrittenRef.current += pendingOutput.length;
+          outputQueueRef.current = new Float32Array(0);
+        }
+        const shortBy = inputSamplesWrittenRef.current - denSamplesWrittenRef.current;
+        if (shortBy > 0) {
+          await writePCMChunk(denPcm, new Float32Array(shortBy), true);
+          denSamplesWrittenRef.current += shortBy;
+        }
 
-        // Ensure files exist before wrapping
-        if (!origPcm.exists || !denPcm.exists) {
-          throw new Error("PCM files missing after recording.");
+        // Ensure the staged PCM survived the whole recording before wrapping.
+        // Report which one is gone and how big it was, because "PCM files
+        // missing" alone gave users nothing to act on.
+        for (const [stage, staged] of [
+          ["original", origPcm],
+          ["denoised", denPcm],
+        ] as const) {
+          if (!staged.exists) {
+            throw new Error(
+              `The ${stage} recording data is missing (${staged.name}). ` +
+                "The device may have cleared temporary storage during the recording.",
+            );
+          }
+          if ((staged.size ?? 0) === 0) {
+            throw new Error(
+              `The ${stage} recording data is empty. Nothing was captured — ` +
+                "check the microphone permission and try again.",
+            );
+          }
+        }
+
+        // Both staged files are 16-bit mono PCM (2 bytes per sample — see
+        // writePCMChunk), so their byte counts are directly comparable. A
+        // divergence means some chunks reached only one file; wrapping those
+        // as WAVs would silently produce drifting original/denoised audio.
+        const origBytes = origPcm.size ?? 0;
+        const denBytes = denPcm.size ?? 0;
+        const sampleDelta = Math.abs(origBytes - denBytes) / 2;
+        if (sampleDelta > MAX_PCM_SAMPLE_DELTA) {
+          throw new Error(
+            `Original and denoised audio lengths diverged by ${sampleDelta.toFixed(0)} samples ` +
+              `(original: ${origBytes} bytes, denoised: ${denBytes} bytes). ` +
+              "Refusing to export misaligned audio.",
+          );
         }
 
         const origWav =
@@ -465,9 +777,7 @@ export default function RecordingScreen() {
 
         {isFinalizing ? (
           <View style={styles.finalizingContainer}>
-            <Host matchContents style={{ width: 48, height: 48 }} colorScheme="dark">
-              <LoadingIndicator color={theme.COLORS.primary} />
-            </Host>
+            <ActivityIndicator size="large" color={theme.COLORS.primary} />
             <Text style={styles.statusText}>Finalizing Audio...</Text>
           </View>
         ) : !finalOriginalWav ? (
@@ -482,14 +792,40 @@ export default function RecordingScreen() {
 
             {!isRecording && !isPaused ? (
               <View style={styles.sliderContainer}>
+                <ModelSelector
+                  value={selectedModelId}
+                  onChange={setSelectedModelId}
+                  disabled={isRecording || isFinalizing}
+                />
+
+                <TouchableOpacity
+                  style={styles.micSourceButton}
+                  onPress={() => {
+                    void refreshDevices();
+                    setMicPickerVisible(true);
+                  }}
+                  disabled={isFinalizing}
+                >
+                  <Feather name="mic" size={18} color={theme.COLORS.primary} />
+                  <View style={styles.micSourceText}>
+                    <Text style={styles.micSourceLabel}>Microphone source</Text>
+                    <Text style={styles.micSourceValue} numberOfLines={1}>
+                      {currentDevice?.name ?? "System default"}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={theme.COLORS.subtext} />
+                </TouchableOpacity>
+
+                <View style={styles.settingsDivider} />
+
                 <CustomSlider
-                  label="Attenuation Limit"
-                  value={attenLimDb}
-                  onValueChange={setAttenLimDb}
+                  label="Denoising strength"
+                  value={strength}
+                  onValueChange={setStrength}
                   min={0}
-                  max={40}
-                  steps={ALSTEPS}
-                  info={`Limits how aggressively the AI removes noise.\n0dB = most aggressive (quietest background).\n40dB = preserves nearly all ambient sound.\nStart at 0dB and increase if audio sounds too processed.`}
+                  max={100}
+                  steps={STRENGTH_STEPS}
+                  info={`How strongly the selected model removes noise.\n100% = full model effect.\n0% = original audio, unprocessed.\nLower it if speech sounds thin or artefacts appear.`}
                 />
 
                 <View style={styles.settingsDivider} />
@@ -587,6 +923,7 @@ export default function RecordingScreen() {
                   label="Save Original"
                   savedLabel="Saved"
                   albumName="DeepDenoiser/Recordings"
+                  saveCategory={{ kind: "Original", media: "Audio" }}
                   style={[theme.Styles.button, styles.saveSubButton]}
                   onError={(err) => {
                     setError(err);
@@ -631,6 +968,7 @@ export default function RecordingScreen() {
                   label="Save Denoised"
                   savedLabel="Saved"
                   albumName="DeepDenoiser/Recordings"
+                  saveCategory={{ kind: "Denoised", media: "Audio" }}
                   style={[
                     theme.Styles.button,
                     styles.saveSubButton,
@@ -685,11 +1023,61 @@ export default function RecordingScreen() {
         error={error}
         onClose={() => setIsErrorModalVisible(false)}
       />
+      <Modal
+        visible={micPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMicPickerVisible(false)}
+      >
+        <Pressable
+          style={styles.micModalOverlay}
+          onPress={() => setMicPickerVisible(false)}
+        >
+          <Pressable style={styles.micModalCard} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.micModalTitle}>Choose microphone source</Text>
+            <TouchableOpacity
+              style={styles.micModalRow}
+              onPress={() => void chooseAudioDevice(null)}
+            >
+              <Feather
+                name={currentDevice?.isDefault !== false ? "check" : "circle"}
+                size={18}
+                color={theme.COLORS.primary}
+              />
+              <Text style={styles.micModalRowText}>System default</Text>
+            </TouchableOpacity>
+            {audioDevices
+              .filter((device) => device.isAvailable)
+              .map((device) => (
+                <TouchableOpacity
+                  key={device.id}
+                  style={styles.micModalRow}
+                  onPress={() => void chooseAudioDevice(device.id)}
+                >
+                  <Feather
+                    name={currentDevice?.id === device.id ? "check" : "circle"}
+                    size={18}
+                    color={theme.COLORS.primary}
+                  />
+                  <Text style={styles.micModalRowText} numberOfLines={1}>
+                    {device.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            <TouchableOpacity
+              style={styles.micModalClose}
+              onPress={() => setMicPickerVisible(false)}
+            >
+              <Text style={styles.micModalCloseText}>Close</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   header: {
     flexDirection: "row",
     alignItems: "center",
@@ -900,5 +1288,71 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     flexDirection: "row",
     gap: 12,
+  },
+  micSourceButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    backgroundColor: theme.COLORS.surface,
+    borderWidth: 1,
+    borderColor: theme.COLORS.border,
+  },
+  micSourceText: {
+    flex: 1,
+  },
+  micSourceLabel: {
+    fontSize: theme.FONT_SIZE.small,
+    color: theme.COLORS.subtext,
+  },
+  micSourceValue: {
+    fontSize: theme.FONT_SIZE.body,
+    color: theme.COLORS.text,
+    fontWeight: "600",
+  },
+  micModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  micModalCard: {
+    width: "100%",
+    maxWidth: 360,
+    maxHeight: "75%",
+    backgroundColor: theme.COLORS.surface,
+    borderRadius: 20,
+    padding: 20,
+  },
+  micModalTitle: {
+    fontSize: theme.FONT_SIZE.heading,
+    fontWeight: "700",
+    color: theme.COLORS.text,
+    marginBottom: 16,
+  },
+  micModalRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+  },
+  micModalRowText: {
+    flex: 1,
+    fontSize: theme.FONT_SIZE.body,
+    color: theme.COLORS.text,
+  },
+  micModalClose: {
+    marginTop: 12,
+    alignItems: "center",
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: theme.COLORS.primary,
+  },
+  micModalCloseText: {
+    color: theme.COLORS.background,
+    fontWeight: "700",
   },
 });

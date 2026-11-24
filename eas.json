@@ -9,11 +9,17 @@
       "distribution": "internal",
       "env": {
         "APP_VARIANT": "development",
+        "APP_DISTRIBUTION": "github",
+        "EXPO_PUBLIC_APP_DISTRIBUTION": "github",
         "YARN_ENABLED": "0"
       }
     },
     "preview": {
       "distribution": "internal",
+      "env": {
+        "APP_DISTRIBUTION": "github",
+        "EXPO_PUBLIC_APP_DISTRIBUTION": "github"
+      },
       "android": {
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
@@ -21,6 +27,10 @@
     },
     "production": {
       "autoIncrement": false,
+      "env": {
+        "APP_DISTRIBUTION": "github",
+        "EXPO_PUBLIC_APP_DISTRIBUTION": "github"
+      },
       "android": {
         "buildType": "apk",
         "ndk": "28.1.13356709"
@@ -28,6 +38,10 @@
     },
     "playstore": {
       "autoIncrement": true,
+      "env": {
+        "APP_DISTRIBUTION": "playstore",
+        "EXPO_PUBLIC_APP_DISTRIBUTION": "playstore"
+      },
       "android": {
         "buildType": "app-bundle",
         "ndk": "28.1.13356709"

@@ -2,6 +2,7 @@ import * as theme from "@/src/constants/theme";
 import { Feather } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface RoastToastProps {
   visible: boolean;
@@ -12,6 +13,7 @@ interface RoastToastProps {
 export default function RoastToast({ visible, message, onHide }: RoastToastProps) {
   const [opacity] = useState(() => new Animated.Value(0));
   const [translateY] = useState(() => new Animated.Value(50));
+  const styles = useStyles(makeStyles);
 
   useEffect(() => {
     if (visible) {
@@ -62,7 +64,7 @@ export default function RoastToast({ visible, message, onHide }: RoastToastProps
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: {
     position: "absolute",
     bottom: 100,

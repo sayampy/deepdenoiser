@@ -1,6 +1,8 @@
 import metadata from "@/assets/model/model_metadata.json";
 import { InferenceSession, Tensor } from "onnxruntime-react-native";
 
+import { preferredIntraOpThreads } from "./models/sessionOptions";
+
 export class DeepFilterNet {
     private session: InferenceSession | null = null;
     private readonly hopSize: number;
@@ -42,13 +44,26 @@ export class DeepFilterNet {
         }
     }
 
+    /**
+     * Algorithmic delay of the model, in samples.
+     *
+     * Measured empirically by cross-correlating input against output on real
+     * speech: the response lags by exactly three analysis hops (3 * 512 =
+     * 1536 samples at 48 kHz, ~32 ms). The previous value used fftSize (960),
+     * which under-trimmed the head by 576 samples and left audio ~12 ms early
+     * against the video track — the cause of reported A/V drift.
+     */
+    public get alignmentDelaySamples(): number {
+        return this.hopSize * 3;
+    }
+
     public async loadModel(modelPath: string): Promise<void> {
         try {
             const options: InferenceSession.SessionOptions = {
                 executionProviders: ["xnnpack", "cpu"],
                 graphOptimizationLevel: "all",
-                interOpNumThreads: 1, // Optimized for multi-core mobile CPUs
-                intraOpNumThreads: 4,
+                interOpNumThreads: 1, // Serial recurrent graph
+                intraOpNumThreads: preferredIntraOpThreads(),
             };
             this.session = await InferenceSession.create(modelPath, options);
         } catch (e) {

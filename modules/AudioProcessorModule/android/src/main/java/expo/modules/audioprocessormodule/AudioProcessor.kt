@@ -9,6 +9,7 @@ import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
+import androidx.documentfile.provider.DocumentFile
 import com.linkedin.android.litr.MediaTransformer
 import com.linkedin.android.litr.TransformationListener
 import com.linkedin.android.litr.TransformationOptions
@@ -21,6 +22,7 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
@@ -199,6 +201,121 @@ class MediaProcessor(private val context: Context) {
                     } ?: throw Exception("Failed to open destination: $destPath")
                 } ?: throw Exception("Failed to open source: $sourcePath")
                 destPath
+            }
+
+    suspend fun saveFileToTree(
+            sourcePath: String,
+            treeUri: String,
+            directoryNames: List<String>,
+            fileName: String,
+            mimeType: String?
+    ): String =
+            withContext(Dispatchers.IO) {
+                require(fileName.isNotBlank() && '/' !in fileName && '\\' !in fileName) {
+                    "Invalid destination file name"
+                }
+                require(directoryNames.all {
+                    it.isNotBlank() && it != "." && it != ".." && '/' !in it && '\\' !in it
+                }) {
+                    "Invalid destination folder name"
+                }
+
+                var directory =
+                        DocumentFile.fromTreeUri(context, Uri.parse(treeUri))
+                                ?: throw IllegalArgumentException("The selected save folder is unavailable")
+                if (!directory.isDirectory || !directory.canWrite()) {
+                    throw IllegalArgumentException("The selected save folder is not writable")
+                }
+
+                for (directoryName in directoryNames) {
+                    val existing = directory.findFile(directoryName)
+                    directory =
+                            when {
+                                existing == null ->
+                                        directory.createDirectory(directoryName)
+                                                ?: throw IllegalStateException(
+                                                        "Could not create the $directoryName save folder"
+                                                )
+                                existing.isDirectory -> existing
+                                else ->
+                                        throw IllegalStateException(
+                                                "$directoryName exists and is not a folder"
+                                        )
+                            }
+                }
+
+                val finalName = uniqueDocumentName(directory, fileName)
+                val outputMimeType = mimeType?.takeIf { '/' in it } ?: "application/octet-stream"
+                val temporary =
+                        directory.createFile(outputMimeType, ".${java.util.UUID.randomUUID()}.tmp")
+                                ?: throw IllegalStateException("Could not create a temporary output file")
+                var renamedFile: DocumentFile? = null
+                try {
+                    val sourceUri = getSafeUri(sourcePath)
+                    val copiedBytes =
+                            context.contentResolver.openInputStream(sourceUri)?.use { input ->
+                                context.contentResolver.openOutputStream(temporary.uri, "w")?.use { output ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    var total = 0L
+                                    while (true) {
+                                        val read = input.read(buffer)
+                                        if (read < 0) break
+                                        output.write(buffer, 0, read)
+                                        total += read
+                                    }
+                                    output.flush()
+                                    total
+                                } ?: throw IllegalStateException("Could not write to the selected save folder")
+                            } ?: throw IllegalStateException("Could not read the file to save")
+
+                    if (temporary.length() != copiedBytes) {
+                        throw IllegalStateException("The saved file could not be verified")
+                    }
+                    if (!temporary.renameTo(finalName)) {
+                        throw IllegalStateException("Could not finalize the saved file")
+                    }
+                    renamedFile = directory.findFile(finalName)
+                    if (renamedFile == null || renamedFile.length() != copiedBytes) {
+                        throw IllegalStateException("The saved file could not be verified")
+                    }
+                    renamedFile.uri.toString()
+                } catch (error: Exception) {
+                    renamedFile?.delete()
+                    temporary.delete()
+                    throw error
+                }
+            }
+
+    private fun uniqueDocumentName(directory: DocumentFile, originalName: String): String {
+        val extensionIndex = originalName.lastIndexOf('.')
+        val hasExtension = extensionIndex > 0
+        val baseName = if (hasExtension) originalName.substring(0, extensionIndex) else originalName
+        val extension = if (hasExtension) originalName.substring(extensionIndex) else ""
+        for (suffix in 0 until 1000) {
+            val candidate =
+                    if (suffix == 0) originalName else "$baseName ($suffix)$extension"
+            if (directory.findFile(candidate) == null) return candidate
+        }
+        throw IllegalStateException("Could not choose a unique name for $originalName")
+    }
+
+    // Streams a file through SHA-256 so a multi-hundred-megabyte model artifact
+    // can be verified without ever loading it into JS or native memory.
+    suspend fun sha256File(path: String): String =
+            withContext(Dispatchers.IO) {
+                val uri = getSafeUri(path)
+                val digest = MessageDigest.getInstance("SHA-256")
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    BufferedInputStream(input, 256 * 1024).use { stream ->
+                        val buffer = ByteArray(256 * 1024)
+                        while (true) {
+                            val read = stream.read(buffer)
+                            if (read < 0) break
+                            digest.update(buffer, 0, read)
+                        }
+                    }
+                } ?: throw IllegalStateException("Could not read $path for verification")
+                digest.digest().joinToString("") { "%02x".format(it) }
             }
 
     // Returns the byte size of any readable URI (file:// or content://), or -1

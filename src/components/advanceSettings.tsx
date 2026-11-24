@@ -12,10 +12,14 @@ import {
 import CustomSlider from "./customSlider";
 import InfoBubble from "./InfoBubble";
 import SilenceTrimSettingsBlock from "./silenceTrimSettings";
+import { STRENGTH_STEPS } from "@/src/scripts/models/strength";
+import { useTheme } from "@/src/context/ThemeContext";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface AdvanceSettingsProps {
-  attenLimDb: number;
-  onAttenLimDbChange: (value: number) => void;
+  /** Denoising strength 0..100, applied to whichever model is selected. */
+  strength: number;
+  onStrengthChange: (value: number) => void;
   normalize: {
     toggle: boolean;
     targetRMS: number;
@@ -28,11 +32,9 @@ interface AdvanceSettingsProps {
   showSilenceTrim?: boolean;
 }
 
-const ALSTEPS = [0, 5, 10, 15, 20, 30, 40];
-
 export default function AdvanceSettings({
-  attenLimDb,
-  onAttenLimDbChange,
+  strength,
+  onStrengthChange,
   normalize,
   onNormalizeChange,
   silenceTrim,
@@ -40,6 +42,8 @@ export default function AdvanceSettings({
   showSilenceTrim = true,
 }: AdvanceSettingsProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const { colorScheme } = useTheme();
+  const styles = useStyles(makeStyles);
 
   const handleToggleNormalize = () => {
     onNormalizeChange({
@@ -95,16 +99,10 @@ export default function AdvanceSettings({
                   <Feather name="help-circle" size={18} color={theme.COLORS.subtext} />
                 </InfoBubble>
               </View>
-              <Host matchContents style={{ width: 52, height: 32 }} colorScheme="dark">
+              <Host matchContents style={{ width: 52, height: 32 }} colorScheme={colorScheme}>
                 <Switch
                   value={normalize.toggle}
                   onCheckedChange={handleToggleNormalize}
-                  colors={{
-                    uncheckedTrackColor: theme.COLORS.border,
-                    checkedTrackColor: theme.COLORS.primary,
-                    checkedThumbColor: theme.COLORS.text,
-                    uncheckedThumbColor: theme.COLORS.text,
-                  }}
                 />
               </Host>
             </View>
@@ -136,13 +134,13 @@ export default function AdvanceSettings({
           <View style={{ height: 1, backgroundColor: "rgba(255, 255, 255, 0.05)", marginVertical: 15 }} />
 
           <CustomSlider
-            label="Attenuation Limit"
-            value={attenLimDb}
-            onValueChange={onAttenLimDbChange}
+            label="Denoising strength"
+            value={strength}
+            onValueChange={onStrengthChange}
             min={0}
-            max={40}
-            steps={ALSTEPS}
-            info={`Limits how aggressively the AI removes noise.\n0dB = most aggressive (quietest background).\n40dB = preserves nearly all ambient sound.\nStart at 0dB and increase if audio sounds too processed.`}
+            max={100}
+            steps={[...STRENGTH_STEPS]}
+            info={`How strongly the selected model removes noise.\n100% = full model effect.\n0% = original audio, unprocessed.\nLower it if speech sounds thin or artefacts appear.`}
           />
 
           {showSilenceTrim && (
@@ -160,7 +158,7 @@ export default function AdvanceSettings({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   container: {
     backgroundColor: theme.COLORS.surface,
     borderRadius: 16,

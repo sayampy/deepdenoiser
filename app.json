@@ -2,7 +2,7 @@
   "expo": {
     "icon": "./assets/images/icon.png",
     "scheme": "deepdenoiser",
-    "userInterfaceStyle": "dark",
+    "userInterfaceStyle": "automatic",
     "platforms": ["android"],
     "ios": {
       "supportsTablet": true,
@@ -27,17 +27,20 @@
       "./plugins/DisableDependencyInfo",
       "./plugins/withOnnxruntime",
       "./plugins/withLargeHeap",
+      "./plugins/withApkInstallPermission",
+      "./plugins/withDistributionAutolinking",
       "expo-router",
+      "expo-dev-client",
       [
         "expo-build-properties",
         {
           "android": {
-            "buildArchs": ["arm64-v8a"],
+            "buildArchs": ["arm64-v8a", "x86_64"],
             "enableBundleCompression": true,
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
             "enablePngCrunchInReleaseBuilds": true,
-            "extraProguardRules": "-keep class expo.modules.ui.** { *; }\n-keep class ai.onnxruntime.** { *; }\n-keep class com.linkedin.android.litr.** { *; }\n-keep class * implements expo.modules.core.interfaces.ReactActivityLifecycleListener { *; }\n-keep class expo.modules.sharing.** { *; }"
+            "extraProguardRules": "-keep class expo.modules.ui.** { *; }\n-keep class ai.onnxruntime.** { *; }\n-keep class com.linkedin.android.litr.** { *; }\n-keep class * implements expo.modules.core.interfaces.ReactActivityLifecycleListener { *; }\n-keep class expo.modules.sharing.** { *; }\n-keep class expo.modules.audioprocessormodule.** { *; }\n-keep class expo.modules.dynamiccolormodule.** { *; }\n-keep class net.siteed.** { *; }"
           },
           "shared": {
             "useHermesV1": true
@@ -75,11 +78,29 @@
         }
       ],
       [
+        "@siteed/audio-studio",
+        {
+          "enableBackgroundAudio": true,
+          "enableNotifications": true,
+          "enablePhoneStateHandling": false,
+          "enableDeviceDetection": false
+        }
+      ],
+      [
         "expo-sharing",
         {
           "android": {
             "enabled": true,
-            "singleShareMimeTypes": ["video/*", "audio/*"]
+            "singleShareMimeTypes": [
+              "video/*",
+              "audio/*",
+              "video/x-matroska",
+              "video/mp2t",
+              "video/x-msvideo",
+              "video/mpeg",
+              "audio/x-matroska",
+              "application/ogg"
+            ]
           }
         }
       ]

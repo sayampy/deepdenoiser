@@ -2,7 +2,6 @@ import { Feather } from '@expo/vector-icons';
 import { Asset } from 'expo-asset';
 import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
-import * as Sharing from 'expo-sharing';
 import { Host, LoadingIndicator } from '@expo/ui/jetpack-compose';
 import React, { useEffect, useState } from 'react';
 import {
@@ -15,7 +14,11 @@ import {
   View,
 } from 'react-native';
 import { COLORS, FONT_SIZE, SPACING } from '../constants/theme';
+import * as InAppUpdates from '@app/in-app-updates';
+import AudioProcessorModule from '../../modules/AudioProcessorModule/src/AudioProcessorModule';
 import { getSettings } from '../scripts/settings';
+import { useTheme } from '@/src/context/ThemeContext';
+import { useStyles } from '@/src/hooks/useStyles';
 
 interface UpdateInfo {
   version: string;
@@ -25,10 +28,7 @@ interface UpdateInfo {
 }
 
 const GITHUB_API_URL = 'https://api.github.com/repos/sayampy/deepdenoiser/releases/latest';
-const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.sayampy.deepdenoiser';
-
-// true if building for Play Store
-const isPlayStore = false;
+const isPlayStore = Constants.expoConfig?.extra?.distributionChannel === 'playstore';
 
 const compareVersions = (v1: string, v2: string) => {
   const cleanV1 = v1.replace(/^v/, '').split('.').map(Number);
@@ -48,6 +48,8 @@ export default function UpdateModal() {
   const [downloading, setDownloading] = useState(false);
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { colorScheme } = useTheme();
+  const styles = useStyles(makeStyles);
 
   const checkUpdates = async () => {
     try {
@@ -55,6 +57,20 @@ export default function UpdateModal() {
       if (!settings.checkForUpdates) return;
 
       const currentVersion = Constants.expoConfig?.version || '0.0.0';
+      if (isPlayStore) {
+        const result = await InAppUpdates.checkForUpdate();
+        if (result.updateAvailable) {
+          setUpdateInfo({
+            version: result.storeVersion ?? currentVersion,
+            url: '',
+            notes: 'An update is available through Google Play.',
+            published_at: '',
+          });
+          setVisible(true);
+        }
+        return;
+      }
+
       const response = await fetch(GITHUB_API_URL);
       const data = await response.json();
 
@@ -85,31 +101,38 @@ export default function UpdateModal() {
   const handleDownload = async () => {
     if (!updateInfo) return;
 
-    if (isPlayStore) {
-      Linking.openURL(PLAY_STORE_URL);
-      return;
-    }
-
     setDownloading(true);
     setError(null);
 
     try {
+      if (isPlayStore) {
+        const started = await InAppUpdates.startUpdate(false);
+        if (!started) {
+          throw new Error('Google Play could not start the in-app update');
+        }
+        setVisible(false);
+        return;
+      }
+
       const asset = Asset.fromURI(updateInfo.url);
       await asset.downloadAsync();
 
       if (asset.localUri) {
         if (Platform.OS === 'android') {
-          await Sharing.shareAsync(asset.localUri, {
-            mimeType: 'application/vnd.android.package-archive',
-            dialogTitle: 'Install DeepDenoiser Update',
-          });
+          await AudioProcessorModule.installApk(asset.localUri);
+        } else {
+          throw new Error('APK installation is only available on Android');
         }
       } else {
         throw new Error('Failed to get local URI for downloaded asset');
       }
     } catch (err) {
       console.error('Download failed:', err);
-      setError('Failed to download update. Please try again or download manually from GitHub.');
+      setError(
+        isPlayStore
+          ? 'Google Play could not start the update. Please try again later.'
+          : 'Failed to download or open the APK installer. Please try again or download manually from GitHub.',
+      );
     } finally {
       setDownloading(false);
     }
@@ -126,7 +149,7 @@ export default function UpdateModal() {
       transparent
       visible={visible}
       animationType="fade"
-      onRequestClose={() => !downloading && setVisible(false)}
+      onRequestClose={() => { if (!downloading) setVisible(false); }}
     >
       <View style={styles.overlay}>
         <View style={styles.container}>
@@ -165,25 +188,29 @@ export default function UpdateModal() {
           <View style={styles.footer}>
             {downloading ? (
               <View style={styles.downloadingContainer}>
-                <Host matchContents colorScheme="dark">
+                <Host matchContents colorScheme={colorScheme}>
                   <LoadingIndicator color={COLORS.primary} />
                 </Host>
-                <Text style={styles.downloadingText}>Downloading update...</Text>
+                <Text style={styles.downloadingText}>
+                  {isPlayStore ? 'Starting Google Play update...' : 'Downloading update...'}
+                </Text>
               </View>
             ) : (
               <>
-                <TouchableOpacity
-                  style={styles.secondaryButton}
-                  onPress={openGitHub}
-                >
-                  <Text style={styles.secondaryButtonText}>GitHub</Text>
-                </TouchableOpacity>
+                {!isPlayStore && (
+                  <TouchableOpacity
+                    style={styles.secondaryButton}
+                    onPress={openGitHub}
+                  >
+                    <Text style={styles.secondaryButtonText}>GitHub</Text>
+                  </TouchableOpacity>
+                )}
                 <TouchableOpacity
                   style={styles.primaryButton}
                   onPress={handleDownload}
                 >
                   <Text style={styles.primaryButtonText}>
-                    {isPlayStore ? 'Update from Play Store' : 'Download & Install'}
+                    {isPlayStore ? 'Update from Google Play' : 'Download & Install'}
                   </Text>
                 </TouchableOpacity>
               </>
@@ -195,7 +222,7 @@ export default function UpdateModal() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.7)',

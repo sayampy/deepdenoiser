@@ -1,5 +1,5 @@
 import * as theme from "@/src/constants/theme";
-import { useFocusEffect } from "expo-router/react-navigation";
+import { useFocusEffect } from "expo-router";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useCallback, useRef } from "react";
 import {
@@ -7,6 +7,7 @@ import {
   Text,
   View
 } from "react-native";
+import { useStyles } from "@/src/hooks/useStyles";
 
 
 interface VideoPlayerProps {
@@ -16,6 +17,7 @@ interface VideoPlayerProps {
 
 const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
   const cleanupRef = useRef(false);
+  const styles = useStyles(makeStyles);
 
   const player = useVideoPlayer(uri, (player) => {
     player.loop = false;
@@ -61,7 +63,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({ uri, name }) => {
   );
 };
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   card: {
     backgroundColor: theme.COLORS.surface,
     borderRadius: 24,

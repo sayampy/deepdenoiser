@@ -3,5 +3,32 @@
 3    package="expo.modules.audioprocessormodule" >
 4
 5    <uses-sdk android:minSdkVersion="24" />
+5-->INJECTED
+5-->INJECTED
 6
-7</manifest>
+7    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+7-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:2:3-75
+7-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:2:20-72
+8    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+8-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:3:3-85
+8-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:3:20-82
+9    <uses-permission android:name="android.permission.WAKE_LOCK" />
+9-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:4:3-66
+9-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:4:20-63
+10    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+10-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:5:3-75
+10-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:5:20-72
+11
+12    <application>
+12-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:7:3-12:17
+13        <service
+13-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:8:5-11:50
+14            android:name="expo.modules.audioprocessormodule.DenoiseForegroundService"
+14-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:9:7-80
+15            android:exported="false"
+15-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:10:7-31
+16            android:foregroundServiceType="dataSync" />
+16-->/home/sayam/Projects/deepdenoiser/modules/AudioProcessorModule/android/src/main/AndroidManifest.xml:11:7-47
+17    </application>
+18
+19</manifest>

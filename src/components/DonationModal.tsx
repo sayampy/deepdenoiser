@@ -10,6 +10,7 @@ import {
   Text,
   TouchableOpacity,
 } from "react-native";
+import { useStyles } from "@/src/hooks/useStyles";
 
 interface DonationModalProps {
   visible: boolean;
@@ -17,6 +18,8 @@ interface DonationModalProps {
 }
 
 export default function DonationModal({ visible, onClose }: DonationModalProps) {
+  const styles = useStyles(makeStyles);
+
   const openLink = (url: string) => {
     Linking.openURL(url);
   };
@@ -36,17 +39,6 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
           <Text style={styles.modalTitle}>Support Development</Text>
 
           <TouchableOpacity
-            style={styles.donationButton}
-            onPress={() => openLink("https://ko-fi.com/sayampy")}
-          >
-            <Image
-              source={require("@/assets/images/support_me_on_kofi.png")}
-              contentFit="contain"
-              style={styles.kofiImage}
-            />
-          </TouchableOpacity>
-
-          <TouchableOpacity
             style={[styles.donationButton, styles.githubButton]}
             onPress={() => openLink("https://github.com/sponsors/sayampy")}
           >
@@ -62,7 +54,9 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
           <TouchableOpacity
             style={[styles.donationButton, styles.upiButton]}
             onPress={() =>
-              openLink("upi://pay?pa=sayampy.code@oksbi&pn=Sayampy&cu=INR")
+              openLink(
+                `upi://pay?pa=${encodeURIComponent("sayam.11@superyes")}&pn=Sayampy&cu=INR`,
+              )
             }
           >
             <Image
@@ -96,7 +90,7 @@ export default function DonationModal({ visible, onClose }: DonationModalProps) 
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = () => StyleSheet.create({
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.5)",
@@ -133,10 +127,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  kofiImage: {
-    width: "100%",
-    height: "100%",
-  },
   githubButton: {
     backgroundColor: "#24292e",
     borderRadius: 18,
@@ -161,13 +151,15 @@ const styles = StyleSheet.create({
     height: 56,
   },
   upiIcon: {
+    width: 40,
     height: 20,
+    marginLeft: 12,
     marginRight: 5,
   },
   upiText: {
     fontSize: theme.FONT_SIZE.body,
     fontWeight: "600",
-    color: theme.COLORS.surface,
+    color: "#111827",
     marginRight: 25,
   },
   closeButton: {

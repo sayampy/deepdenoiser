@@ -3,6 +3,9 @@ import ErrorModal from "@/src/components/ErrorModal";
 import VideoPlayer from "@/src/components/videoPlayer";
 import * as theme from "@/src/constants/theme";
 import { importToDocuments, cleanupTempCache } from "@/src/scripts/denoiseCache";
+import { AppSettings, getSettings } from "@/src/scripts/settings";
+import { getSaveDirectoryName } from "@/src/scripts/saveDestinations";
+import { isSupportedMediaFile, isVideoFile } from "@/src/scripts/mediaFormats";
 import Feather from "@expo/vector-icons/Feather";
 
 import * as DocumentPicker from "expo-document-picker";
@@ -10,7 +13,6 @@ import * as fs from "expo-file-system";
 import { useRouter } from "expo-router";
 import { useIncomingShare } from "expo-sharing";
 import { Host, LoadingIndicator } from "@expo/ui/jetpack-compose";
-import { Image } from "expo-image";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Alert,
@@ -21,6 +23,8 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useTheme } from "@/src/context/ThemeContext";
+import { useStyles } from "@/src/hooks/useStyles";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -30,15 +34,25 @@ export default function HomeScreen() {
     type: "Audio" | "Video";
   } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
   const [error, setError] = useState<Error | null>(null);
   const [isErrorModalVisible, setIsErrorModalVisible] = useState(false);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const { colorScheme } = useTheme();
+  const styles = useStyles(makeStyles);
 
-  // Defense-in-depth: handle share intents directly on the home screen so
-  // shares work even when the 150ms initial-URL routing timeout in Expo
-  // Router causes share-handler.tsx to never mount (R8/Proguard startup
-  // overhead in release builds).  share-handler.tsx remains as a fallback
-  // for when routing succeeds — clearSharedPayloads() prevents double-processing.
+  const refreshState = async () => {
+    try {
+      setSettings(await getSettings());
+    } catch (err) {
+      console.error("Failed to load settings:", err);
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load
+    void refreshState();
+  }, []);
+
   const {
     resolvedSharedPayloads,
     isResolving: isShareResolving,
@@ -93,51 +107,54 @@ export default function HomeScreen() {
   }, [resolvedSharedPayloads, isShareResolving, shareError, clearSharedPayloads, router]);
 
   useEffect(() => {
-    // Remove only this app's leftover temp PCM/encode artifacts.
-    // NEVER wipe the whole cache — that deleted the expo-document-picker
-    // working copy out from under users mid-flow (ENOENT crash reports).
     cleanupTempCache();
   }, []);
 
   const handleImportFile = async () => {
     try {
+      // Show all files: Android reports MKV/TS/Ogg MIME types inconsistently,
+      // so filtering on audio/* and video/* hides otherwise decodable files.
       const result = await DocumentPicker.getDocumentAsync({
-        type: ["audio/*", "video/*"],
+        type: "*/*",
         copyToCacheDirectory: true,
       });
 
       if (result.canceled) return;
 
       if (result.assets && result.assets.length > 0) {
-        setIsLoading(true);
         const asset = result.assets[0];
-        // Copy the picked file out of the evictable cache into app documents
-        // so a cache purge (or the system) can't remove it mid-processing.
+        if (!isSupportedMediaFile(asset.name)) {
+          Alert.alert(
+            "Unsupported file",
+            "Choose an audio or video file supported by Android MediaCodec (MP3, M4A, WAV, FLAC, Ogg, AAC, AMR, MP4, MOV, 3GP, WebM, MKV, TS, AVI, MPEG).",
+          );
+          return;
+        }
+        setIsLoading(true);
         const imported = await importToDocuments(asset.uri, asset.name);
-        // The cache/DocumentPicker copy is no longer needed.
         try {
           new fs.File(asset.uri).delete();
         } catch {
-          // Ignore — the copy may already be gone or un-deletable.
+          // ignore
         }
         setTempFile({
           uri: imported.uri,
           name: asset.name,
-          type: asset.mimeType?.startsWith("audio") ? "Audio" : "Video",
+          type: isVideoFile(asset.name, asset.mimeType) ? "Video" : "Audio",
         });
         setIsLoading(false);
       }
-    } catch (error) {
+    } catch (err) {
       setIsLoading(false);
-      console.error("Error importing file:", error);
-      setError(error instanceof Error ? error : new Error(String(error)));
+      const e = err instanceof Error ? err : new Error(String(err));
+      setError(e);
       setIsErrorModalVisible(true);
     }
   };
 
   const handleProceed = () => {
     if (!tempFile) {
-      Alert.alert("No File", "Please import a file before proceeding.");
+      Alert.alert("No file", "Please select a file to continue.");
       return;
     }
     router.push({
@@ -149,93 +166,106 @@ export default function HomeScreen() {
     });
   };
 
+  const saveDirName = settings ? getSaveDirectoryName(settings.saveDirectoryUri) : null;
+  const audioFormatLabel = settings?.exportFormat === "mp3"
+    ? `MP3 (${settings.mp3Bitrate ?? 128}k)`
+    : settings?.exportFormat === "m4a"
+      ? `M4A (${settings.m4aBitrate ?? 192}k)`
+      : "WAV (Lossless)";
+  const videoFormatLabel = (settings?.videoExportFormat ?? "original") === "compressed"
+    ? "Compressed MP4"
+    : "Original Video";
+
   return (
-    <SafeAreaView style={theme.Styles.container}>
+    <SafeAreaView style={styles.safeArea}>
+      {/* Clean Top Bar: Title */}
+      <View style={styles.topAppBar}>
+        <Text style={styles.appTitle}>DeepDenoiser</Text>
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={theme.Styles.header}>
-          <Image
-            source={require("@/assets/images/splash-icon.png")}
-            style={styles.logo}
-          />
-          <Text style={theme.Styles.title}>DeepDenoiser</Text>
-          <Text style={theme.Styles.subtitle}>
-            Remove background noise from your audio and video using DeepFilterNet 3
-          </Text>
-        </View>
-
         <View style={styles.mainContent}>
           {!tempFile ? (
-            <View style={styles.actionsContainer}>
+            <View style={styles.actionGroup}>
+              {/* Option 1: Choose File */}
               <TouchableOpacity
-                style={[styles.actionCard, { borderColor: theme.COLORS.primary }]}
+                style={styles.card}
                 onPress={handleImportFile}
+                activeOpacity={0.7}
               >
-                <View style={[styles.iconWrapper, { backgroundColor: "rgba(0, 229, 255, 0.1)" }]}>
-                  <Feather
-                    name="upload-cloud"
-                    size={32}
-                    color={theme.COLORS.primary}
-                  />
+                <View style={styles.iconCircle}>
+                  <Feather name="folder" size={24} color={theme.COLORS.primary} />
                 </View>
-                <View style={styles.actionTextContainer}>
-                  <Text style={styles.actionTitle}>Import File</Text>
-                  <Text style={styles.actionSubtitle}>
-                    Audio or Video from your device
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardTitle}>Choose audio or video</Text>
+                  <Text style={styles.cardSubtitle}>
+                    Select a recording, voice note, podcast, or video from your device
                   </Text>
                 </View>
-                <Feather name="chevron-right" size={20} color={theme.COLORS.border} />
+                <Feather name="arrow-right" size={20} color={theme.COLORS.subtext} />
               </TouchableOpacity>
 
+              {/* Option 2: Record Audio */}
               <TouchableOpacity
-                style={[styles.actionCard, { borderColor: theme.COLORS.error }]}
+                style={styles.card}
                 onPress={() => router.push("/recording")}
+                activeOpacity={0.7}
               >
-                <View style={[styles.iconWrapper, { backgroundColor: "rgba(255, 61, 0, 0.1)" }]}>
-                  <Feather
-                    name="mic"
-                    size={32}
-                    color={theme.COLORS.error}
-                  />
+                <View style={[styles.iconCircle, styles.micCircle]}>
+                  <Feather name="mic" size={24} color={theme.COLORS.primary} />
                 </View>
-                <View style={styles.actionTextContainer}>
-                  <Text style={[styles.actionTitle, { color: theme.COLORS.error }]}>Record Voice</Text>
-                  <Text style={styles.actionSubtitle}>
-                    Real-time denoising for recordings
+                <View style={styles.cardBody}>
+                  <Text style={styles.cardTitle}>Record audio</Text>
+                  <Text style={styles.cardSubtitle}>
+                    Capture voice with live neural background noise suppression
                   </Text>
                 </View>
-                <Feather name="chevron-right" size={20} color={theme.COLORS.border} />
+                <Feather name="arrow-right" size={20} color={theme.COLORS.subtext} />
               </TouchableOpacity>
 
-              {/* <View style={styles.infoBox}>
-                <Feather name="info" size={16} color={theme.COLORS.primary} style={{ marginRight: 10 }} />
-                <Text style={styles.infoText}>
-                  Uses DeepFilterNet 3 model for high-quality background noise removal.
-                </Text>
-              </View> */}
+              {/* Active Pipeline Configuration Summary */}
+              <View style={styles.configCard}>
+                <Text style={styles.configHeaderTitle}>Export & Output Settings</Text>
+                <View style={styles.configRowsContainer}>
+                  <View style={styles.configRow}>
+                    <Text style={styles.configLabel}>Audio Format</Text>
+                    <Text style={styles.configValue}>{audioFormatLabel}</Text>
+                  </View>
+                  <View style={styles.configDivider} />
+                  <View style={styles.configRow}>
+                    <Text style={styles.configLabel}>Video Format</Text>
+                    <Text style={styles.configValue}>{videoFormatLabel}</Text>
+                  </View>
+                  <View style={styles.configDivider} />
+                  <View style={styles.configRow}>
+                    <Text style={styles.configLabel}>Destination</Text>
+                    <Text style={styles.configValue} numberOfLines={1}>
+                      {saveDirName ?? "System Media Gallery"}
+                    </Text>
+                  </View>
+                </View>
+              </View>
             </View>
           ) : (
             <View style={styles.previewContainer}>
               <View style={styles.previewHeader}>
-                <Text style={styles.previewTitle}>Selected File</Text>
+                <Text style={styles.previewTitle}>Selected {tempFile.type}</Text>
                 <TouchableOpacity
                   onPress={() => setTempFile(null)}
-                  style={styles.removeBadge}
+                  style={styles.changeBtn}
                 >
-                  <Feather name="x" size={14} color={theme.COLORS.white} />
-                  <Text style={styles.removeBadgeText}>Remove</Text>
+                  <Text style={styles.changeBtnText}>Change</Text>
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.fileDetails}>
+              <View style={styles.previewCard}>
                 {tempFile.type === "Video" ? (
                   <VideoPlayer uri={tempFile.uri} name={tempFile.name} />
                 ) : (
-                  <View style={theme.Styles.card}>
-                    <AudioPlayer uri={tempFile.uri} name={tempFile.name} />
-                  </View>
+                  <AudioPlayer uri={tempFile.uri} name={tempFile.name} />
                 )}
               </View>
             </View>
@@ -243,34 +273,29 @@ export default function HomeScreen() {
 
           {isLoading && (
             <View style={styles.loaderContainer}>
-              <Host matchContents colorScheme="dark">
+              <Host matchContents colorScheme={colorScheme}>
                 <LoadingIndicator color={theme.COLORS.primary} />
               </Host>
-              <Text style={styles.loaderText}>Processing asset...</Text>
+              <Text style={styles.loaderText}>Opening file...</Text>
             </View>
           )}
         </View>
       </ScrollView>
 
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={[
-            theme.Styles.button,
-            !tempFile && theme.Styles.disabledButton,
-            { width: "100%" },
-          ]}
-          onPress={handleProceed}
-          disabled={!tempFile || isLoading}
-        >
-          <Text style={theme.Styles.buttonText}>Proceed to Denoise</Text>
-          <Feather
-            name="arrow-right"
-            size={20}
-            color={theme.COLORS.background}
-            style={{ marginLeft: 8 }}
-          />
-        </TouchableOpacity>
-      </View>
+      {/* Continue Button when a file is selected */}
+      {tempFile && (
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={styles.proceedButton}
+            onPress={handleProceed}
+            disabled={isLoading}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.proceedButtonText}>Continue to Denoise</Text>
+            <Feather name="arrow-right" size={18} color={theme.COLORS.background} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <ErrorModal
         visible={isErrorModalVisible}
@@ -281,128 +306,176 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: theme.SPACING.xxlarge,
+const makeStyles = () => StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: theme.COLORS.background,
   },
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+  topAppBar: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    justifyContent: "space-between",
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.COLORS.border,
+    backgroundColor: theme.COLORS.background,
   },
-  logo: {
-    width: 60,
-    height: 60,
+  appTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: theme.COLORS.text,
+    letterSpacing: -0.3,
+  },
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 100,
   },
   mainContent: {
     flex: 1,
-    marginTop: theme.SPACING.medium,
   },
-  actionsContainer: {
-    gap: 16,
+  actionGroup: {
+    gap: 14,
   },
-  actionCard: {
-    backgroundColor: theme.COLORS.surface,
-    borderRadius: 20,
-    padding: 20,
+  card: {
     flexDirection: "row",
     alignItems: "center",
+    backgroundColor: theme.COLORS.surfaceContainer,
+    borderRadius: 20,
+    padding: 18,
+    gap: 14,
     borderWidth: 1,
-    borderStyle: "dashed",
+    borderColor: theme.COLORS.border,
   },
-  iconWrapper: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
+  iconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 14,
+    backgroundColor: theme.COLORS.surfaceContainerHigh,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 16,
   },
-  actionTextContainer: {
+  micCircle: {
+    backgroundColor: theme.COLORS.surfaceContainerHigh,
+  },
+  cardBody: {
     flex: 1,
+    gap: 3,
   },
-  actionTitle: {
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
     color: theme.COLORS.text,
-    fontSize: theme.FONT_SIZE.heading,
-    fontWeight: "800",
-    marginBottom: 4,
   },
-  actionSubtitle: {
+  cardSubtitle: {
+    fontSize: 13,
     color: theme.COLORS.subtext,
-    fontSize: theme.FONT_SIZE.small,
-    fontWeight: "500",
-  },
-  infoBox: {
-    flexDirection: "row",
-    backgroundColor: "rgba(0, 229, 255, 0.05)",
-    padding: 16,
-    borderRadius: 16,
-    marginTop: 10,
-    alignItems: "center",
-  },
-  infoText: {
-    color: theme.COLORS.subtext,
-    fontSize: theme.FONT_SIZE.xsmall,
-    flex: 1,
     lineHeight: 18,
   },
+  configCard: {
+    backgroundColor: theme.COLORS.surfaceContainer,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: theme.COLORS.border,
+    gap: 12,
+  },
+  configHeaderTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: theme.COLORS.subtext,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  configRowsContainer: {
+    backgroundColor: theme.COLORS.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  configRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 8,
+  },
+  configLabel: {
+    fontSize: 13,
+    color: theme.COLORS.subtext,
+  },
+  configValue: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: theme.COLORS.text,
+  },
+  configDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: theme.COLORS.border,
+  },
   previewContainer: {
-    width: "100%",
+    gap: 12,
   },
   previewHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    justifyContent: "space-between",
   },
   previewTitle: {
-    color: theme.COLORS.text,
-    fontSize: theme.FONT_SIZE.body,
+    fontSize: 14,
     fontWeight: "700",
+    color: theme.COLORS.subtext,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.5,
   },
-  removeBadge: {
-    flexDirection: "row",
-    backgroundColor: theme.COLORS.error,
+  changeBtn: {
     paddingHorizontal: 12,
     paddingVertical: 6,
+    borderRadius: theme.RADIUS.full,
+    backgroundColor: theme.COLORS.surfaceContainerHigh,
+  },
+  changeBtnText: {
+    fontSize: 13,
+    color: theme.COLORS.primary,
+    fontWeight: "600",
+  },
+  previewCard: {
+    backgroundColor: theme.COLORS.surfaceContainer,
     borderRadius: 20,
-    alignItems: "center",
-    gap: 4,
-  },
-  removeBadgeText: {
-    color: theme.COLORS.white,
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  fileDetails: {
-    width: "100%",
+    padding: 16,
+    borderWidth: 1,
+    borderColor: theme.COLORS.border,
   },
   loaderContainer: {
     alignItems: "center",
-    justifyContent: "center",
     marginTop: 40,
+    gap: 12,
   },
   loaderText: {
+    fontSize: 14,
     color: theme.COLORS.subtext,
-    marginTop: 12,
-    fontSize: theme.FONT_SIZE.small,
   },
-  footer: {
+  bottomBar: {
     position: "absolute",
     bottom: 0,
     left: 0,
     right: 0,
-    padding: theme.SPACING.medium,
-    paddingBottom: theme.SPACING.xlarge,
-    backgroundColor: theme.COLORS.background,
+    padding: 16,
+    backgroundColor: theme.COLORS.surface,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.COLORS.border,
+  },
+  proceedButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: theme.COLORS.primary,
+    height: 52,
+    borderRadius: 16,
+  },
+  proceedButtonText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: theme.COLORS.background,
   },
 });

@@ -29,13 +29,10 @@
 </p>
 <h2 align="center">Support This Project</h2>
 <p align="middle">
-  <a href="https://ko-fi.com/sayampy">
-    <img src="https://img.shields.io/badge/Support-Ko--fi-F16061?style=for-the-badge&logo=kofi&logoColor=white" alt="Ko-fi" />
-  </a>
   <a href="https://github.com/sponsors/sayampy"><img src="https://img.shields.io/badge/Github%20Sponsors-ff69b4?style=for-the-badge&logo=github" alt="GitHub Sponsors" /></a>
 </p>
 
-**DeepDenoiser** removes background noise from audio and video files on your Android device. It runs entirely on-device using **DeepFilterNet3** — your files never leave your phone.
+**DeepDenoiser** removes background noise from audio and video files on your Android device. It runs entirely on-device with a bundled **DeepFilterNet3** speech model and an optional tiny **GTCRN** model for fast, general-purpose noise removal (including live recording) — your files never leave your phone.
 
 ---
 
@@ -56,11 +53,12 @@ https://github.com/user-attachments/assets/29f147db-ff8b-486a-877d-1d765922ed5c
 - **🎤 Live recording**: Capture audio with built-in noise removal.
 - **🔒 Privacy-first**: All processing happens on your device. Nothing is uploaded.
 - **🚀 Native performance**: Custom Kotlin modules for efficient media transcoding and I/O.
+- **⚡ Fast model**: GTCRN is ~0.5 MB and runs ~14x faster than real time on CPU.
 
 ## 🛠️ Tech Stack
 
-- **Framework**: React Native (Expo SDK 55+)
-- **AI Model**: DeepFilterNet3 (via `onnxruntime-react-native`)
+- **Framework**: React Native (Expo SDK 58)
+- **AI Models**: DeepFilterNet3 (bundled) + GTCRN (downloadable), via `onnxruntime-react-native`
 - **Native Logic**: Custom Kotlin modules for Android `MediaCodec` handling
 - **State Management**: React Hooks & Expo Router
 
