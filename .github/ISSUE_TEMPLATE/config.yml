@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or help using the app
+    url: https://github.com/sayampy/deepdenoiser/discussions
+    about: Ask a question, request help, or share feedback that is not a bug.
+  - name: Privacy policy
+    url: https://github.com/sayampy/deepdenoiser/blob/master/PRIVACY%20POLICY.md
+    about: See what data the app collects. Audio and files never leave your device.

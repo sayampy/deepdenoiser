@@ -1,0 +1,86 @@
+name: Crash, out of memory, or very slow processing
+description: The app closes, shows "Something Went Wrong" / "Out of Memory", or a pass takes far too long.
+title: "[Crash]: "
+labels: ["bug", "crash", "needs-info"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please include the copied error details — the stack trace is usually enough to identify the cause.
+        **Do not attach the media file.** Tell us its size and duration instead.
+
+  - type: input
+    id: version
+    attributes:
+      label: App version and Android version
+      placeholder: "1.5.0, Android 13"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: when
+    attributes:
+      label: When did it happen?
+      options:
+        - Opening the app
+        - Denoising an audio file
+        - Denoising a video file
+        - Live recording
+        - Downloading or importing a model
+        - Saving / sharing the output
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device and RAM
+      placeholder: "Redmi Note 12, 4 GB RAM"
+    validations:
+      required: true
+
+  - type: input
+    id: media
+    attributes:
+      label: File size and duration
+      description: Approximate values are fine. Large/long files are the main OOM trigger.
+      placeholder: "250 MB, 12 minute video"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Selected model
+      options:
+        - DeepFilterNet3
+        - GTCRN
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error details (paste from the app)
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I closed other apps before retrying.
+          required: false
+        - label: I tried a shorter file or the other model.
+          required: false

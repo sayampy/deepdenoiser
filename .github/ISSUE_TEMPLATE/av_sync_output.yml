@@ -1,0 +1,92 @@
+name: Audio/video sync or output quality
+description: Audio starts late, ends early, drifts from the video, or denoising chops speech.
+title: "[Output]: "
+labels: ["bug", "audio-processing", "needs-info"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe what you HEAR relative to what you SEE. Do not upload the media file.
+
+  - type: input
+    id: version
+    attributes:
+      label: App version and Android version
+      placeholder: "1.5.0, Android 14"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: symptom
+    attributes:
+      label: Main symptom
+      options:
+        - Audio starts after the video
+        - Audio ends before / after the video
+        - Audio and video drift apart over time
+        - Speech is chopped or missing at the start
+        - Background noise remains
+        - Output is distorted or robotic
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: media
+    attributes:
+      label: Input type
+      options:
+        - Video file (MP4/MOV/MKV etc.)
+        - Audio file
+        - Live recording
+    validations:
+      required: true
+
+  - type: input
+    id: mediaDetails
+    attributes:
+      label: File details
+      description: Container, codec, duration, resolution and frame rate if known.
+      placeholder: "MP4, H.264 + AAC, 60 s, 1920x1080 @ 30 fps"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Selected model and strength
+      options:
+        - DeepFilterNet3, 100%
+        - GTCRN, 100%
+        - Lower strength / custom
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: trim
+    attributes:
+      label: Was "Trim Silence" enabled?
+      options:
+        - "No"
+        - "Yes (Auto)"
+        - "Yes (Manual)"
+        - "Not sure"
+    validations:
+      required: false
+
+  - type: input
+    id: offset
+    attributes:
+      label: Rough size of the offset
+      description: If you can estimate, e.g. "about half a second of silence at the start".
+      placeholder: "about 0.5 s"
+    validations:
+      required: false
+
+  - type: textarea
+    id: details
+    attributes:
+      label: Additional details
+    validations:
+      required: false

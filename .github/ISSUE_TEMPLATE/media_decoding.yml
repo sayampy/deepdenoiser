@@ -1,0 +1,78 @@
+name: Media decoding / unsupported file
+description: Errors like Media Decoding Failed, No decoder found, or video transcode/mux failures.
+title: "[Media]: "
+labels: ["bug", "compatibility", "needs-info"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        These errors usually mean the file's codec is not supported by this phone's hardware decoder.
+        **Never upload the media file.** Answer the questions below instead — codec details are what we need.
+
+  - type: input
+    id: version
+    attributes:
+      label: App version and Android version
+      placeholder: "1.5.0, Android 14"
+    validations:
+      required: true
+
+  - type: input
+    id: file
+    attributes:
+      label: File details
+      description: Extension, duration, file size, resolution and frame rate (for video).
+      placeholder: "MOV, 42 s, 180 MB, 3840x2160 @ 60 fps"
+    validations:
+      required: true
+
+  - type: input
+    id: codec
+    attributes:
+      label: Codec / container details
+      description: Use a codec-info app (e.g. MediaInfo) or `ffprobe`. If you cannot find this, write "unknown".
+      placeholder: "HEVC / hvc1, AAC-LC, QuickTime MOV"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did the file come from?
+      options:
+        - Phone camera / screen recording
+        - WhatsApp, Telegram, or another messaging app
+        - Downloaded from the internet
+        - Converted or edited on another device
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: elsewhere
+    attributes:
+      label: Does the file play in other apps (Gallery, VLC)?
+      options:
+        - "Yes, everywhere"
+        - "Only in some apps"
+        - "No, nowhere"
+        - "Not tested"
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Exact error message
+      description: Use "Copy Error Details" in the app's error dialog and paste it here.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: e.g. converting to MP4/H.264, shortening the clip, using the other model.
+    validations:
+      required: false

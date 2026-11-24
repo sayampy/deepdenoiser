@@ -1,0 +1,96 @@
+name: General bug report
+description: Something in the app behaves incorrectly (UI, settings, saving, model picker, permissions).
+title: "[Bug]: "
+labels: ["bug", "needs-info"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please fill in as much as you can — the details below decide whether we can reproduce it.
+        **Do not upload your audio or video files.** Describe them instead.
+        The in-app error dialog has a **Copy Error Details** button; paste its contents in the error field.
+
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: About → "Version x.y.z", or "dev build" if you installed a development APK.
+      placeholder: "1.5.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: build
+    attributes:
+      label: Where did you install the app from?
+      options:
+        - GitHub release APK
+        - Google Play
+        - Development build / built locally
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: Device, Android version, and RAM
+      description: e.g. "Pixel 6a, Android 15, 6 GB RAM". Older/low-RAM phones behave differently.
+      placeholder: "Pixel 6a, Android 15, 6 GB RAM"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Selected AI model
+      options:
+        - DeepFilterNet3
+        - GTCRN
+        - Not sure / not applicable
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: What did you do? (exact steps)
+      placeholder: |
+        1. Open the app
+        2. Tap ...
+        3. See ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: error
+    attributes:
+      label: Error text / copied error details
+      description: Paste the full message and stack from the app's error dialog, if any.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and did not find this one.
+          required: true
+        - label: I am not including private audio, video, or personal data.
+          required: true
