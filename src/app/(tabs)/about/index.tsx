@@ -42,11 +42,15 @@ export default function AboutScreen() {
             { paddingTop: insets.top + theme.SPACING.small },
           ]}
         >
-          <Image
-            source={require("@/assets/images/splash-icon.png")}
-            style={styles.logo}
-            accessibilityLabel="DeepDenoiser logo"
-          />
+          <View style={styles.logoBadge}>
+            <Image
+              source={require("@/assets/images/android-icon-monochrome.png")}
+              style={styles.logo}
+              tintColor={theme.COLORS.onPrimaryContainer}
+              contentFit="contain"
+              accessibilityLabel="DeepDenoiser logo"
+            />
+          </View>
         </View>
         <View style={[theme.Styles.header, styles.aboutHeader]}>
           <Text style={theme.Styles.title}>About DeepDenoiser</Text>
@@ -213,9 +217,18 @@ const makeStyles = () => StyleSheet.create({
     paddingHorizontal: theme.SPACING.medium,
     paddingBottom: theme.SPACING.small,
   },
+  logoBadge: {
+    width: 120,
+    height: 120,
+    borderRadius: 36,
+    backgroundColor: theme.COLORS.primaryContainer,
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
   logo: {
-    width: 56,
-    height: 56,
+    width: 180,
+    height: 180,
   },
   settingsButton: {
     display: "none",
